@@ -2,7 +2,7 @@ name: BIST AI BOT
 
 on:
   schedule:
-    - cron: '10 15 * * *'   # Türkiye saatiyle 18:10
+    - cron: "0 18 * * 1"   # Her Pazartesi 18:00
   workflow_dispatch:
 
 jobs:
@@ -16,11 +16,14 @@ jobs:
       - name: Python kur
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Kütüphaneleri yükle
         run: |
-          pip install yfinance pandas requests schedule
+          pip install yfinance pandas numpy requests
 
-      - name: Botu çalıştır
-        run: python bist_fund_system.py
+      - name: Backtest çalıştır
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python backtest.py
