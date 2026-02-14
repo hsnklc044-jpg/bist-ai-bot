@@ -9,7 +9,7 @@ except Exception:
     yf = None
 
 
-TELEGRAM_TOKEN = os.getenv("8440357756:AAGYdwV7WGedN6rhiK7yKZyOSwwLqkb0mqQ")
+TELEGRAM_TOKEN = os.getenv("8440357756:AAHjY_XiqJv36QRDZmIk0P3-9I-9A1Qbg68")
 TELEGRAM_CHAT_ID = os.getenv("1790584407")
 
 BIST_LIST = [
