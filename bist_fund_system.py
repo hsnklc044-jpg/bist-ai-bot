@@ -2,19 +2,24 @@ import os
 import requests
 import pandas as pd
 import numpy as np
-import yfinance as yf
 
-# ==============================
-# TELEGRAM AYARLARI (Secrets'ten)
-# ==============================
+try:
+    import yfinance as yf
+except Exception:
+    yf = None
+
+
+# ================= TELEGRAM =================
+
 TELEGRAM_TOKEN = os.getenv("8440357756:AAGYdwV7WGedN6rhiK7yKZyOSwwLqkb0mqQ")
 TELEGRAM_CHAT_ID = os.getenv("1790584407")
 
 
 def send_telegram(message: str):
-    """Telegram mesaj gönder"""
+    """Telegram mesaj gönderimi"""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram bilgileri eksik.")
+        print("Telegram bilgileri eksik, sadece log yazıldı.")
+        print(message)
         return
 
     try:
@@ -22,68 +27,79 @@ def send_telegram(message: str):
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
         requests.post(url, data=payload, timeout=10)
     except Exception as e:
-        print("Telegram hatası:", e)
+        print("Telegram gönderilemedi:", e)
 
 
-# ==============================
-# BIST HİSSE LİSTESİ
-# ==============================
+# ================= HİSSE LİSTESİ =================
+
 BIST_LIST = [
     "AKBNK.IS", "THYAO.IS", "SISE.IS", "EREGL.IS", "TUPRS.IS",
     "ASELS.IS", "BIMAS.IS", "KCHOL.IS", "GARAN.IS", "YKBNK.IS"
 ]
 
 
-# ==============================
-# TEKNİK GÖSTERGELER
-# ==============================
-def rsi(series: pd.Series, period: int = 14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+# ================= VERİ & SKOR =================
+
+RISK_FREE = 0.40  # yaklaşık yıllık TL faiz varsayımı
 
 
-def hisse_skoru(symbol: str):
-    """Hisse için kurumsal skor hesapla"""
+def veri_cek(symbol: str):
+    """Yahoo Finance veri çek"""
+    if yf is None:
+        return None
+
     try:
         df = yf.download(symbol, period="6mo", interval="1d", progress=False)
-
-        if df.empty or len(df) < 30:
+        if df.empty:
             return None
-
-        close = df["Close"]
-
-        # momentum
-        mom = close.pct_change(20).iloc[-1]
-
-        # volatilite
-        vol = close.pct_change().std()
-
-        # RSI
-        rsi_val = rsi(close).iloc[-1]
-
-        # kurumsal skor
-        if vol == 0 or pd.isna(vol):
-            return None
-
-        skor = float((mom / vol))
-
-        return {
-            "symbol": symbol,
-            "price": float(close.iloc[-1]),
-            "rsi": float(rsi_val),
-            "score": skor
-        }
-
+        return df
     except Exception:
         return None
 
 
-# ==============================
-# PORTFÖY SEÇİMİ
-# ==============================
+def rsi_hesapla(series: pd.Series, period: int = 14):
+    delta = series.diff()
+
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = -delta.clip(upper=0).rolling(period).mean()
+
+    rs = gain / loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi.iloc[-1]
+
+
+def hisse_skoru(symbol: str):
+    """Momentum / volatilite bazlı skor"""
+    df = veri_cek(symbol)
+    if df is None or len(df) < 30:
+        return None
+
+    close = df["Close"]
+
+    price = float(close.iloc[-1])
+    rsi = float(rsi_hesapla(close))
+
+    # momentum
+    mom = float((close.iloc[-1] / close.iloc[-20]) - 1)
+
+    # volatilite
+    vol = float(close.pct_change().std())
+
+    if vol == 0:
+        return None
+
+    score = (mom - RISK_FREE / 252) / vol
+
+    return {
+        "symbol": symbol,
+        "price": price,
+        "rsi": rsi,
+        "score": float(score)
+    }
+
+
+# ================= PORTFÖY SEÇİMİ =================
+
 def portfoy_sec():
     sonuclar = []
 
@@ -93,24 +109,23 @@ def portfoy_sec():
             sonuclar.append(s)
 
     if not sonuclar:
-        return [], []
+        return pd.DataFrame(), pd.DataFrame()
 
     df = pd.DataFrame(sonuclar)
 
     # skora göre sırala
     df = df.sort_values("score", ascending=False)
 
-    # ilk 3 hisse = kurumsal portföy
+    # en iyi 3 hisse
     secilenler = df.head(3)
 
     return secilenler, df
 
 
-# ==============================
-# RAPOR OLUŞTUR
-# ==============================
-def rapor_olustur(secilenler, tumu):
-    if secilenler.empty:
+# ================= RAPOR =================
+
+def rapor_olustur(secilenler: pd.DataFrame, tumu: pd.DataFrame):
+    if secilenler is None or secilenler.empty:
         return "⚠️ Bugün uygun sinyal bulunamadı."
 
     text = "📊 BIST AI FON RAPORU\n\n"
@@ -126,9 +141,8 @@ def rapor_olustur(secilenler, tumu):
     return text
 
 
-# ==============================
-# ANA ÇALIŞMA
-# ==============================
+# ================= MAIN =================
+
 def main():
     print("AI Fon Yöneticisi çalışıyor...")
 
