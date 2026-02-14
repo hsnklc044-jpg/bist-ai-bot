@@ -5,7 +5,7 @@ import requests
 # ==============================
 # GitHub Secrets'ten alınır
 # ==============================
-TELEGRAM_TOKEN = os.getenv("8440357756:AAHjY_XiqJv36QRDZmIk0P3-9I-9A1Qbg68")
+TELEGRAM_TOKEN = os.getenv("8440357756:AAGdYajs2PirEhY2O9R8Voe_JmtAQhIHI8I")
 TELEGRAM_CHAT_ID = os.getenv("1790584407")
 
 
