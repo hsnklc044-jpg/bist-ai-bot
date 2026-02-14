@@ -2,8 +2,9 @@ import os
 import requests
 
 # GitHub Secrets'tan alınır
-TELEGRAM_TOKEN = os.getenv("8440357756:AAGdYajs2PirEhY2O9R8Voe_JmtAQhIHI8I")
-TELEGRAM_CHAT_ID = os.getenv("1790584407")
+TELEGRAM_TOKEN = "8440357756:AAGdYajs2PirEhY2O9R8Voe_JmtAQhIHI8I"
+TELEGRAM_CHAT_ID = "1790584407"
+
 
 
 # -----------------------------
