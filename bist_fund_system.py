@@ -4,82 +4,18 @@ import pandas as pd
 import numpy as np
 import yfinance as yf
 
-# 🔐 GitHub Secrets'ten okunur (koda şifre yazılmaz)
 TELEGRAM_TOKEN = os.getenv("8440357756:AAGYdwV7WGedN6rhiK7yKZyOSwwLqkb0mqQ")
 TELEGRAM_CHAT_ID = os.getenv("1790584407")
 
-# İzlenen hisseler
 BIST_LIST = [
-    "AKBNK.IS", "THYAO.IS", "SISE.IS", "EREGL.IS", "TUPRS.IS",
-    "ASELS.IS", "BIMAS.IS", "KCHOL.IS", "GARAN.IS", "YKBNK.IS"
+    "AKBNK.IS","THYAO.IS","SISE.IS","EREGL.IS","TUPRS.IS",
+    "ASELS.IS","BIMAS.IS","KCHOL.IS","GARAN.IS","YKBNK.IS"
 ]
 
-RISK_FREE = 0.40  # varsayımsal yıllık faiz
 
-
-# -------------------------------------------------
-# VERİ ÇEK
-# -------------------------------------------------
-def veri_cek(hisse):
-    try:
-        df = yf.download(hisse, period="6mo", interval="1d", progress=False)
-        if df is None or df.empty:
-            return None
-
-        df["Return"] = df["Close"].pct_change()
-        df["Vol"] = df["Return"].rolling(20).std() * np.sqrt(252)
-        df["Momentum"] = df["Close"].pct_change(60)
-
-        return df.dropna()
-    except Exception:
-        return None
-
-
-# -------------------------------------------------
-# HİSSE SKORU (Sharpe benzeri)
-# -------------------------------------------------
-def hisse_skoru(hisse):
-    df = veri_cek(hisse)
-    if df is None or df.empty:
-        return None
-
-    mom = df["Momentum"].iloc[-1]
-    vol = df["Vol"].iloc[-1]
-
-    if vol == 0 or pd.isna(vol):
-        return None
-
-    skor = (mom - RISK_FREE / 252) / vol
-    return float(skor)
-
-
-# -------------------------------------------------
-# PORTFÖY SEÇ
-# -------------------------------------------------
-def portfoy_sec():
-    skorlar = {}
-
-    for h in BIST_LIST:
-        s = hisse_skoru(h)
-        if s is not None:
-            skorlar[h] = s
-
-    if not skorlar:
-        return [], {}
-
-    # en iyi 3 hisse
-    secilenler = sorted(skorlar, key=skorlar.get, reverse=True)[:3]
-
-    return secilenler, skorlar
-
-
-# -------------------------------------------------
-# TELEGRAM GÖNDER
-# -------------------------------------------------
 def send_telegram(message):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ Telegram bilgileri eksik (Secrets kontrol et).")
-        print(message)
+        print("Telegram bilgileri eksik.")
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -87,30 +23,45 @@ def send_telegram(message):
 
     try:
         r = requests.post(url, data=payload, timeout=10)
-        print("Telegram response:", r.text)
+        print("Telegram cevap:", r.text)
     except Exception as e:
         print("Telegram hata:", e)
 
 
-# -------------------------------------------------
-# ANA ÇALIŞMA
-# -------------------------------------------------
-def main():
-    print("🤖 AI Portföy Yöneticisi çalışıyor...")
+def backtest():
+    results = []
 
-    secilenler, skorlar = portfoy_sec()
+    for symbol in BIST_LIST:
+        try:
+            data = yf.download(symbol, period="3mo", interval="1d", progress=False)
 
-    if not secilenler:
-        mesaj = "📊 BIST AI FON\n\n❌ Bugün uygun hisse bulunamadı."
-    else:
-        mesaj = "📊 BIST AI FON PORTFÖYÜ\n\n"
-        for h in secilenler:
-            mesaj += f"✅ {h} → Skor: {skorlar[h]:.2f}\n"
+            if data.empty:
+                continue
 
-    print(mesaj)
-    send_telegram(mesaj)
+            close = data["Close"]
+
+            mom = close.pct_change(5).iloc[-1]
+            vol = close.pct_change().std()
+
+            score = float(mom / vol) if vol != 0 else 0
+
+            results.append(f"{symbol} → skor: {round(score,2)}")
+
+        except Exception as e:
+            results.append(f"{symbol} → hata")
+
+    return results
 
 
-# -------------------------------------------------
 if __name__ == "__main__":
-    main()
+    print("Backtest başlıyor...")
+
+    signals = backtest()
+
+    if not signals:
+        text = "⚠️ Backtest çalıştı ama sinyal bulunamadı."
+    else:
+        text = "📊 BIST BACKTEST SONUÇLARI\n\n" + "\n".join(signals)
+
+    print(text)
+    send_telegram(text)
