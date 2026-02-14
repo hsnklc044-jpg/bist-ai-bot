@@ -4,119 +4,125 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime
 
+TOKEN = os.getenv("8440357756:AAGYdwV7WGedN6rhiK7yKZyOSwwLqkb0mqQ")
+CHAT_ID = os.getenv("1790584407")
+
+
 # ================= TELEGRAM =================
-TELEGRAM_TOKEN = os.getenv("8440357756:AAGYdwV7WGedN6rhiK7yKZyOSwwLqkb0mqQ")
-TELEGRAM_CHAT_ID = os.getenv("1790584407")
+def send(msg):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    requests.post(url, json={"chat_id": CHAT_ID, "text": msg})
 
 
-def send_telegram(message: str):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram bilgileri eksik.")
-        return
-
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
-
-    requests.post(url, json=payload, timeout=10)
-
-
-# ================= BIST LIST =================
-BIST_TICKERS = [
-    "AKBNK.IS", "ASELS.IS", "BIMAS.IS", "EREGL.IS", "FROTO.IS",
-    "GARAN.IS", "HEKTS.IS", "KCHOL.IS", "KOZAL.IS", "PGSUS.IS",
-    "SAHOL.IS", "SISE.IS", "TAVHL.IS", "TCELL.IS", "THYAO.IS",
-    "TOASO.IS", "TUPRS.IS", "YKBNK.IS"
+# ================= BIST LİSTE =================
+BIST = [
+    "AKBNK.IS","ASELS.IS","BIMAS.IS","EREGL.IS","FROTO.IS",
+    "GARAN.IS","KCHOL.IS","KOZAL.IS","PGSUS.IS","SAHOL.IS",
+    "SISE.IS","TCELL.IS","THYAO.IS","TUPRS.IS","YKBNK.IS"
 ]
 
 
-# ================= INDICATORS =================
-def compute_indicators(df: pd.DataFrame):
-    df["EMA20"] = df["Close"].ewm(span=20).mean()
-    df["EMA50"] = df["Close"].ewm(span=50).mean()
+# ================= ENDEKS FİLTRE =================
+def market_ok():
+    df = yf.download("XU100.IS", period="6mo", progress=False)
 
-    delta = df["Close"].diff()
-    gain = (delta.where(delta > 0, 0)).rolling(14).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
-    rs = gain / loss
-    df["RSI"] = 100 - (100 / (1 + rs))
+    if df.empty:
+        return False
 
-    df["TR"] = df[["High", "Close"]].max(axis=1) - df[["Low", "Close"]].min(axis=1)
-    df["ATR"] = df["TR"].rolling(14).mean()
+    ma50 = df["Close"].rolling(50).mean().iloc[-1]
+    price = df["Close"].iloc[-1]
 
-    return df
+    return price > ma50
 
 
-# ================= STOCK FILTER =================
-def analyze_stock(ticker: str):
+# ================= HİSSE ANALİZ =================
+def analyze(ticker):
     try:
-        df = yf.download(ticker, period="6mo", interval="1d", progress=False)
+        df = yf.download(ticker, period="6mo", progress=False)
 
-        if df.empty or len(df) < 60:
+        if len(df) < 60:
             return None
 
-        df = compute_indicators(df)
-        last = df.iloc[-1]
+        close = df["Close"]
 
-        # Trend
-        trend_ok = last["Close"] > last["EMA20"] > last["EMA50"]
+        ema20 = close.ewm(span=20).mean().iloc[-1]
+        ema50 = close.ewm(span=50).mean().iloc[-1]
 
-        # Momentum
-        momentum_ok = last["RSI"] > 50
+        delta = close.diff()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = -delta.clip(upper=0).rolling(14).mean()
+        rsi = 100 - (100 / (1 + gain.iloc[-1] / loss.iloc[-1]))
 
-        # Volume
-        vol_mean = df["Volume"].rolling(20).mean().iloc[-1]
-        volume_ok = last["Volume"] > vol_mean
+        vol = df["Volume"].iloc[-1]
+        vol_avg = df["Volume"].rolling(20).mean().iloc[-1]
 
-        # Risk (ATR / price < 5%)
-        risk_ok = (last["ATR"] / last["Close"]) < 0.05
+        atr = (df["High"] - df["Low"]).rolling(14).mean().iloc[-1]
 
-        if trend_ok and momentum_ok and volume_ok and risk_ok:
+        trend = close.iloc[-1] > ema20 > ema50
+        momentum = rsi > 50
+        volume_ok = vol > vol_avg
+        risk_ok = atr / close.iloc[-1] < 0.05
+
+        if trend and momentum and volume_ok and risk_ok:
             score = (
-                (last["Close"] / last["EMA20"]) * 0.4
-                + (last["RSI"] / 100) * 0.3
-                + (last["Volume"] / vol_mean) * 0.3
+                (close.iloc[-1] / ema20) * 0.4 +
+                (rsi / 100) * 0.3 +
+                (vol / vol_avg) * 0.3
             )
 
-            return {"ticker": ticker, "score": score}
+            stop = close.iloc[-1] - atr * 2
+            target = close.iloc[-1] + atr * 3
 
-    except Exception as e:
-        print(f"Hata {ticker}: {e}")
+            return {
+                "ticker": ticker.replace(".IS", ""),
+                "score": score,
+                "price": round(close.iloc[-1], 2),
+                "stop": round(stop, 2),
+                "target": round(target, 2)
+            }
 
-    return None
+    except:
+        return None
 
 
-# ================= MAIN =================
+# ================= ANA FON =================
 def main():
-    results = []
 
-    for ticker in BIST_TICKERS:
-        data = analyze_stock(ticker)
-        if data:
-            results.append(data)
-
-    if not results:
-        send_telegram("⚠️ Bugün filtreye uyan hisse bulunamadı.")
+    # --- Piyasa filtresi ---
+    if not market_ok():
+        send("📉 Piyasa zayıf.\n\nBugün NAKİTTE BEKLE.")
         return
 
-    # En iyi 5 hisse
+    results = []
+
+    for t in BIST:
+        r = analyze(t)
+        if r:
+            results.append(r)
+
+    if not results:
+        send("⚠️ Uygun hisse bulunamadı.\nBugün işlem yok.")
+        return
+
+    # --- En iyi 5 ---
     top = sorted(results, key=lambda x: x["score"], reverse=True)[:5]
 
-    date_str = datetime.now().strftime("%d.%m.%Y")
+    # --- Ağırlıklar (dengeli fon) ---
+    weights = [25, 22, 20, 18, 15]
 
-    message = f"📊 *BIST AI FON RAPORU*\nTarih: {date_str}\n\n"
+    msg = "📊 TAM OTOMATİK DENGELİ FON\n"
+    msg += f"Tarih: {datetime.now().strftime('%d.%m.%Y')}\n\n"
 
-    for i, stock in enumerate(top, 1):
-        message += f"{i}️⃣ {stock['ticker']} — Güç skoru: {stock['score']:.2f}\n"
+    for i, s in enumerate(top):
+        msg += (
+            f"{i+1}) {s['ticker']}  (%{weights[i]})\n"
+            f"Fiyat: {s['price']} | Stop: {s['stop']} | Hedef: {s['target']}\n\n"
+        )
 
-    message += "\nPortföy dağılımı: Her biri %20\n"
-    message += "⏰ Saat: 18:10"
+    msg += "Risk seviyesi: ORTA\n"
+    msg += "Strateji: Dengeli AI Fon"
 
-    send_telegram(message)
+    send(msg)
 
 
 if __name__ == "__main__":
