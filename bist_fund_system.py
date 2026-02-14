@@ -1,150 +1,131 @@
-import yfinance as yf
+import os
+import requests
 import pandas as pd
 import numpy as np
-import requests
-import os
 
-# ==============================
-# AYARLAR
-# ==============================
+try:
+    import yfinance as yf
+except Exception:
+    yf = None
 
-HISSELER = [
-    "AKBNK.IS","THYAO.IS","SISE.IS","EREGL.IS",
-    "TUPRS.IS","ASELS.IS","BIMAS.IS","KCHOL.IS",
-    "GARAN.IS","YKBNK.IS"
-]
 
+# ================= TELEGRAM =================
 TELEGRAM_TOKEN = os.getenv("8440357756:AAGYdwV7WGedN6rhiK7yKZyOSwwLqkb0mqQ")
 TELEGRAM_CHAT_ID = os.getenv("1790584407")
 
-RISK_FREE = 0.35  # %35 yıllık TL faizi varsayımı
 
-
-# ==============================
-# GÖSTERGELER
-# ==============================
-
-def rsi(close, period=14):
-    delta = close.diff()
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = -delta.clip(upper=0).rolling(period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-
-def momentum(close, period=20):
-    return close.pct_change(period)
-
-
-def volatilite(close, period=20):
-    return close.pct_change().rolling(period).std()
-
-
-# ==============================
-# HİSSE SKORU (FON MANTIĞI)
-# ==============================
-
-def hisse_skoru(ticker):
-    df = yf.download(ticker, period="1y", interval="1d", progress=False)
-
-    if len(df) < 60:
-        return None
-
-    close = df["Close"]
-
-    rsi_val = rsi(close).iloc[-1]
-    mom = momentum(close).iloc[-1]
-    vol = volatilite(close).iloc[-1]
-
-    if pd.isna([rsi_val, mom, vol]).any():
-        return None
-
-    # Sharpe benzeri skor
-    skor = (mom - RISK_FREE/252) / vol if vol != 0 else 0
-
-    return {
-        "ticker": ticker,
-        "fiyat": float(close.iloc[-1]),
-        "rsi": round(rsi_val, 1),
-        "momentum": round(mom * 100, 2),
-        "volatilite": round(vol * 100, 2),
-        "skor": round(skor, 3)
-    }
-
-
-# ==============================
-# PORTFÖY OLUŞTURMA
-# ==============================
-
-def portfoy_olustur(sonuclar, adet=5):
-    sirali = sorted(sonuclar, key=lambda x: x["skor"], reverse=True)[:adet]
-
-    toplam_skor = sum(max(s["skor"], 0) for s in sirali)
-
-    for s in sirali:
-        agirlik = max(s["skor"], 0) / toplam_skor if toplam_skor > 0 else 0
-        s["agirlik"] = round(agirlik * 100, 1)
-
-    return sirali
-
-
-# ==============================
-# TELEGRAM
-# ==============================
-
-def telegram_gonder(mesaj):
+def send_telegram(message: str):
+    """Telegram mesaj gönderimi"""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram ayarı yok.")
+        print("Telegram bilgileri eksik, sadece log yazıldı.")
+        print(message)
         return
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+        requests.post(url, data=payload, timeout=10)
+    except Exception as e:
+        print("Telegram gönderilemedi:", e)
 
-    requests.post(url, data={
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": mesaj
-    })
+
+# ================= PARAMETRELER =================
+RISK_FREE = 0.35  # yıllık %35 varsayım
+
+BIST_LIST = [
+    "AKBNK.IS", "THYAO.IS", "SISE.IS", "EREGL.IS", "TUPRS.IS",
+    "ASELS.IS", "BIMAS.IS", "KCHOL.IS", "GARAN.IS", "YKBNK.IS"
+]
 
 
-# ==============================
-# ANA SİSTEM
-# ==============================
+# ================= VERİ ÇEK =================
+def veri_getir(hisse):
+    """Son 6 ay fiyat verisini indir"""
+    if yf is None:
+        return None
 
+    try:
+        df = yf.download(hisse, period="6mo", interval="1d", progress=False)
+        if df.empty:
+            return None
+        return df
+    except Exception:
+        return None
+
+
+# ================= MOMENTUM =================
+def momentum(df):
+    """Son 20 günlük getiri"""
+    try:
+        return df["Close"].pct_change(20).iloc[-1]
+    except Exception:
+        return 0
+
+
+# ================= VOLATİLİTE =================
+def volatilite(df):
+    """Yıllıklaştırılmış volatilite"""
+    try:
+        vol = df["Close"].pct_change().std() * np.sqrt(252)
+        return vol
+    except Exception:
+        return np.nan
+
+
+# ================= HİSSE SKORU =================
+def hisse_skoru(hisse):
+    df = veri_getir(hisse)
+    if df is None:
+        return 0
+
+    mom = momentum(df)
+    vol = volatilite(df)
+
+    # 🔧 KRİTİK DÜZELTME (Series hatası fix)
+    if isinstance(vol, pd.Series):
+        vol = vol.iloc[-1]
+
+    if vol == 0 or pd.isna(vol):
+        return 0
+
+    skor = (mom - RISK_FREE / 252) / vol
+    return float(skor)
+
+
+# ================= PORTFÖY OLUŞTUR =================
+def portfoy_sec():
+    skorlar = {}
+
+    for h in BIST_LIST:
+        s = hisse_skoru(h)
+        skorlar[h] = s
+
+    # skora göre sırala
+    sirali = sorted(skorlar.items(), key=lambda x: x[1], reverse=True)
+
+    # en iyi 3 hisse
+    secilen = [h[0] for h in sirali[:3] if h[1] > 0]
+
+    return secilen, skorlar
+
+
+# ================= ANA FONKSİYON =================
 def main():
     print("AI Portföy Yöneticisi çalışıyor...")
 
-    analizler = []
+    secilenler, skorlar = portfoy_sec()
 
-    for h in HISSELER:
-        s = hisse_skoru(h)
-        if s:
-            analizler.append(s)
+    if not secilenler:
+        mesaj = "📊 BIST AI FON\n\nBugün güçlü sinyal yok."
+    else:
+        mesaj = "📊 BIST AI FON SEÇİMLERİ\n\n"
+        for h in secilenler:
+            mesaj += f"✅ {h} | Skor: {round(skorlar[h], 3)}\n"
 
-    if not analizler:
-        print("Veri yok.")
-        return
-
-    portfoy = portfoy_olustur(analizler)
-
-    mesaj = "🤖 AI PORTFÖY YÖNETİCİSİ\n\n"
-
-    mesaj += "📊 HİSSE SKORLARI\n"
-    for a in sorted(analizler, key=lambda x: x["skor"], reverse=True):
-        mesaj += (
-            f"{a['ticker']} | "
-            f"Skor {a['skor']} | "
-            f"RSI {a['rsi']} | "
-            f"Mom %{a['momentum']} | "
-            f"Vol %{a['volatilite']}\n"
-        )
-
-    mesaj += "\n🏆 OPTİMUM PORTFÖY\n"
-    for p in portfoy:
-        mesaj += f"{p['ticker']} → %{p['agirlik']} ağırlık\n"
-
-    telegram_gonder(mesaj)
-
-    print("Tamamlandı.")
+    print(mesaj)
+    send_telegram(mesaj)
 
 
+# ================= ÇALIŞTIR =================
 if __name__ == "__main__":
     main()
