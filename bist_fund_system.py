@@ -2,159 +2,150 @@ import os
 import requests
 import pandas as pd
 import numpy as np
-
-try:
-    import yfinance as yf
-except Exception:
-    yf = None
+import yfinance as yf
 
 
-# ================= TELEGRAM =================
-
+# ==============================
+# TELEGRAM AYARLARI (GitHub Secrets)
+# ==============================
 TELEGRAM_TOKEN = os.getenv("8440357756:AAHjY_XiqJv36QRDZmIk0P3-9I-9A1Qbg68")
 TELEGRAM_CHAT_ID = os.getenv("1790584407")
 
 
 def send_telegram(message: str):
+    """Telegram mesaj gönder"""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("Telegram bilgileri eksik.")
-        print(message)
+        print("❌ Telegram bilgileri okunamadı")
         return
 
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
         payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
-        requests.post(url, data=payload, timeout=10)
+        r = requests.post(url, data=payload, timeout=10)
+        print("Telegram cevap:", r.text)
     except Exception as e:
-        print("Telegram hatası:", e)
+        print("❌ Telegram gönderim hatası:", e)
 
 
-# ================= HİSSELER =================
-
+# ==============================
+# BIST HİSSE LİSTESİ
+# ==============================
 BIST_LIST = [
     "AKBNK.IS", "THYAO.IS", "SISE.IS", "EREGL.IS", "TUPRS.IS",
     "ASELS.IS", "BIMAS.IS", "KCHOL.IS", "GARAN.IS", "YKBNK.IS"
 ]
 
-RISK_FREE = 0.40
 
-
-# ================= VERİ =================
-
-def veri_cek(symbol: str):
-    if yf is None:
-        return None
-
+# ==============================
+# HİSSE SKOR HESABI
+# ==============================
+def hisse_skoru(ticker: str):
     try:
-        df = yf.download(symbol, period="6mo", interval="1d", progress=False)
+        data = yf.download(ticker, period="6mo", interval="1d", progress=False)
 
-        if df is None or df.empty:
+        if data.empty or len(data) < 30:
             return None
 
-        # Multi-index gelirse düzelt
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        close = data["Close"]
 
-        return df
-    except Exception:
+        # Momentum
+        mom = float(close.iloc[-1] / close.iloc[-20] - 1)
+
+        # Volatilite
+        vol = float(close.pct_change().std())
+
+        if vol == 0:
+            return None
+
+        score = mom / vol
+        price = float(close.iloc[-1])
+
+        # RSI
+        delta = close.diff()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = -delta.clip(upper=0).rolling(14).mean()
+        rs = gain / loss
+        rsi = float(100 - (100 / (1 + rs.iloc[-1])))
+
+        return {
+            "ticker": ticker,
+            "score": score,
+            "price": price,
+            "rsi": rsi,
+        }
+
+    except Exception as e:
+        print(f"Hata ({ticker}):", e)
         return None
 
 
-# ================= RSI =================
-
-def rsi(series: pd.Series, period: int = 14):
-    delta = series.diff()
-
-    gain = delta.clip(lower=0).rolling(period).mean()
-    loss = -delta.clip(upper=0).rolling(period).mean()
-
-    rs = gain / loss
-    return float((100 - (100 / (1 + rs))).iloc[-1])
-
-
-# ================= SKOR =================
-
-def hisse_skoru(symbol: str):
-    df = veri_cek(symbol)
-
-    if df is None or len(df) < 30:
-        return None
-
-    close = df["Close"]
-
-    # 🔥 KRİTİK DÜZELTME
-    last_price = close.iloc[-1]
-    if isinstance(last_price, pd.Series):
-        last_price = last_price.values[0]
-
-    price = float(last_price)
-
-    rsi_val = rsi(close)
-
-    mom = float((close.iloc[-1] / close.iloc[-20]) - 1)
-    vol = float(close.pct_change().std())
-
-    if vol == 0:
-        return None
-
-    score = (mom - RISK_FREE / 252) / vol
-
-    return {
-        "symbol": symbol,
-        "price": price,
-        "rsi": rsi_val,
-        "score": float(score)
-    }
-
-
-# ================= PORTFÖY =================
-
+# ==============================
+# PORTFÖY SEÇİMİ
+# ==============================
 def portfoy_sec():
-    data = []
+    sonuclar = []
 
     for h in BIST_LIST:
         s = hisse_skoru(h)
         if s:
-            data.append(s)
+            sonuclar.append(s)
 
-    if not data:
-        return pd.DataFrame(), pd.DataFrame()
+    if not sonuclar:
+        return [], []
 
-    df = pd.DataFrame(data).sort_values("score", ascending=False)
+    df = pd.DataFrame(sonuclar)
+    df = df.sort_values("score", ascending=False)
 
-    return df.head(3), df
+    secilenler = df.head(3)
+    tumu = df
 
-
-# ================= RAPOR =================
-
-def rapor(secilenler, tumu):
-    if secilenler is None or secilenler.empty:
-        return "⚠️ Bugün sinyal yok."
-
-    text = "📊 BIST AI FON RAPORU\n\n"
-
-    text += "🏆 PORTFÖY:\n"
-    for _, r in secilenler.iterrows():
-        text += f"{r.symbol} | {r.price:.2f} TL | RSI {r.rsi:.1f}\n"
-
-    text += "\n📈 TÜM SKORLAR:\n"
-    for _, r in tumu.iterrows():
-        text += f"{r.symbol} → {r.score:.2f}\n"
-
-    return text
+    return secilenler, tumu
 
 
-# ================= MAIN =================
+# ==============================
+# RAPOR OLUŞTUR
+# ==============================
+def rapor_olustur(secilenler: pd.DataFrame, tumu: pd.DataFrame):
 
+    mesaj = "📊 BIST AI PORTFÖY RAPORU\n\n"
+
+    if secilenler.empty:
+        mesaj += "Bugün güçlü sinyal yok."
+        return mesaj
+
+    mesaj += "🚀 ÖNERİLEN PORTFÖY:\n"
+
+    for _, row in secilenler.iterrows():
+        mesaj += (
+            f"{row['ticker']} → "
+            f"Fiyat: {row['price']:.2f} TL | "
+            f"RSI: {row['rsi']:.1f}\n"
+        )
+
+    mesaj += "\n📈 TÜM SKORLAR:\n"
+
+    for _, row in tumu.iterrows():
+        mesaj += f"{row['ticker']} → Skor: {row['score']:.2f}\n"
+
+    return mesaj
+
+
+# ==============================
+# ANA ÇALIŞMA
+# ==============================
 def main():
-    print("AI Fon çalışıyor...")
+    print("AI Fon Yöneticisi çalışıyor...")
 
-    sec, tum = portfoy_sec()
-    mesaj = rapor(sec, tum)
+    secilenler, tumu = portfoy_sec()
+
+    mesaj = rapor_olustur(secilenler, tumu)
 
     print(mesaj)
     send_telegram(mesaj)
 
 
+# ==============================
+# ENTRYPOINT
+# ==============================
 if __name__ == "__main__":
     main()
