@@ -1,19 +1,30 @@
-name: TEST
+name: BIST AI BOT
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * 1"   # Her Pazartesi 18:00
 
 jobs:
-  run:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Repo indir
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Python kur
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - run: pip install requests
+      - name: Kütüphaneleri yükle
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance pandas numpy requests
 
-      - run: python bist_fund_system.py
+      - name: BIST AI motorunu çalıştır
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python bist_fund_system.py
