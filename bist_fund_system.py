@@ -1,3 +1,4 @@
+raise Exception("BEN BURADAYIM")
 import os
 import requests
 import traceback
