@@ -2,7 +2,7 @@ name: BIST AI BOT
 
 on:
   schedule:
-    - cron: "5 7 * * *"   # Türkiye 10:05
+    - cron: "5 7 * * *"   # Türkiye saati 10:05
   workflow_dispatch:
 
 jobs:
@@ -20,11 +20,10 @@ jobs:
 
       - name: Kütüphaneleri yükle
         run: |
-          pip install --upgrade pip
           pip install yfinance pandas numpy requests
 
       - name: BIST AI motorunu çalıştır
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python bist_fund_system.py
+        run: python bist_ai_pro.py
