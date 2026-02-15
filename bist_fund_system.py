@@ -1,5 +1,6 @@
 import os
 import requests
+import traceback
 
 TELEGRAM_TOKEN = os.getenv("8440357756:AAGdYajs2PirEhY2O9R8Voe_JmtAQhIHI8I")
 TELEGRAM_CHAT_ID = os.getenv("1790584407")
@@ -11,14 +12,21 @@ def send_telegram(message):
         return
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": message})
 
+
+def main():
     try:
-        requests.post(url, data=payload, timeout=10)
-        print("Telegram mesajı gönderildi.")
+        # --- BURASI GERÇEK AI KODU YERİ ---
+        # Şimdilik test:
+        mesaj = "🚀 AI motoru çalıştı. Buraya portföy gelecek."
+
+        send_telegram(mesaj)
+
     except Exception as e:
-        print("Telegram hatası:", e)
+        hata = "❌ HATA:\n\n" + str(e) + "\n\n" + traceback.format_exc()
+        send_telegram(hata)
 
 
 if __name__ == "__main__":
-    send_telegram("📊 BIST AI BOT → GitHub entegrasyonu tamam.")
+    main()
