@@ -1,26 +1,19 @@
-name: BIST AI BOT
+name: TEST
 
 on:
   workflow_dispatch:
 
 jobs:
-  run-bot:
+  run:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Repo indir
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Python kur
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Kütüphaneleri yükle
-        run: pip install requests
+      - run: pip install requests
 
-      - name: Botu çalıştır
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python bist_fund_system.py
+      - run: python bist_fund_system.py
