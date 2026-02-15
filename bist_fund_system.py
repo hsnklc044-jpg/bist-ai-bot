@@ -1,69 +1,117 @@
 import os
 import requests
-import traceback
-import yfinance as yf
 import pandas as pd
+import numpy as np
+import yfinance as yf
 
 
-TELEGRAM_TOKEN = "8440357756:AAGdYajs2PirEhY2O9R8Voe_JmtAQhIHI8I"
-TELEGRAM_CHAT_ID = "1790584407"
+# ================= TELEGRAM =================
+TELEGRAM_TOKEN = os.getenv("8440357756:AAGdYajs2PirEhY2O9R8Voe_JmtAQhIHI8I")
+TELEGRAM_CHAT_ID = os.getenv("1790584407")
 
 
-def send(msg):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
+def send_telegram(message):
+    """Telegram'a mesaj gönderir"""
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        print("Telegram bilgileri eksik.")
+        return
+
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
+        r = requests.post(url, data=payload, timeout=10)
+        print("Telegram status:", r.text)
+    except Exception as e:
+        print("Telegram gönderilemedi:", e)
 
 
-BIST = [
-    "AKBNK.IS","THYAO.IS","SISE.IS","EREGL.IS","TUPRS.IS",
-    "ASELS.IS","BIMAS.IS","KCHOL.IS","GARAN.IS","YKBNK.IS"
+# ================= BIST LİSTESİ =================
+BIST_LIST = [
+    "AKBNK.IS", "THYAO.IS", "SISE.IS", "EREGL.IS", "TUPRS.IS",
+    "ASELS.IS", "BIMAS.IS", "KCHOL.IS", "GARAN.IS", "YKBNK.IS"
 ]
 
 
-def rsi(close, p=14):
-    d = close.diff()
-    up = d.clip(lower=0).rolling(p).mean()
-    down = -d.clip(upper=0).rolling(p).mean()
-    rs = up / down
-    return 100 - 100 / (1 + rs)
-
-
-def pick():
-    rows = []
-
-    for s in BIST:
-        df = yf.download(s, period="6mo", progress=False)
-        if df.empty:
-            continue
-
-        c = df["Close"]
-
-        score = float((c.iloc[-1] / c.iloc[-20] - 1) / c.pct_change().std())
-        r = float(rsi(c).iloc[-1])
-
-        if 40 < r < 70:
-            rows.append((s, float(c.iloc[-1]), r, score))
-
-    if not rows:
-        return "Bugün uygun hisse yok."
-
-    rows.sort(key=lambda x: x[3], reverse=True)
-    top = rows[:5]
-
-    msg = "📊 BIST AI PORTFÖY\n\n"
-    for s, p, r, sc in top:
-        msg += f"{s} | {p:.2f} TL | RSI {r:.1f} | Skor {sc:.2f}\n"
-
-    return msg
-
-
-def main():
+# ================= SKOR FONKSİYONU =================
+def pick(close_series: pd.Series):
+    """
+    Momentum / volatilite skoru üretir
+    Hatalara karşı güvenlidir
+    """
     try:
-        send("🚀 AI motoru başladı")
-        msg = pick()
-        send(msg)
-    except Exception:
-        send("❌ HATA\n\n" + traceback.format_exc())
+        if len(close_series) < 25:
+            return None
+
+        vol = close_series.pct_change().std()
+
+        if vol == 0 or pd.isna(vol):
+            return None
+
+        score = (close_series.iloc[-1] / close_series.iloc[-20] - 1) / vol
+        return float(score)
+
+    except Exception as e:
+        print("Hata (pick):", e)
+        return None
+
+
+# ================= PORTFÖY SEÇİMİ =================
+def portfoy_sec():
+    secilenler = []
+    tum_skorlar = {}
+
+    for hisse in BIST_LIST:
+        try:
+            data = yf.download(hisse, period="6mo", progress=False)
+
+            if data.empty:
+                continue
+
+            close = data["Close"].dropna()
+            skor = pick(close)
+
+            if skor is not None:
+                tum_skorlar[hisse] = skor
+
+        except Exception as e:
+            print(f"Hata ({hisse}):", e)
+
+    if not tum_skorlar:
+        return [], {}
+
+    # Skora göre sırala
+    sirali = sorted(tum_skorlar.items(), key=lambda x: x[1], reverse=True)
+
+    # İlk 3 hisseyi seç
+    secilenler = [x[0] for x in sirali[:3]]
+
+    return secilenler, tum_skorlar
+
+
+# ================= RAPOR =================
+def rapor_olustur(secilenler, tum_skorlar):
+    if not secilenler:
+        return "📊 BIST AI PORTFÖY\n\nBugün uygun sinyal yok."
+
+    mesaj = "📊 BIST AI PORTFÖY\n\n"
+
+    for hisse in secilenler:
+        skor = tum_skorlar[hisse]
+        mesaj += f"• {hisse} → Skor: {round(skor, 2)}\n"
+
+    return mesaj
+
+
+# ================= MAIN =================
+def main():
+    print("🚀 AI Fon Yöneticisi çalışıyor...")
+
+    secilenler, tumu = portfoy_sec()
+
+    mesaj = rapor_olustur(secilenler, tumu)
+
+    print(mesaj)
+    send_telegram(mesaj)
 
 
 if __name__ == "__main__":
