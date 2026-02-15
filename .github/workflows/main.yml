@@ -2,7 +2,7 @@ name: BIST AI BOT
 
 on:
   schedule:
-    - cron: "5 7 * * *"   # Türkiye saati 10:05
+    - cron: "0 16 * * *"   # Türkiye 19:00
   workflow_dispatch:
 
 jobs:
