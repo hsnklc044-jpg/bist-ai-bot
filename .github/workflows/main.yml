@@ -1,6 +1,8 @@
 name: BIST AI BOT
 
 on:
+  schedule:
+    - cron: "5 7 * * *"   # Türkiye saati 10:05
   workflow_dispatch:
 
 jobs:
@@ -20,18 +22,8 @@ jobs:
         run: |
           pip install yfinance pandas numpy requests
 
-      - name: DOSYA TEŞHİSİ
-        run: |
-          echo "=== DOSYA LİSTESİ ==="
-          ls -la
-          echo "=== PY DOSYALARI ==="
-          ls *.py || true
-          echo "=== bist_fund_system.py İLK 10 SATIR ==="
-          head -10 bist_fund_system.py || echo "DOSYA YOK"
-          echo "==============================="
-
-      - name: BOTU ÇALIŞTIR
+      - name: BIST AI motorunu çalıştır
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python bist_fund_system.py
+        run: python bist_ai.py
