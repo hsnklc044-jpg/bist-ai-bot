@@ -1,4 +1,8 @@
-raise Exception("BEN BURADAYIM")
+# ====== TEŞHİS AMAÇLI BİLEREK HATA ======
+raise Exception("BEN BURADAYIM — DOĞRU DOSYA ÇALIŞIYOR")
+
+
+# ====== AŞAĞISI NORMALDE ÇALIŞMAYACAK ======
 import os
 import requests
 import traceback
@@ -12,7 +16,6 @@ TELEGRAM_CHAT_ID = os.getenv("1790584407")
 
 
 def send(msg):
-    """Telegram mesajı gönder"""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         print("Telegram ENV eksik")
         return
@@ -33,7 +36,6 @@ BIST = [
 
 
 def hesapla():
-    """Portföy hesapla"""
     sonuc = []
 
     for s in BIST:
@@ -70,11 +72,8 @@ def hesapla():
 def main():
     try:
         send("🚀 AI motoru başladı")
-
         mesaj = hesapla()
-
         send(mesaj)
-
     except Exception:
         send("❌ HATA\n\n" + traceback.format_exc())
 
