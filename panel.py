@@ -1,61 +1,95 @@
-from flask import Flask, request, Response
-import pandas as pd
-import yfinance as yf
+from flask import Flask, request, render_template_string, redirect
 import os
 
 app = Flask(__name__)
 
-USERNAME = os.getenv("PANEL_USER", "admin")
-PASSWORD = os.getenv("PANEL_PASS", "1234")
+# Render environment variable'dan şifreyi al
+PANEL_PASSWORD = os.environ.get("PANEL_PASSWORD", "1234")
 
-HISSELER = ["ASELS.IS","TUPRS.IS","KCHOL.IS","SISE.IS","YKBNK.IS","AKBNK.IS","BIMAS.IS","THYAO.IS"]
+LOGIN_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>BIST AI Panel</title>
+    <style>
+        body {
+            background:#0b1b33;
+            display:flex;
+            justify-content:center;
+            align-items:center;
+            height:100vh;
+            font-family:Arial;
+        }
+        .box {
+            background:#1f2e4a;
+            padding:40px;
+            border-radius:12px;
+            text-align:center;
+            color:white;
+            width:300px;
+        }
+        input {
+            padding:10px;
+            width:90%;
+            margin-top:10px;
+            border-radius:6px;
+            border:none;
+        }
+        button {
+            margin-top:15px;
+            padding:10px 20px;
+            background:#22c55e;
+            border:none;
+            border-radius:8px;
+            color:white;
+            font-weight:bold;
+            cursor:pointer;
+        }
+        .err {color:#ff4d4d; margin-top:10px;}
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h2>🔐 BIST AI Panel</h2>
+        <form method="post">
+            <input type="password" name="password" placeholder="Şifre giriniz">
+            <br>
+            <button type="submit">Giriş Yap</button>
+        </form>
+        {% if error %}
+        <div class="err">❌ Hatalı şifre</div>
+        {% endif %}
+    </div>
+</body>
+</html>
+"""
+
+PANEL_HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Panel</title>
+</head>
+<body style="background:#0b1b33;color:white;text-align:center;padding-top:80px;">
+    <h1>📊 BIST AI PANEL AKTİF</h1>
+    <p>Bot başarıyla çalışıyor.</p>
+</body>
+</html>
+"""
+
+@app.route("/", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        if request.form.get("password") == PANEL_PASSWORD:
+            return redirect("/panel")
+        return render_template_string(LOGIN_HTML, error=True)
+
+    return render_template_string(LOGIN_HTML, error=False)
 
 
-def check_auth(username, password):
-    return username == USERNAME and password == PASSWORD
-
-
-def authenticate():
-    return Response(
-        "Giriş gerekli", 401,
-        {"WWW-Authenticate": 'Basic realm="Login Required"'}
-    )
-
-
-def requires_auth(f):
-    def decorated(*args, **kwargs):
-        auth = request.authorization
-        if not auth or not check_auth(auth.username, auth.password):
-            return authenticate()
-        return f(*args, **kwargs)
-    decorated.__name__ = f.__name__
-    return decorated
-
-
-@app.route("/")
-@requires_auth
+@app.route("/panel")
 def panel():
-    data = yf.download(HISSELER, period="1y")["Close"]
-
-    returns = data.pct_change().dropna()
-    portfoy = returns.mean(axis=1).cumsum()
-
-    toplam_getiri = round(portfoy.iloc[-1] * 100, 2)
-    sharpe = round((returns.mean().mean() / returns.std().mean()) * (252 ** 0.5), 2)
-    max_dd = round((portfoy - portfoy.cummax()).min() * 100, 2)
-
-    html = f"""
-    <h1>📊 BIST AI PANEL</h1>
-    <h2>Toplam Getiri: %{toplam_getiri}</h2>
-    <h2>Sharpe: {sharpe}</h2>
-    <h2>Max Drawdown: %{max_dd}</h2>
-    <h3>Portföy:</h3>
-    <ul>
-        {''.join(f"<li>{h}</li>" for h in HISSELER)}
-    </ul>
-    """
-
-    return html
+    return render_template_string(PANEL_HTML)
 
 
 if __name__ == "__main__":
