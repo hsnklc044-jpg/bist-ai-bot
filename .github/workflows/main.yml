@@ -1,12 +1,12 @@
-name: BIST AI BACKTEST
+name: BIST AI SYSTEM
 
 on:
   schedule:
-    - cron: "0 7 1 * *"   # Her ayın 1'i saat 10:00 TR
+    - cron: "0 7 * * *"   # Her gün saat 10:00 (TR)
   workflow_dispatch:
 
 jobs:
-  run-backtest:
+  run-ai:
     runs-on: ubuntu-latest
 
     steps:
@@ -21,8 +21,10 @@ jobs:
       - name: Kütüphaneleri yükle
         run: pip install yfinance pandas numpy requests
 
-      - name: Backtest çalıştır
+      - name: AI sistemi çalıştır
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python backtest.py
+        run: |
+          python backtest.py
+          python panel_data.py
