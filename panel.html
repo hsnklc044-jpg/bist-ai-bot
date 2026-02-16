@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <title>BIST AI Panel</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0f172a;
+      color: white;
+      text-align: center;
+      padding-top: 100px;
+    }
+    .box {
+      background: #1e293b;
+      display: inline-block;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.4);
+    }
+    input, button {
+      padding: 10px;
+      margin-top: 10px;
+      border-radius: 6px;
+      border: none;
+      width: 200px;
+    }
+    button {
+      background: #22c55e;
+      color: white;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div class="box">
+  <h1>🔐 BIST AI Panel</h1>
+  <p>Şifre giriniz</p>
+
+  <input type="password" id="sifre" placeholder="Şifre">
+  <br>
+  <button onclick="giris()">Giriş Yap</button>
+
+  <p id="sonuc"></p>
+</div>
+
+<script>
+function giris() {
+  const sifre = document.getElementById("sifre").value;
+
+  if (sifre === "1234") {
+    document.getElementById("sonuc").innerHTML = "✅ Giriş başarılı";
+  } else {
+    document.getElementById("sonuc").innerHTML = "❌ Hatalı şifre";
+  }
+}
+</script>
+
+</body>
+</html>
