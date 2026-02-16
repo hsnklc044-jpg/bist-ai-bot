@@ -1,46 +1,57 @@
-from flask import Flask, request, jsonify
 import os
+from flask import Flask, request
 import requests
 
 app = Flask(__name__)
 
-PANEL_PASSWORD = os.getenv("PANEL_PASSWORD")
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-
-# Telegram mesaj gönderme fonksiyonu
-def send_telegram(chat_id, text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": chat_id, "text": text})
+PANEL_PASSWORD = "44Dupduru--"
+TELEGRAM_TOKEN = "8507109549:AAG_xNWSP1-g4qlNw78uJyqyyHC80Inin1w"
+CHAT_ID = "1790584407"
 
 
-# Ana sayfa
 @app.route("/")
 def home():
-    return """
-    <h1>BIST AI PANEL AKTİF</h1>
-    <p>Bot başarıyla çalışıyor.</p>
-    """
+    return "📊 BIST AI PANEL AKTİF\nBot başarıyla çalışıyor."
 
 
-# Telegram webhook endpoint
+# TELEGRAM WEBHOOK
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    data = request.json
+    data = request.get_json()
 
     if "message" in data:
         chat_id = data["message"]["chat"]["id"]
         text = data["message"].get("text", "")
 
+        # CHAT_ID otomatik kaydet
+        global CHAT_ID
+        CHAT_ID = chat_id
+
         if text == "/start":
-            send_telegram(chat_id, "🤖 BIST AI bot aktif çalışıyor.")
-
-        elif text == "/panel":
-            send_telegram(chat_id, "🔐 Panel şifresi gerekli.")
-
+            send_telegram(chat_id, "🤖 BIST AI bot aktif çalışıyor.\nChat ID kaydedildi ✅")
         else:
-            send_telegram(chat_id, "Komut alınamadı.")
+            send_telegram(chat_id, "Komut alındı: " + text)
 
-    return jsonify({"ok": True})
+    return "ok", 200
+
+
+# DIŞARIDAN MESAJ GÖNDERME FONKSİYONU
+@app.route("/send-test")
+def send_test():
+    if not CHAT_ID:
+        return "CHAT_ID yok", 400
+
+    send_telegram(CHAT_ID, "🚀 Test mesajı başarılı!")
+    return "Gönderildi", 200
+
+
+def send_telegram(chat_id, message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message
+    }
+    requests.post(url, json=payload)
 
 
 if __name__ == "__main__":
