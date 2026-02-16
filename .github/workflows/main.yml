@@ -2,11 +2,11 @@ name: BIST AI SYSTEM
 
 on:
   schedule:
-    - cron: "0 7 * * *"   # Her gün saat 10:00 (TR)
+    - cron: "5 7 * * *"
   workflow_dispatch:
 
 jobs:
-  run-ai:
+  run-bot:
     runs-on: ubuntu-latest
 
     steps:
@@ -22,9 +22,6 @@ jobs:
         run: pip install yfinance pandas numpy requests
 
       - name: AI sistemi çalıştır
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python backtest.py
           python panel_data.py
