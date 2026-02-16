@@ -1,61 +1,42 @@
-<!DOCTYPE html>
-<html lang="tr">
-<head>
-  <meta charset="UTF-8">
-  <title>BIST AI Panel</title>
-  <style>
-    body {
-      font-family: Arial, sans-serif;
-      background: #0f172a;
-      color: white;
-      text-align: center;
-      padding-top: 100px;
+import os
+from flask import Flask, request
+import requests
+
+app = Flask(__name__)
+
+PANEL_PASSWORD = os.getenv("PANEL_PASSWORD")
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+# Ana sayfa (panel çalışıyor mu testi)
+@app.route("/")
+def home():
+    return "📊 BIST AI PANEL AKTİF\nBot başarıyla çalışıyor."
+
+# TELEGRAM WEBHOOK
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    data = request.get_json()
+
+    if "message" in data:
+        chat_id = data["message"]["chat"]["id"]
+        text = data["message"].get("text", "")
+
+        if text == "/start":
+            send_telegram(chat_id, "🤖 BIST AI bot aktif çalışıyor.")
+        else:
+            send_telegram(chat_id, "Komut alındı: " + text)
+
+    return "ok", 200
+
+
+def send_telegram(chat_id, message):
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": chat_id,
+        "text": message
     }
-    .box {
-      background: #1e293b;
-      display: inline-block;
-      padding: 40px;
-      border-radius: 12px;
-      box-shadow: 0 0 20px rgba(0,0,0,0.4);
-    }
-    input, button {
-      padding: 10px;
-      margin-top: 10px;
-      border-radius: 6px;
-      border: none;
-      width: 200px;
-    }
-    button {
-      background: #22c55e;
-      color: white;
-      cursor: pointer;
-    }
-  </style>
-</head>
-<body>
+    requests.post(url, json=payload)
 
-<div class="box">
-  <h1>🔐 BIST AI Panel</h1>
-  <p>Şifre giriniz</p>
 
-  <input type="password" id="sifre" placeholder="Şifre">
-  <br>
-  <button onclick="giris()">Giriş Yap</button>
-
-  <p id="sonuc"></p>
-</div>
-
-<script>
-function giris() {
-  const sifre = document.getElementById("sifre").value;
-
-  if (sifre === "1234") {
-    document.getElementById("sonuc").innerHTML = "✅ Giriş başarılı";
-  } else {
-    document.getElementById("sonuc").innerHTML = "❌ Hatalı şifre";
-  }
-}
-</script>
-
-</body>
-</html>
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
