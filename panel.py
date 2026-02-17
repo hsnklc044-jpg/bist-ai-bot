@@ -4,11 +4,11 @@ import requests
 
 app = Flask(__name__)
 
-PANEL_PASSWORD = "44Dupduru--"
-TELEGRAM_TOKEN = "8507109549:AAG_xNWSP1-g4qlNw78uJyqyyHC80Inin1w"
-CHAT_ID = "1790584407"
+PANEL_PASSWORD = 44Dupduru--
+TELEGRAM_TOKEN = "8507109549:AAHIc8UaN0CboGSzji0S6xfC8D7l2hls2AA"
 
 
+# Ana sayfa (panel çalışıyor mu testi)
 @app.route("/")
 def home():
     return "📊 BIST AI PANEL AKTİF\nBot başarıyla çalışıyor."
@@ -19,30 +19,23 @@ def home():
 def webhook():
     data = request.get_json()
 
+    # DEBUG LOG
+    print("GELEN DATA:", data)
+
     if "message" in data:
         chat_id = data["message"]["chat"]["id"]
         text = data["message"].get("text", "")
 
-        # CHAT_ID otomatik kaydet
-        global CHAT_ID
-        CHAT_ID = chat_id
+        # DEBUG LOG
+        print("CHAT ID:", chat_id)
+        print("MESAJ:", text)
 
         if text == "/start":
-            send_telegram(chat_id, "🤖 BIST AI bot aktif çalışıyor.\nChat ID kaydedildi ✅")
+            send_telegram(chat_id, "🤖 BIST AI bot aktif çalışıyor.")
         else:
             send_telegram(chat_id, "Komut alındı: " + text)
 
     return "ok", 200
-
-
-# DIŞARIDAN MESAJ GÖNDERME FONKSİYONU
-@app.route("/send-test")
-def send_test():
-    if not CHAT_ID:
-        return "CHAT_ID yok", 400
-
-    send_telegram(CHAT_ID, "🚀 Test mesajı başarılı!")
-    return "Gönderildi", 200
 
 
 def send_telegram(chat_id, message):
@@ -51,8 +44,13 @@ def send_telegram(chat_id, message):
         "chat_id": chat_id,
         "text": message
     }
-    requests.post(url, json=payload)
+
+    response = requests.post(url, json=payload)
+
+    # TELEGRAM CEVABI LOG
+    print("TELEGRAM RESPONSE:", response.text)
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.environ.get("PORT", 10000))  # Render için doğru port
+    app.run(host="0.0.0.0", port=port)
