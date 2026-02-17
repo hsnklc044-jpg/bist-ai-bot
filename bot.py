@@ -1,7 +1,6 @@
 import os
 import time
 import requests
-from ai_signal_engine import generate_signals
 
 BOT_TOKEN = os.getenv("8507109549:AAGekcvM9FbnoFkfJXVCqR4kQTJxzJqbMAQ")
 CHAT_ID = os.getenv("1790584407")
@@ -16,12 +15,7 @@ def main():
 
     while True:
         try:
-            signals = generate_signals()
-
-            if signals:
-                for s in signals:
-                    msg = f"📈 {s['symbol']}\nSinyal: {s['signal']}\nFiyat: {s['price']}"
-                    send_telegram(msg)
+            send_telegram("📊 Sistem çalışıyor...")
 
         except Exception as e:
             send_telegram(f"Hata: {e}")
