@@ -1,44 +1,33 @@
 import os
-from flask import Flask, request
+import time
 import requests
 
-app = Flask(__name__)
+TOKEN = os.environ.get("8500392750:AAHprLseYkYGlF6zTw8YJ4doFLqwwvOSjVM")
+URL = f"https://api.telegram.org/bot{TOKEN}"
 
-TELEGRAM_TOKEN = os.environ.get("8500392750:AAHprLseYkYGlF6zTw8YJ4doFLqwwvOSjVM")
+offset = None
 
+print("BOT BAŞLADI")
 
-@app.route("/")
-def home():
-    return "OK", 200
-
-
-def send_telegram(chat_id, message):
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+while True:
     try:
-        requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=10)
+        r = requests.get(f"{URL}/getUpdates", params={"offset": offset, "timeout": 30})
+        data = r.json()
+
+        for update in data["result"]:
+            offset = update["update_id"] + 1
+
+            if "message" in update:
+                chat_id = update["message"]["chat"]["id"]
+                text = update["message"].get("text", "")
+
+                if text == "/start":
+                    msg = "🤖 BIST AI aktif.\nSistem çalışıyor."
+                else:
+                    msg = f"Komut: {text}"
+
+                requests.post(f"{URL}/sendMessage", json={"chat_id": chat_id, "text": msg})
+
     except Exception as e:
-        print("Telegram hata:", e)
-
-
-@app.route("/webhook", methods=["POST"])
-def webhook():
-    data = request.get_json(silent=True)
-
-    if not data:
-        return "no data", 200
-
-    if "message" in data:
-        chat_id = data["message"]["chat"]["id"]
-        text = data["message"].get("text", "")
-
-        if text == "/start":
-            send_telegram(chat_id, "🤖 BIST AI aktif.\nSistem çalışıyor.")
-        else:
-            send_telegram(chat_id, f"Komut alındı: {text}")
-
-    return "ok", 200
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
+        print("HATA:", e)
+        time.sleep(5)
