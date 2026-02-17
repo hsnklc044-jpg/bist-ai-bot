@@ -2,7 +2,7 @@ import os
 import time
 import requests
 
-TOKEN = os.environ.get("8500392750:AAHprLseYkYGlF6zTw8YJ4doFLqwwvOSjVM")
+TOKEN = os.environ.get("TELEGRAM_TOKEN")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
 offset = None
@@ -13,6 +13,11 @@ while True:
     try:
         r = requests.get(f"{URL}/getUpdates", params={"offset": offset, "timeout": 30})
         data = r.json()
+
+        # result yoksa devam et
+        if not data.get("result"):
+            time.sleep(2)
+            continue
 
         for update in data["result"]:
             offset = update["update_id"] + 1
