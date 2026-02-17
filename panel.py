@@ -2,7 +2,7 @@ import os
 import time
 import requests
 
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TOKEN = os.environ.get("8500392750:AAHprLseYkYGlF6zTw8YJ4doFLqwwvOSjVM")
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
 offset = None
@@ -14,8 +14,12 @@ while True:
         r = requests.get(f"{URL}/getUpdates", params={"offset": offset, "timeout": 30})
         data = r.json()
 
-        # result yoksa devam et
-        if not data.get("result"):
+        # result yoksa bekle ve devam et
+        if "result" not in data:
+            time.sleep(2)
+            continue
+
+        if not data["result"]:
             time.sleep(2)
             continue
 
