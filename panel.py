@@ -14,16 +14,12 @@ while True:
         r = requests.get(f"{URL}/getUpdates", params={"offset": offset, "timeout": 30})
         data = r.json()
 
-        # result yoksa bekle ve devam et
-        if "result" not in data:
-            time.sleep(2)
+        if not data.get("ok"):
+            print("Telegram hata:", data)
+            time.sleep(3)
             continue
 
-        if not data["result"]:
-            time.sleep(2)
-            continue
-
-        for update in data["result"]:
+        for update in data.get("result", []):
             offset = update["update_id"] + 1
 
             if "message" in update:
