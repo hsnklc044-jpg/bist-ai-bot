@@ -4,7 +4,7 @@ import requests
 
 app = Flask(__name__)
 
-TELEGRAM_TOKEN = os.getenv("8507109549:AAEj56EhY_-_B8Om4QA_rvqaU0QsqeYEdtc")
+TELEGRAM_TOKEN = os.getenv("8507109549:AAGekcvM9FbnoFkfJXVCqR4kQTJxzJqbMAQ")
 
 
 # Ana sayfa
