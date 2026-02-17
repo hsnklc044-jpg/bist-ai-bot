@@ -4,7 +4,7 @@ import requests
 
 app = Flask(__name__)
 
-PANEL_PASSWORD = 44Dupduru--
+PANEL_PASSWORD = os.getenv("44Dupduru--")
 TELEGRAM_TOKEN = "8507109549:AAHIc8UaN0CboGSzji0S6xfC8D7l2hls2AA"
 
 
