@@ -4,6 +4,9 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+print("TOKEN:", TOKEN)
+print("CHAT_ID:", CHAT_ID)
+
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
