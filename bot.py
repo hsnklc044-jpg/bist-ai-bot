@@ -11,6 +11,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+    print("TOKEN:", TOKEN)
     app = ApplicationBuilder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
 
