@@ -4,4 +4,3 @@ numpy
 requests
 yfinance
 ta
-# redeploy trigger
