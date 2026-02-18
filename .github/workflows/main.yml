@@ -23,5 +23,5 @@ jobs:
 
       - name: AI sistemi çalıştır
         run: |
-          python backtest.py
+          python bot.py
           python panel_data.py
