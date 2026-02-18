@@ -9,14 +9,12 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 
-# -------- Telegram mesaj gönder --------
 def send_telegram(message: str):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
     requests.post(url, json=payload, timeout=10)
 
 
-# -------- RSI hesaplama --------
 def calculate_rsi(series, period=14):
     delta = series.diff()
     gain = (delta.where(delta > 0, 0)).rolling(period).mean()
@@ -25,7 +23,6 @@ def calculate_rsi(series, period=14):
     return 100 - (100 / (1 + rs))
 
 
-# -------- Profesyonel filtre --------
 def analyze_stock(symbol):
     try:
         df = yf.download(symbol, period="1y", interval="1d", progress=False)
@@ -36,38 +33,44 @@ def analyze_stock(symbol):
         df["MA50"] = df["Close"].rolling(50).mean()
         df["MA200"] = df["Close"].rolling(200).mean()
         df["RSI"] = calculate_rsi(df["Close"])
-        df["VOL_AVG10"] = df["Volume"].rolling(10).mean()
+        df["VOL_AVG20"] = df["Volume"].rolling(20).mean()
 
         last = df.iloc[-1]
 
-        # --- Ana trend ---
+        # 1️⃣ Ana trend
         if last["MA50"] <= last["MA200"]:
             return None
 
-        # --- RSI sağlıklı bölge ---
-        if not (48 <= last["RSI"] <= 62):
+        # 2️⃣ Sağlıklı RSI
+        if not (45 <= last["RSI"] <= 65):
             return None
 
-        # --- Hacim artışı ---
-        if last["Volume"] < 1.3 * last["VOL_AVG10"]:
+        # 3️⃣ Hacim teyidi (BIST'e uygun)
+        if last["Volume"] < 1.1 * last["VOL_AVG20"]:
             return None
 
-        # --- Zirveye çok yakınsa ele ---
-        high_60 = df["Close"].rolling(60).max().iloc[-1]
-        if last["Close"] > 0.85 * high_60:
-            return None
+        # 4️⃣ Zirveye mesafe (çok katı değil)
+        high_90 = df["Close"].rolling(90).max().iloc[-1]
+        distance_score = (high_90 - last["Close"]) / high_90
+
+        # 5️⃣ Güç puanı
+        score = (
+            (last["RSI"] / 100) * 0.4 +
+            (distance_score) * 0.3 +
+            (last["MA50"] / last["MA200"]) * 0.3
+        )
 
         return {
             "symbol": symbol,
             "price": round(last["Close"], 2),
             "rsi": round(last["RSI"], 1),
+            "score": round(score, 3),
         }
 
     except Exception:
         return None
 
 
-# -------- BIST hisseleri (çekirdek liste) --------
 BIST_SYMBOLS = [
     "ASELS.IS", "SISE.IS", "EREGL.IS", "TUPRS.IS", "BIMAS.IS",
     "KCHOL.IS", "SAHOL.IS", "AKBNK.IS", "YKBNK.IS", "THYAO.IS",
@@ -75,7 +78,6 @@ BIST_SYMBOLS = [
 ]
 
 
-# -------- Günlük tarama --------
 def run_daily_scan():
     results = []
 
@@ -84,25 +86,22 @@ def run_daily_scan():
         if data:
             results.append(data)
 
-    # En güçlü 5 hisse
-    results = sorted(results, key=lambda x: x["rsi"])[:5]
+    # 🔥 Skora göre sırala
+    results = sorted(results, key=lambda x: x["score"], reverse=True)[:5]
 
-    # -------- Mesaj oluştur --------
     today = datetime.now().strftime("%d %B %Y")
 
     if not results:
-        message = f"📊 {today}\n\nUygun uzun vade hissesi bulunamadı."
-        send_telegram(message)
+        send_telegram(f"📊 {today}\n\nUygun uzun vade hissesi bulunamadı.")
         return
 
-    message = f"📊 {today} — Uzun Vade Güçlü Hisseler\n\n"
+    message = f"📊 {today} — Uzun Vade AI Seçimleri\n\n"
 
     for r in results:
-        message += f"• {r['symbol']} | Fiyat: {r['price']} | RSI: {r['rsi']}\n"
+        message += f"• {r['symbol']} | {r['price']}₺ | RSI {r['rsi']} | Skor {r['score']}\n"
 
     send_telegram(message)
 
 
-# -------- Manuel çalıştırma --------
 if __name__ == "__main__":
     run_daily_scan()
