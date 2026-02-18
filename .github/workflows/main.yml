@@ -2,7 +2,7 @@ name: BIST AI SYSTEM
 
 on:
   schedule:
-    - cron: "5 7 * * *"
+    - cron: "5 7 * * *"   # Her gün 07:05
   workflow_dispatch:
 
 jobs:
@@ -19,7 +19,28 @@ jobs:
           python-version: "3.11"
 
       - name: Kütüphaneleri yükle
-        run: pip install yfinance pandas numpy requests
+        run: pip install yfinance pandas numpy requests python-telegram-bot
 
       - name: AI sistemi çalıştır
-        run: python ai_signal_engine.py
+        run: python bot.py
+
+      # 🔎 TELEGRAM TEST ADIMI (KRİTİK)
+      - name: Telegram test mesajı
+        run: |
+          python - <<EOF
+          import os, requests
+
+          token = os.getenv("TELEGRAM_TOKEN")
+          chat = os.getenv("TELEGRAM_CHAT_ID")
+
+          print("TOKEN:", token)
+          print("CHAT:", chat)
+
+          if token and chat:
+              requests.post(
+                  f"https://api.telegram.org/bot{token}/sendMessage",
+                  json={"chat_id": chat, "text": "✅ TEST MESAJI GELDİ"}
+              )
+          else:
+              print("ENV DEĞİŞKENLERİ YOK!")
+          EOF
