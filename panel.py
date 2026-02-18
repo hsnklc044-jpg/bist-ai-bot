@@ -2,8 +2,8 @@ import os
 import time
 import requests
 
-TOKEN = os.environ.get("8500392750:AAHprLseYkYGlF6zTw8YJ4doFLqwwvOSjVM")
-URL = f"https://api.telegram.org/bot{TOKEN}"
+TOKEN = os.environ.get("8500392750:AAEL5a9GK-upQheIEre9xnECuhtPfzJ_LGw")
+URL = f"https://api.telegram.org/bot{8500392750:AAEL5a9GK-upQheIEre9xnECuhtPfzJ_LGw}"
 
 offset = None
 
