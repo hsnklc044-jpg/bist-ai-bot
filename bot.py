@@ -2,25 +2,39 @@ import os
 import time
 import requests
 
-BOT_TOKEN = os.getenv("8507109549:AAGekcvM9FbnoFkfJXVCqR4kQTJxzJqbMAQ")
-CHAT_ID = os.getenv("1790584407")
+TOKEN = os.environ.get("TOKEN")
+URL = f"https://api.telegram.org/bot{TOKEN}"
 
-def send_telegram(message):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    data = {"chat_id": CHAT_ID, "text": message}
-    requests.post(url, data=data)
+offset = None
 
-def main():
-    send_telegram("🤖 BIST AI BOT AKTİF")
+print("BOT BASLADI")
 
-    while True:
-        try:
-            send_telegram("📊 Sistem çalışıyor...")
+while True:
+    try:
+        r = requests.get(f"{URL}/getUpdates", params={"offset": offset, "timeout": 30})
+        data = r.json()
 
-        except Exception as e:
-            send_telegram(f"Hata: {e}")
+        if not data.get("ok"):
+            print("Telegram hata:", data)
+            time.sleep(5)
+            continue
 
-        time.sleep(900)  # 15 dk
+        for update in data.get("result", []):
+            offset = update["update_id"] + 1
 
-if __name__ == "__main__":
-    main()
+            if "message" in update:
+                chat_id = update["message"]["chat"]["id"]
+                text = update["message"].get("text", "")
+
+                if text.lower() == "/start":
+                    msg = "🤖 BIST AI aktif.\nSistem çalışıyor."
+                else:
+                    msg = f"Komut alındı: {text}"
+
+                requests.post(f"{URL}/sendMessage", json={"chat_id": chat_id, "text": msg})
+
+        time.sleep(1)
+
+    except Exception as e:
+        print("HATA:", e)
+        time.sleep(5)
