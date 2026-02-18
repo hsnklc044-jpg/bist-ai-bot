@@ -4,5 +4,3 @@ numpy
 requests
 yfinance
 ta
-
-
