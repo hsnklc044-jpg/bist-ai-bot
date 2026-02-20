@@ -8,7 +8,7 @@ class DataEngine:
     """
 
     def __init__(self):
-        self.period = "6mo"
+        self.period = "2y"
         self.interval = "1d"
 
     def get_price_data(self, symbol: str) -> pd.DataFrame:
