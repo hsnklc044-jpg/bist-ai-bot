@@ -1,42 +1,27 @@
-class ScoringEngine:
+def calculate_score(df):
+    score = 0
 
-    def calculate_score(self, df):
+    # Eğer MultiIndex varsa düzleştir
+    if isinstance(df.columns, tuple) or hasattr(df.columns, "levels"):
+        df.columns = [col[0] if isinstance(col, tuple) else col for col in df.columns]
 
-        if df is None or df.empty:
-            return 0, "VERİ YETERSİZ"
+    latest = df.iloc[-1]
 
-        required_cols = ["Close", "MA20", "MA50", "RSI"]
+    close_price = float(latest["Close"])
+    ma20 = float(latest["MA20"])
+    ma50 = float(latest["MA50"])
 
-        for col in required_cols:
-            if col not in df.columns:
-                return 0, "VERİ YETERSİZ"
+    if close_price > ma20:
+        score += 1
 
-        latest = df.iloc[-1]
+    if ma20 > ma50:
+        score += 1
 
-        if latest.isna().any():
-            return 0, "VERİ YETERSİZ"
+    if score >= 2:
+        signal = "AL"
+    elif score == 1:
+        signal = "NÖTR"
+    else:
+        signal = "SAT"
 
-        score = 0
-
-        close_price = float(latest["Close"])
-        ma20 = float(latest["MA20"])
-        ma50 = float(latest["MA50"])
-        rsi = float(latest["RSI"])
-
-        if close_price > ma20:
-            score += 1
-
-        if close_price > ma50:
-            score += 1
-
-        if rsi < 30:
-            score += 1
-
-        if score >= 3:
-            signal = "AL"
-        elif score == 2:
-            signal = "NÖTR"
-        else:
-            signal = "SAT"
-
-        return score, signal
+    return score, signal
