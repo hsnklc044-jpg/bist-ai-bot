@@ -1,9 +1,11 @@
 import pandas as pd
 import yfinance as yf
-from datetime import datetime, timedelta
 
 
 class DataEngine:
+    """
+    BIST hisseleri için veri çekme ve teknik indikatör hesaplama motoru
+    """
 
     def __init__(self):
         self.period = "6mo"
@@ -11,8 +13,8 @@ class DataEngine:
 
     def get_price_data(self, symbol: str) -> pd.DataFrame:
         """
-        Hisse verisini Yahoo Finance üzerinden çeker.
-        BIST hisseleri için '.IS' uzantısı eklenir.
+        Yahoo Finance üzerinden BIST hisse verisini çeker.
+        Örnek: ASELS -> ASELS.IS
         """
 
         if not symbol.endswith(".IS"):
@@ -33,7 +35,12 @@ class DataEngine:
 
     def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        Temel teknik indikatörleri hesaplar.
+        Teknik indikatörleri hesaplar:
+        - MA20
+        - MA50
+        - MA200
+        - RSI
+        - Hacim Ortalaması
         """
 
         df["MA20"] = df["Close"].rolling(window=20).mean()
@@ -46,11 +53,20 @@ class DataEngine:
 
         return df
 
-    def calculate_rsi(self, series: pd.Series, period: int) -> pd.Series:
-        delta = series.diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=period).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
+    def calculate_rsi(self, series: pd.Series, period: int = 14) -> pd.Series:
+        """
+        RSI hesaplama fonksiyonu
+        """
 
-        rs = gain / loss
+        delta = series.diff()
+
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+
+        avg_gain = gain.rolling(window=period).mean()
+        avg_loss = loss.rolling(window=period).mean()
+
+        rs = avg_gain / avg_loss
         rsi = 100 - (100 / (1 + rs))
+
         return rsi
