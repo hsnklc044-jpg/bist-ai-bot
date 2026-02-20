@@ -1,72 +1,72 @@
 import pandas as pd
-import yfinance as yf
 
-
-class DataEngine:
+class ScoringEngine:
     """
-    BIST hisseleri için veri çekme ve teknik indikatör hesaplama motoru
+    Teknik indikatörlere göre hisse puanlama sistemi
     """
 
-    def __init__(self):
-        self.period = "2y"
-        self.interval = "1d"
+    def calculate_score(self, df: pd.DataFrame) -> dict:
 
-    def get_price_data(self, symbol: str) -> pd.DataFrame:
-        """
-        Yahoo Finance üzerinden BIST hisse verisini çeker.
-        Örnek: ASELS -> ASELS.IS
-        """
+        # DEBUG
+        print("Toplam veri uzunluğu:", len(df))
+        print("Son 5 veri:")
+        print(df.tail())
 
-        if not symbol.endswith(".IS"):
-            symbol = f"{symbol}.IS"
+        if df is None or df.empty:
+            return {
+                "score": 0,
+                "signal": "VERİ YETERSİZ"
+            }
 
-        df = yf.download(
-            symbol,
-            period=self.period,
-            interval=self.interval,
-            progress=False
-        )
-
-        if df.empty:
-            return pd.DataFrame()
-
-        df.dropna(inplace=True)
-        return df
-
-    def calculate_indicators(self, df: pd.DataFrame) -> pd.DataFrame:
-        """
-        Teknik indikatörleri hesaplar:
-        - MA20
-        - MA50
-        - MA200
-        - RSI
-        - Hacim Ortalaması
-        """
-
-        df["MA20"] = df["Close"].rolling(window=20).mean()
+        # Hareketli Ortalamalar
         df["MA50"] = df["Close"].rolling(window=50).mean()
         df["MA200"] = df["Close"].rolling(window=200).mean()
 
-        df["RSI"] = self.calculate_rsi(df["Close"], 14)
+        # RSI Hesaplama
+        delta = df["Close"].diff()
+        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
+        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
+        rs = gain / loss
+        df["RSI"] = 100 - (100 / (1 + rs))
 
-        df["Volume_MA20"] = df["Volume"].rolling(window=20).mean()
+        # NaN temizle
+        df = df.dropna()
 
-        return df
+        print("NaN sonrası veri uzunluğu:", len(df))
 
-    def calculate_rsi(self, series: pd.Series, period: int = 14) -> pd.Series:
-        """
-        RSI hesaplama fonksiyonu
-        """
+        if len(df) < 1:
+            return {
+                "score": 0,
+                "signal": "VERİ YETERSİZ"
+            }
 
-        delta = series.diff()
+        latest = df.iloc[-1]
 
-        gain = delta.clip(lower=0)
-        loss = -delta.clip(upper=0)
+        score = 0
 
-        avg_gain = gain.rolling(window=period).mean()
-        avg_loss = loss.rolling(window=period).mean()
+        # Trend
+        if latest["MA50"] > latest["MA200"]:
+            score += 30
 
-        rs = avg_gain / avg_loss
-        rsi = 100 - (100 / (1 + rs))
+        # Fiyat MA50 üstünde mi?
+        if latest["Close"] > latest["MA50"]:
+            score += 20
 
-        return rsi
+        # RSI bölgesi
+        if 50 < latest["RSI"] < 70:
+            score += 20
+        elif latest["RSI"] >= 70:
+            score -= 10
+
+        # Genel yorum
+        if score >= 60:
+            signal = "AL"
+        elif 40 <= score < 60:
+            signal = "BEKLE"
+        else:
+            signal = "ZAYIF"
+
+        return {
+            "score": score,
+            "signal": signal
+        }
