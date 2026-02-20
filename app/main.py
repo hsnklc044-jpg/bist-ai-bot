@@ -16,12 +16,32 @@ def root():
 @app.get("/analyze/{symbol}")
 def analyze_stock(symbol: str):
 
+    # 1️⃣ Veri çek
     df = data_engine.get_price_data(symbol)
 
-    result = scoring_engine.calculate_score(df)
+    if df is None or df.empty:
+        return {
+            "symbol": symbol,
+            "score": 0,
+            "signal": "VERİ YETERSİZ"
+        }
 
+    # 2️⃣ İndikatör hesapla
+    df = data_engine.calculate_indicators(df)
+
+    if df is None or df.empty:
+        return {
+            "symbol": symbol,
+            "score": 0,
+            "signal": "VERİ YETERSİZ"
+        }
+
+    # 3️⃣ Skor hesapla
+    score, signal = scoring_engine.calculate_score(df)
+
+    # 4️⃣ JSON döndür
     return {
-        "symbol": symbol.upper(),
-        "score": result["score"],
-        "signal": result["signal"]
+        "symbol": symbol,
+        "score": score,
+        "signal": signal
     }
