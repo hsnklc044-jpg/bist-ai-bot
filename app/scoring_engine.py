@@ -1,41 +1,42 @@
-def calculate_score(self, df):
+class ScoringEngine:
 
-    # Veri kontrolü
-    if df is None or df.empty:
-        return 0, "VERİ YETERSİZ"
+    def calculate_score(self, df):
 
-    required_cols = ["Close", "MA20", "MA50", "RSI"]
-
-    for col in required_cols:
-        if col not in df.columns:
+        if df is None or df.empty:
             return 0, "VERİ YETERSİZ"
 
-    latest = df.iloc[-1]
+        required_cols = ["Close", "MA20", "MA50", "RSI"]
 
-    if latest.isna().any():
-        return 0, "VERİ YETERSİZ"
+        for col in required_cols:
+            if col not in df.columns:
+                return 0, "VERİ YETERSİZ"
 
-    score = 0
+        latest = df.iloc[-1]
 
-    close_price = float(latest["Close"])
-    ma20 = float(latest["MA20"])
-    ma50 = float(latest["MA50"])
-    rsi = float(latest["RSI"])
+        if latest.isna().any():
+            return 0, "VERİ YETERSİZ"
 
-    if close_price > ma20:
-        score += 1
+        score = 0
 
-    if close_price > ma50:
-        score += 1
+        close_price = float(latest["Close"])
+        ma20 = float(latest["MA20"])
+        ma50 = float(latest["MA50"])
+        rsi = float(latest["RSI"])
 
-    if rsi < 30:
-        score += 1
+        if close_price > ma20:
+            score += 1
 
-    if score >= 3:
-        signal = "AL"
-    elif score == 2:
-        signal = "NÖTR"
-    else:
-        signal = "SAT"
+        if close_price > ma50:
+            score += 1
 
-    return score, signal
+        if rsi < 30:
+            score += 1
+
+        if score >= 3:
+            signal = "AL"
+        elif score == 2:
+            signal = "NÖTR"
+        else:
+            signal = "SAT"
+
+        return score, signal
