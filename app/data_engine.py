@@ -1,72 +1,30 @@
 import pandas as pd
+import yfinance as yf
 
-class ScoringEngine:
+
+class DataEngine:
     """
-    Teknik indikatörlere göre hisse puanlama sistemi
+    BIST hisseleri için veri çekme ve teknik indikatör hesaplama motoru
     """
 
-    def calculate_score(self, df: pd.DataFrame) -> dict:
+    def __init__(self):
+        self.period = "2y"
+        self.interval = "1d"
 
-        # DEBUG
-        print("Toplam veri uzunluğu:", len(df))
-        print("Son 5 veri:")
-        print(df.tail())
+    def get_price_data(self, symbol: str) -> pd.DataFrame:
+        """
+        Yahoo Finance üzerinden BIST hisse verisini çeker.
+        Örnek: ASELS -> ASELS.IS
+        """
 
-        if df is None or df.empty:
-            return {
-                "score": 0,
-                "signal": "VERİ YETERSİZ"
-            }
+        if not symbol.endswith(".IS"):
+            symbol = f"{symbol}.IS"
 
-        # Hareketli Ortalamalar
-        df["MA50"] = df["Close"].rolling(window=50).mean()
-        df["MA200"] = df["Close"].rolling(window=200).mean()
+        df = yf.download(
+            symbol,
+            period=self.period,
+            interval=self.interval,
+            progress=False
+        )
 
-        # RSI Hesaplama
-        delta = df["Close"].diff()
-        gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
-        loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
-        rs = gain / loss
-        df["RSI"] = 100 - (100 / (1 + rs))
-
-        # NaN temizle
-        df = df.dropna()
-
-        print("NaN sonrası veri uzunluğu:", len(df))
-
-        if len(df) < 1:
-            return {
-                "score": 0,
-                "signal": "VERİ YETERSİZ"
-            }
-
-        latest = df.iloc[-1]
-
-        score = 0
-
-        # Trend
-        if latest["MA50"] > latest["MA200"]:
-            score += 30
-
-        # Fiyat MA50 üstünde mi?
-        if latest["Close"] > latest["MA50"]:
-            score += 20
-
-        # RSI bölgesi
-        if 50 < latest["RSI"] < 70:
-            score += 20
-        elif latest["RSI"] >= 70:
-            score -= 10
-
-        # Genel yorum
-        if score >= 60:
-            signal = "AL"
-        elif 40 <= score < 60:
-            signal = "BEKLE"
-        else:
-            signal = "ZAYIF"
-
-        return {
-            "score": score,
-            "signal": signal
-        }
+        return df
