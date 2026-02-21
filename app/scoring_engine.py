@@ -2,6 +2,7 @@ import pandas as pd
 
 
 def calculate_score(df: pd.DataFrame):
+
     score = 0
 
     latest = df.iloc[-1]
@@ -15,7 +16,7 @@ def calculate_score(df: pd.DataFrame):
     vol_avg = latest["VOL_AVG20"]
 
     # -----------------
-    # TREND (0-4)
+    # TREND
     # -----------------
     if close > ma20:
         score += 1
@@ -30,7 +31,7 @@ def calculate_score(df: pd.DataFrame):
         score += 1
 
     # -----------------
-    # MOMENTUM (0-3)
+    # MOMENTUM
     # -----------------
     if 50 < rsi <= 65:
         score += 1
@@ -43,7 +44,7 @@ def calculate_score(df: pd.DataFrame):
         score += 1
 
     # -----------------
-    # HACİM (0-3)
+    # HACİM
     # -----------------
     if volume > vol_avg:
         score += 1
@@ -52,7 +53,7 @@ def calculate_score(df: pd.DataFrame):
         score += 2
 
     # -----------------
-    # BREAKOUT (0-2)
+    # BREAKOUT
     # -----------------
     if close >= latest["HH20"]:
         score += 2
