@@ -12,7 +12,7 @@ app = FastAPI()
 # -------------------------------------------------
 @app.get("/")
 def root():
-    return {"status": "BIST Institutional Engine aktif"}
+    return {"status": "BIST Institutional Engine v2 aktif"}
 
 
 # -------------------------------------------------
@@ -31,7 +31,7 @@ def analyze_stock(symbol: str):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # ---- Göstergeler ----
+        # --- Göstergeler ---
         df["MA20"] = df["Close"].rolling(20).mean()
         df["MA50"] = df["Close"].rolling(50).mean()
 
@@ -75,7 +75,7 @@ def analyze_stock(symbol: str):
 
 
 # -------------------------------------------------
-# TOPLU KURUMSAL TARAMA
+# 2 KATMANLI KURUMSAL TARAMA
 # -------------------------------------------------
 @app.get("/scan")
 def scan_market():
@@ -85,7 +85,8 @@ def scan_market():
         "AKBNK", "TUPRS", "BIMAS", "SAHOL", "ISCTR"
     ]
 
-    results = []
+    breakout_list = []
+    preparing_list = []
 
     for symbol in BIST_LIST:
         try:
@@ -121,26 +122,36 @@ def scan_market():
 
             latest = df.iloc[-1]
 
-            # 🔥 KURUMSAL FİLTRE
+            # 🔥 BREAKOUT KATMANI
             if (
                 latest["Close"] > latest["MA20"]
                 and latest["Close"] > latest["MA50"]
                 and latest["MA20"] > latest["MA50"]
-                and latest["RSI"] > 55
-                and latest["Volume"] > latest["VOL_AVG20"]
+                and latest["RSI"] > 60
+                and latest["Volume"] > latest["VOL_AVG20"] * 1.3
+                and latest["Close"] >= latest["HH20"]
+            ):
+                breakout_list.append({
+                    "symbol": symbol,
+                    "close": float(latest["Close"])
+                })
+
+            # 🟡 HAZIRLANAN KATMANI
+            elif (
+                latest["Close"] > latest["MA20"]
+                and latest["MA20"] > latest["MA50"]
+                and latest["RSI"] > 52
                 and latest["Close"] >= latest["HH20"] * 0.97
             ):
-
-                score, signal = scoring_engine.calculate_score(df)
-
-                results.append({
+                preparing_list.append({
                     "symbol": symbol,
-                    "close": float(latest["Close"]),
-                    "score": score,
-                    "signal": signal
+                    "close": float(latest["Close"])
                 })
 
         except:
             continue
 
-    return sorted(results, key=lambda x: x["score"], reverse=True)
+    return {
+        "breakout": breakout_list,
+        "hazirlanan": preparing_list
+    }
