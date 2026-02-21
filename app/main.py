@@ -2,22 +2,20 @@ import os
 import time
 import requests
 import yfinance as yf
-import pandas as pd
 from fastapi import FastAPI, Request
-from datetime import datetime
 
 app = FastAPI()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 AUTHORIZED_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))
 
-# CACHE & MEMORY
+# MEMORY
 last_scan_time = 0
 cached_result = None
-previous_breakout_count = 0
-previous_pge = 0
+previous_breakout_count = None
+previous_pge = None
 
-CACHE_SECONDS = 300  # 5 dakika
+CACHE_SECONDS = 300  # 5 dk
 
 BIST30 = [
     "AKBNK.IS","ALARK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
@@ -44,7 +42,7 @@ def send_telegram(text):
 
 @app.get("/")
 def root():
-    return {"status": "BIST AI ELIT AKTIF"}
+    return {"status": "BIST AI HIBRIT KURUMSAL AKTIF"}
 
 def scan_market():
     global last_scan_time, cached_result
@@ -103,19 +101,22 @@ def scan_market():
         /(len(BIST30)*3)*100,2
     )
 
-    # 🔥 BREAKOUT ARTIŞ ALARMI
-    if len(breakout) > previous_breakout_count:
-        send_telegram(f"🚀 Breakout artışı! Yeni sayı: {len(breakout)}")
+    # 🔥 ALARM MANTIĞI
+    if previous_breakout_count is not None:
 
-    # 🔥 PGE KRİTİK ALARM
-    if previous_pge < 30 and pge >= 30:
-        send_telegram(f"📈 PGE 30 üstüne çıktı! (%{pge})")
+        # Breakout artışı sadece PGE >= 50 ise
+        if len(breakout) > previous_breakout_count and pge >= 50:
+            send_telegram(f"🚀 Güçlü Breakout artışı! ({len(breakout)}) PGE:%{pge}")
 
-    if previous_pge < 50 and pge >= 50:
-        send_telegram(f"💪 PGE 50 üstüne çıktı! (%{pge})")
+        # PGE eşik geçişleri
+        if previous_pge < 30 and pge >= 30:
+            send_telegram(f"📈 PGE 30 üstüne çıktı! (%{pge})")
 
-    if previous_pge < 70 and pge >= 70:
-        send_telegram(f"🚀 PGE 70 üstüne çıktı! (%{pge})")
+        if previous_pge < 50 and pge >= 50:
+            send_telegram(f"💪 PGE 50 üstüne çıktı! (%{pge})")
+
+        if previous_pge < 70 and pge >= 70:
+            send_telegram(f"🚀 PGE 70 üstüne çıktı! (%{pge})")
 
     previous_breakout_count = len(breakout)
     previous_pge = pge
@@ -141,15 +142,14 @@ async def telegram_webhook(request: Request):
         return {"ok": True}
 
     if text == "/start":
-        menu = """
-📊 BIST AI ELIT PANEL
+        send_telegram("""
+📊 BIST AI HIBRIT PANEL
 
 /scan → Anlık Tarama
 /breakout → Breakout
 /top3 → En Güçlü 3
 /yorum → Piyasa Yorumu
-"""
-        send_telegram(menu)
+""")
 
     elif text == "/scan":
         pge, _, _, _ = scan_market()
