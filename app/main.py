@@ -22,27 +22,30 @@ def analyze_stock(symbol: str):
         if df is None or df.empty:
             return {"error": "Veri bulunamadı"}
 
-        # MultiIndex gelirse düzelt
+        # MultiIndex düzelt
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # Moving Averages
-        df["MA20"] = df["Close"].rolling(window=20).mean()
-        df["MA50"] = df["Close"].rolling(window=50).mean()
+        # --- Moving Averages ---
+        df["MA20"] = df["Close"].rolling(20).mean()
+        df["MA50"] = df["Close"].rolling(50).mean()
 
-        # RSI (14)
+        # --- RSI (14) ---
         delta = df["Close"].diff()
         gain = delta.clip(lower=0)
         loss = -delta.clip(upper=0)
 
-        avg_gain = gain.rolling(window=14).mean()
-        avg_loss = loss.rolling(window=14).mean()
+        avg_gain = gain.rolling(14).mean()
+        avg_loss = loss.rolling(14).mean()
 
         rs = avg_gain / avg_loss
         df["RSI"] = 100 - (100 / (1 + rs))
 
-        # Ortalama hacim
-        df["VOL_AVG20"] = df["Volume"].rolling(window=20).mean()
+        # --- Ortalama Hacim ---
+        df["VOL_AVG20"] = df["Volume"].rolling(20).mean()
+
+        # --- 20 Günlük En Yüksek ---
+        df["HH20"] = df["Close"].rolling(20).max()
 
         df = df.dropna().reset_index()
 
@@ -61,6 +64,7 @@ def analyze_stock(symbol: str):
             "rsi": float(latest["RSI"]),
             "volume": float(latest["Volume"]),
             "volume_avg20": float(latest["VOL_AVG20"]),
+            "hh20": float(latest["HH20"]),
             "score": score,
             "signal": signal
         }
