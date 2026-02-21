@@ -19,6 +19,8 @@ BIST30 = [
     "GUBRF.IS","HALKB.IS","KOZAA.IS","KOZAL.IS","SASA.IS"
 ]
 
+# ---------------- RSI ---------------- #
+
 def calculate_rsi(data, period=14):
     delta = data.diff()
     gain = delta.clip(lower=0)
@@ -31,9 +33,13 @@ def calculate_rsi(data, period=14):
     rsi = 100 - (100 / (1 + rs))
     return rsi
 
+# ---------------- ROOT ---------------- #
+
 @app.get("/")
 def root():
     return {"status": "BIST AI BOT AKTIF"}
+
+# ---------------- SCAN ---------------- #
 
 @app.get("/scan")
 def scan_market():
@@ -104,14 +110,14 @@ def scan_market():
                     "score": score
                 })
 
-            time.sleep(0.7)  # rate limit koruma
+            time.sleep(0.7)
 
         except Exception as e:
             hata_listesi.append({symbol: str(e)})
             continue
 
     piyasa_guc = round(
-        ((len(breakout)*3)+(len(trend)*2)+(len(dip)*1)) 
+        ((len(breakout)*3)+(len(trend)*2)+(len(dip)*1))
         / (len(BIST30)*3) * 100, 2
     )
 
@@ -127,21 +133,59 @@ def scan_market():
         "hata_sayisi": len(hata_listesi)
     }
 
+# ---------------- TELEGRAM RAPOR ---------------- #
+
 @app.get("/send_report")
 def send_report():
 
     result = scan_market()
+    pge = result["piyasa_guc_endeksi"]
+
+    # Piyasa Yorumu
+    if pge < 30:
+        yorum = "⚠️ Piyasa Zayıf – Riskli Bölge"
+    elif pge < 50:
+        yorum = "⏳ Piyasa Nötr – Geçiş Aşaması"
+    elif pge < 70:
+        yorum = "💪 Piyasa Güçlü – Trend Başlıyor"
+    else:
+        yorum = "🚀 Piyasa Çok Güçlü – Momentum Fazı"
+
+    tum_hisseler = (
+        result["breakout"] +
+        result["trend"] +
+        result["dip"]
+    )
+
+    tum_hisseler = sorted(tum_hisseler, key=lambda x: x["score"], reverse=True)
+    top3 = tum_hisseler[:3]
 
     mesaj = f"""
-📊 BIST AI Günlük Rapor
+📊 BIST AI PRO RAPOR
 
-Piyasa Güç Endeksi: %{result['piyasa_guc_endeksi']}
-Veri Alınan Hisse: {result['veri_alinan_hisse']}
+📈 Piyasa Güç Endeksi: %{pge}
+🧠 {yorum}
+
+━━━━━━━━━━━━━━
 
 🚀 Breakout: {result['breakout_sayisi']}
 📈 Trend: {result['trend_sayisi']}
 🔄 Dip: {result['dip_sayisi']}
+
+━━━━━━━━━━━━━━
+🏆 EN GÜÇLÜ 3 HİSSE
 """
+
+    for hisse in top3:
+        mesaj += f"""
+{hisse['symbol']}
+Fiyat: {hisse['close']}
+RSI: {hisse['rsi']}
+Skor: {hisse['score']}
+------------------
+"""
+
+    mesaj += "\n━━━━━━━━━━━━━━\n🤖 BIST AI BOT"
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
