@@ -1,21 +1,20 @@
-def calculate_score(df):
+import pandas as pd
 
-    if df is None or df.empty:
-        return 0, "VERİ YOK"
-
-    latest = df.iloc[-1]
-    previous = df.iloc[-2]
-
+def calculate_score(df: pd.DataFrame):
     score = 0
+    latest = df.iloc[-1]
+    prev = df.iloc[-2]
 
-    close = float(latest["Close"])
-    ma20 = float(latest["MA20"])
-    ma50 = float(latest["MA50"])
-    rsi = float(latest["RSI"])
-    volume = float(latest["Volume"])
-    vol_avg = float(latest["VOL_AVG20"])
+    close = latest["Close"]
+    ma20 = latest["MA20"]
+    ma50 = latest["MA50"]
+    rsi = latest["RSI"]
+    volume = latest["Volume"]
+    vol_avg = latest["VOL_AVG20"]
 
-    # Trend kriterleri
+    # -----------------
+    # 1️⃣ TREND
+    # -----------------
     if close > ma20:
         score += 1
 
@@ -25,25 +24,40 @@ def calculate_score(df):
     if ma20 > ma50:
         score += 1
 
-    # MA50 eğimi
-    if float(previous["MA50"]) < ma50:
-        score += 2
+    if ma50 > prev["MA50"]:
+        score += 1
 
-    # Momentum
-    if 50 <= rsi <= 70:
+    # -----------------
+    # 2️⃣ MOMENTUM
+    # -----------------
+    if 50 < rsi <= 65:
+        score += 1
+    elif 65 < rsi <= 75:
         score += 2
-    elif rsi < 40:
-        score -= 2
+    elif rsi > 75:
+        score += 1
 
-    # Hacim
+    # -----------------
+    # 3️⃣ HACİM
+    # -----------------
     if volume > vol_avg:
+        score += 1
+
+    if volume > vol_avg * 1.3:
         score += 2
 
-    # Sinyal üretimi
-    if score >= 7:
-        signal = "GÜÇLÜ TREND"
-    elif score >= 5:
-        signal = "İZLE"
+    if latest["Volume"] > prev["Volume"] > df.iloc[-3]["Volume"]:
+        score += 1
+
+    # -----------------
+    # SİNYAL
+    # -----------------
+    if score >= 9:
+        signal = "KURUMSAL ALIM"
+    elif score >= 7:
+        signal = "GÜÇLÜ"
+    elif score >= 4:
+        signal = "NÖTR"
     else:
         signal = "ZAYIF"
 
