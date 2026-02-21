@@ -9,7 +9,11 @@ from datetime import datetime
 app = FastAPI()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+AUTHORIZED_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))
+
+# CACHE
+last_scan_time = 0
+cached_result = None
 
 BIST30 = [
     "AKBNK.IS","ALARK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
@@ -20,8 +24,7 @@ BIST30 = [
     "GUBRF.IS","HALKB.IS","KOZAA.IS","KOZAL.IS","SASA.IS"
 ]
 
-# ---------------- RSI ---------------- #
-
+# RSI
 def calculate_rsi(data, period=14):
     delta = data.diff()
     gain = delta.clip(lower=0)
@@ -31,22 +34,27 @@ def calculate_rsi(data, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-# ---------------- TELEGRAM SEND ---------------- #
-
+# Telegram Send
 def send_telegram(text, chat_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": text}
     requests.post(url, data=payload)
 
-# ---------------- ROOT ---------------- #
-
+# ROOT
 @app.get("/")
 def root():
-    return {"status": "BIST AI PRO AKTIF"}
+    return {"status": "BIST AI PRO LOCKED"}
 
-# ---------------- SCAN ENGINE ---------------- #
-
+# SCAN ENGINE (Cache'li)
 def scan_market():
+
+    global last_scan_time, cached_result
+
+    now = time.time()
+
+    # 60 saniye cache
+    if cached_result and now - last_scan_time < 60:
+        return cached_result
 
     breakout, trend, dip = [], [], []
 
@@ -87,7 +95,7 @@ def scan_market():
             elif 40 < rsi < 48:
                 dip.append(data)
 
-            time.sleep(0.5)
+            time.sleep(0.4)
 
         except:
             continue
@@ -97,10 +105,14 @@ def scan_market():
         /(len(BIST30)*3)*100,2
     )
 
-    return pge, breakout, trend, dip
+    result = (pge, breakout, trend, dip)
 
-# ---------------- TELEGRAM WEBHOOK ---------------- #
+    cached_result = result
+    last_scan_time = now
 
+    return result
+
+# TELEGRAM WEBHOOK
 @app.post("/telegram")
 async def telegram_webhook(request: Request):
 
@@ -112,52 +124,55 @@ async def telegram_webhook(request: Request):
     chat_id = data["message"]["chat"]["id"]
     text = data["message"].get("text","")
 
+    # 🔒 KİLİT
+    if chat_id != AUTHORIZED_CHAT_ID:
+        return {"ok": True}
+
     if text == "/start":
         menu = """
 📊 BIST AI PRO PANEL
 
-1️⃣ /scan → Anlık Tarama
-2️⃣ /breakout → Breakout Listesi
-3️⃣ /top3 → En Güçlü 3 Hisse
-4️⃣ /yorum → Piyasa Yorumu
+/scan → Anlık Tarama
+/breakout → Breakout
+/top3 → En Güçlü 3
+/yorum → Piyasa Yorumu
 """
         send_telegram(menu, chat_id)
 
     elif text == "/scan":
-        pge, breakout, trend, dip = scan_market()
+        pge, _, _, _ = scan_market()
         send_telegram(f"📊 PGE: %{pge}", chat_id)
 
     elif text == "/breakout":
-        pge, breakout, trend, dip = scan_market()
+        _, breakout, _, _ = scan_market()
         if not breakout:
-            send_telegram("Breakout bulunamadı.", chat_id)
+            send_telegram("Breakout yok.", chat_id)
         else:
-            msg = "🚀 BREAKOUT HİSSELER\n"
+            msg = "🚀 BREAKOUT\n"
             for h in breakout:
                 msg += f"{h['symbol']} RSI:{h['rsi']} Skor:{h['score']}\n"
             send_telegram(msg, chat_id)
 
     elif text == "/top3":
-        pge, breakout, trend, dip = scan_market()
+        _, breakout, trend, dip = scan_market()
         all_stocks = breakout + trend + dip
         top3 = sorted(all_stocks, key=lambda x: x["score"], reverse=True)[:3]
 
-        msg = "🏆 EN GÜÇLÜ 3 HİSSE\n"
+        msg = "🏆 TOP 3\n"
         for h in top3:
             msg += f"{h['symbol']} RSI:{h['rsi']} Skor:{h['score']}\n"
-
         send_telegram(msg, chat_id)
 
     elif text == "/yorum":
         pge, _, _, _ = scan_market()
         if pge < 30:
-            yorum = "⚠️ Piyasa Zayıf"
+            yorum = "⚠️ Zayıf"
         elif pge < 50:
-            yorum = "⏳ Piyasa Nötr"
+            yorum = "⏳ Nötr"
         elif pge < 70:
-            yorum = "💪 Piyasa Güçlü"
+            yorum = "💪 Güçlü"
         else:
-            yorum = "🚀 Piyasa Çok Güçlü"
+            yorum = "🚀 Çok Güçlü"
 
         send_telegram(f"🧠 {yorum} (%{pge})", chat_id)
 
