@@ -5,7 +5,6 @@ from app.scoring_engine import calculate_score
 
 app = FastAPI()
 
-# 🔵 KOZAA / KOZAL çıkarıldı (Yahoo sorunlu)
 BIST30 = [
     "AKBNK.IS","ALARK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
     "ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS","GUBRF.IS",
@@ -26,11 +25,6 @@ def calculate_rsi(data, period=14):
     return 100 - (100 / (1 + rs))
 
 
-@app.get("/")
-def root():
-    return {"status": "BIST AI BOT PRO ACTIVE"}
-
-
 @app.get("/scan")
 def scan_market():
 
@@ -46,20 +40,15 @@ def scan_market():
         try:
             df = yf.download(symbol, period="6mo", interval="1d", progress=False)
 
-            # ✅ Veri güvenliği
             if df is None or df.empty:
-                print("VERI YOK:", symbol)
                 continue
 
             df = df.dropna()
-
             if len(df) < 60:
-                print("YETERSIZ VERI:", symbol)
                 continue
 
             valid_symbol_count += 1
 
-            # İndikatörler
             df["MA20"] = df["Close"].rolling(20).mean()
             df["MA50"] = df["Close"].rolling(50).mean()
             df["RSI"] = calculate_rsi(df["Close"])
@@ -67,10 +56,9 @@ def scan_market():
             df["HH20"] = df["High"].rolling(20).max()
 
             latest = df.iloc[-1]
-
             score, signal = calculate_score(df)
 
-            # 🔴 BREAKOUT
+            # 🔴 BREAKOUT (disiplinli)
             if (
                 latest["Close"] > latest["MA20"]
                 and latest["RSI"] > 58
@@ -85,11 +73,8 @@ def scan_market():
                 total_weighted_score += score * 3
                 total_weight += 3
 
-            # 🟡 TREND
-            elif (
-                latest["RSI"] > 48
-                and latest["Close"] > latest["MA20"]
-            ):
+            # 🟡 TREND (yumuşatıldı)
+            elif latest["RSI"] > 45:
                 trend_list.append({
                     "symbol": symbol.replace(".IS",""),
                     "close": round(float(latest["Close"]),2),
@@ -101,7 +86,7 @@ def scan_market():
 
             # 🔵 DIP
             elif (
-                38 < latest["RSI"] < 50
+                38 < latest["RSI"] < 45
                 and df["RSI"].iloc[-1] > df["RSI"].iloc[-2]
             ):
                 dip_list.append({
@@ -113,11 +98,10 @@ def scan_market():
                 total_weighted_score += score
                 total_weight += 1
 
-        except Exception as e:
-            print("HATA:", symbol, e)
+        except Exception:
             continue
 
-    # 📊 PGE Hesaplama (minimum 10 hisse veri gelmeli)
+    # 📊 PGE
     if total_weight > 0 and valid_symbol_count >= 10:
         pge = round((total_weighted_score / (total_weight * 10)) * 100, 2)
     else:
