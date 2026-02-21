@@ -28,7 +28,6 @@ def analyze_stock(symbol: str):
 
         # --- RSI (14) ---
         delta = df["Close"].diff()
-
         gain = delta.where(delta > 0, 0)
         loss = -delta.where(delta < 0, 0)
 
@@ -46,7 +45,6 @@ def analyze_stock(symbol: str):
         if df.empty:
             return {"error": "Yetersiz veri"}
 
-        # --- Skor Hesaplama ---
         score, signal = scoring_engine.calculate_score(df)
 
         latest = df.iloc[-1]
