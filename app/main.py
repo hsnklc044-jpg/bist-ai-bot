@@ -5,7 +5,7 @@ from app.scoring_engine import calculate_score
 
 app = FastAPI()
 
-# 🔵 BIST30 (Yahoo formatı .IS)
+# 🔵 BIST30
 BIST30 = [
     "AKBNK.IS","ALARK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
     "ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS","HEKTS.IS",
@@ -31,9 +31,10 @@ def scan():
 
     for symbol in BIST30:
         try:
-            df = yf.download(symbol, period="6mo", interval="1d", progress=False)
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period="6mo", interval="1d")
 
-            if df.empty or len(df) < 30:
+            if df is None or df.empty or len(df) < 30:
                 continue
 
             df["MA20"] = df["Close"].rolling(20).mean()
@@ -107,7 +108,7 @@ def scan():
         except:
             continue
 
-    # 🎯 PİYASA GÜÇ ENDEKSİ (GERÇEK ORTALAMA MODEL)
+    # 🎯 PİYASA GÜÇ ENDEKSİ (ORTALAMA SKOR MODELİ)
     if valid_symbol_count > 0:
         pge = round((total_score_sum / (valid_symbol_count * 10)) * 100, 2)
     else:
