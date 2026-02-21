@@ -12,7 +12,7 @@ app = FastAPI()
 # -------------------------------------------------
 @app.get("/")
 def root():
-    return {"status": "BIST30 Institutional Engine v3 aktif"}
+    return {"status": "BIST30 Institutional Engine v4 aktif"}
 
 
 # -------------------------------------------------
@@ -72,7 +72,7 @@ def analyze_stock(symbol: str):
 
 
 # -------------------------------------------------
-# BIST30 - 2 KATMANLI KURUMSAL TARAMA
+# BIST30 - KURUMSAL RAPOR
 # -------------------------------------------------
 @app.get("/scan")
 def scan_market():
@@ -122,6 +122,7 @@ def scan_market():
                 continue
 
             latest = df.iloc[-1]
+            score, signal = scoring_engine.calculate_score(df)
 
             # 🔥 BREAKOUT
             if (
@@ -134,7 +135,10 @@ def scan_market():
             ):
                 breakout_list.append({
                     "symbol": symbol,
-                    "close": float(latest["Close"])
+                    "close": float(latest["Close"]),
+                    "rsi": round(float(latest["RSI"]), 2),
+                    "score": score,
+                    "signal": signal
                 })
 
             # 🟡 HAZIRLANAN
@@ -146,13 +150,16 @@ def scan_market():
             ):
                 preparing_list.append({
                     "symbol": symbol,
-                    "close": float(latest["Close"])
+                    "close": float(latest["Close"]),
+                    "rsi": round(float(latest["RSI"]), 2),
+                    "score": score,
+                    "signal": signal
                 })
 
         except:
             continue
 
     return {
-        "breakout": breakout_list,
-        "hazirlanan": preparing_list
+        "breakout": sorted(breakout_list, key=lambda x: x["score"], reverse=True),
+        "hazirlanan": sorted(preparing_list, key=lambda x: x["score"], reverse=True)
     }
