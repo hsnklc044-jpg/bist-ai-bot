@@ -1,10 +1,8 @@
 from fastapi import FastAPI
 import yfinance as yf
 import pandas as pd
-
-from app.scoring_engine import calculate_score
-from app.telegram_sender import send_telegram_message
-from app.report_engine import generate_report
+import os
+import requests
 
 app = FastAPI()
 
@@ -17,26 +15,39 @@ BIST30 = [
     "TUPRS.IS","YKBNK.IS","ZOREN.IS","GUBRF.IS","HALKB.IS"
 ]
 
+BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+
+def send_telegram_message(text):
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": CHAT_ID,
+        "text": text,
+        "parse_mode": "Markdown"
+    }
+    requests.post(url, json=payload)
+
+
 @app.get("/")
 def root():
-    return {"status": "BIST AI BOT ÇALIŞIYOR"}
+    return {"status": "BIST AI BOT AKTIF"}
+
 
 @app.get("/scan")
 def scan():
 
-    breakout_list = []
-    trend_list = []
-    dip_list = []
+    trend = []
+    dip = []
 
-    total_score_sum = 0
-    valid_symbol_count = 0
+    total_score = 0
+    count = 0
 
     for symbol in BIST30:
         try:
-            ticker = yf.Ticker(symbol)
-            df = ticker.history(period="6mo", interval="1d")
+            df = yf.download(symbol, period="6mo", interval="1d", progress=False)
 
-            if df is None or df.empty or len(df) < 20:
+            if df.empty or len(df) < 50:
                 continue
 
             df["MA20"] = df["Close"].rolling(20).mean()
@@ -52,100 +63,66 @@ def scan():
             rs = avg_gain / avg_loss
             df["RSI"] = 100 - (100 / (1 + rs))
 
-            df["VOL_AVG20"] = df["Volume"].rolling(20).mean()
-            df["HH20"] = df["High"].rolling(20).max()
-
             latest = df.iloc[-1]
 
-            if pd.isna(latest["RSI"]) or pd.isna(latest["MA20"]):
+            if pd.isna(latest["RSI"]):
                 continue
 
-            score, signal = calculate_score(latest)
+            score = 0
+            if latest["Close"] > latest["MA20"]:
+                score += 3
+            if latest["MA20"] > latest["MA50"]:
+                score += 3
+            if latest["RSI"] > 50:
+                score += 4
 
-            total_score_sum += score
-            valid_symbol_count += 1
+            total_score += score
+            count += 1
 
-            # 🔴 BREAKOUT
-            if (
-                latest["Close"] >= latest["HH20"]
-                and latest["Volume"] > latest["VOL_AVG20"] * 1.3
-                and latest["RSI"] > 60
-            ):
-                breakout_list.append({
+            if latest["Close"] > latest["MA20"] and latest["RSI"] > 50:
+                trend.append({
                     "symbol": symbol.replace(".IS",""),
-                    "close": round(float(latest["Close"]),2),
-                    "rsi": round(float(latest["RSI"]),2),
-                    "score": score,
-                    "signal": "BREAKOUT"
+                    "score": score
                 })
 
-            # 🟡 TREND
-            elif (
-                latest["Close"] > latest["MA20"]
-                and latest["MA20"] > latest["MA50"]
-                and latest["RSI"] > 50
-            ):
-                trend_list.append({
+            if 40 < latest["RSI"] < 48:
+                dip.append({
                     "symbol": symbol.replace(".IS",""),
-                    "close": round(float(latest["Close"]),2),
-                    "rsi": round(float(latest["RSI"]),2),
-                    "score": score,
-                    "signal": "TREND"
-                })
-
-            # 🔵 DİP
-            elif (
-                latest["RSI"] > 40
-                and latest["RSI"] < 48
-                and df["RSI"].iloc[-1] > df["RSI"].iloc[-2]
-            ):
-                dip_list.append({
-                    "symbol": symbol.replace(".IS",""),
-                    "close": round(float(latest["Close"]),2),
-                    "rsi": round(float(latest["RSI"]),2),
-                    "score": score,
-                    "signal": "DIP TOPARLANMA"
+                    "score": score
                 })
 
         except:
             continue
 
-    # 🎯 PGE Hesabı
-    if valid_symbol_count > 0:
-        pge = round((total_score_sum / (valid_symbol_count * 10)) * 100, 2)
+    if count > 0:
+        pge = round((total_score / (count * 10)) * 100, 2)
     else:
         pge = 0
 
-    if pge > 70:
-        durum = "GÜÇLÜ"
-    elif pge > 50:
-        durum = "NÖTR"
-    else:
-        durum = "ZAYIF"
-
-    scan_result = {
+    return {
         "piyasa_guc_endeksi": pge,
-        "durum": durum,
-        "veri_alinan_hisse": valid_symbol_count,
-        "breakout_sayisi": len(breakout_list),
-        "trend_sayisi": len(trend_list),
-        "dip_sayisi": len(dip_list),
-        "breakout": sorted(breakout_list, key=lambda x: x["score"], reverse=True),
-        "trend": sorted(trend_list, key=lambda x: x["score"], reverse=True),
-        "dip": sorted(dip_list, key=lambda x: x["score"], reverse=True)
+        "veri_alinan_hisse": count,
+        "trend_sayisi": len(trend),
+        "dip_sayisi": len(dip),
+        "trend": trend,
+        "dip": dip
     }
-
-    return scan_result
 
 
 @app.get("/send_report")
 def send_report():
 
     data = scan()
-    message = generate_report(data)
-    telegram_response = send_telegram_message(message)
 
-    return {
-        "status": "Gönderildi",
-        "telegram_response": telegram_response
-    }
+    message = f"""
+📊 *BIST AI RAPOR*
+
+PGE: {data['piyasa_guc_endeksi']}
+
+Trend: {data['trend_sayisi']}
+Dip: {data['dip_sayisi']}
+"""
+
+    send_telegram_message(message)
+
+    return {"status": "Telegram Gönderildi"}
