@@ -1,142 +1,74 @@
 from fastapi import FastAPI
 import yfinance as yf
 import pandas as pd
-
-from app import scoring_engine
+from app.scoring_engine import calculate_score
 
 app = FastAPI()
 
+# 📌 BIST30 (Yahoo formatı .IS)
+BIST30 = [
+    "AKBNK.IS","ALARK.IS","ASELS.IS","ASTOR.IS","BIMAS.IS",
+    "EKGYO.IS","ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS",
+    "GUBRF.IS","HEKTS.IS","ISCTR.IS","KCHOL.IS","KOZAL.IS",
+    "KOZAA.IS","PETKM.IS","PGSUS.IS","SAHOL.IS","SASA.IS",
+    "SISE.IS","TCELL.IS","THYAO.IS","TOASO.IS","TTKOM.IS",
+    "TUPRS.IS","YKBNK.IS","ARCLK.IS","ODAS.IS","HALKB.IS"
+]
 
-# -------------------------------------------------
-# ROOT
-# -------------------------------------------------
+
 @app.get("/")
-def root():
-    return {"status": "BIST30 Institutional Engine v4 aktif"}
+def home():
+    return {"status": "BIST AI BOT AKTİF"}
 
 
-# -------------------------------------------------
-# TEK HİSSE ANALİZ
-# -------------------------------------------------
-@app.get("/analyze/{symbol}")
-def analyze_stock(symbol: str):
-    try:
-        ticker_symbol = symbol.upper() + ".IS"
-        df = yf.download(ticker_symbol, period="6mo", interval="1d")
-
-        if df is None or df.empty:
-            return {"error": "Veri bulunamadı"}
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-
-        df["MA20"] = df["Close"].rolling(20).mean()
-        df["MA50"] = df["Close"].rolling(50).mean()
-
-        delta = df["Close"].diff()
-        gain = delta.clip(lower=0)
-        loss = -delta.clip(upper=0)
-
-        avg_gain = gain.rolling(14).mean()
-        avg_loss = loss.rolling(14).mean()
-
-        rs = avg_gain / avg_loss
-        df["RSI"] = 100 - (100 / (1 + rs))
-
-        df["VOL_AVG20"] = df["Volume"].rolling(20).mean()
-        df["HH20"] = df["Close"].rolling(20).max()
-
-        df = df.dropna().reset_index()
-
-        if len(df) < 60:
-            return {"error": "Yetersiz veri"}
-
-        score, signal = scoring_engine.calculate_score(df)
-        latest = df.iloc[-1]
-
-        return {
-            "symbol": symbol.upper(),
-            "close": float(latest["Close"]),
-            "ma20": float(latest["MA20"]),
-            "ma50": float(latest["MA50"]),
-            "rsi": float(latest["RSI"]),
-            "volume": float(latest["Volume"]),
-            "volume_avg20": float(latest["VOL_AVG20"]),
-            "hh20": float(latest["HH20"]),
-            "score": score,
-            "signal": signal
-        }
-
-    except Exception as e:
-        return {"error": str(e)}
-
-
-# -------------------------------------------------
-# BIST30 - KURUMSAL RAPOR
-# -------------------------------------------------
 @app.get("/scan")
 def scan_market():
-
-    BIST30 = [
-        "AKBNK","ALARK","ASELS","BIMAS","EKGYO",
-        "ENKAI","EREGL","FROTO","GARAN","GUBRF",
-        "HEKTS","ISCTR","KCHOL","KOZAA","KOZAL",
-        "KRDMD","ODAS","PETKM","PGSUS","SAHOL",
-        "SASA","SISE","TAVHL","TCELL","THYAO",
-        "TKFEN","TOASO","TUPRS","YKBNK","ARCLK"
-    ]
 
     breakout_list = []
     preparing_list = []
 
     for symbol in BIST30:
+
         try:
-            ticker_symbol = symbol + ".IS"
-            df = yf.download(ticker_symbol, period="6mo", interval="1d")
+            df = yf.download(symbol, period="6mo", interval="1d", progress=False)
 
-            if df is None or df.empty:
+            if df.empty or len(df) < 50:
                 continue
-
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
 
             df["MA20"] = df["Close"].rolling(20).mean()
             df["MA50"] = df["Close"].rolling(50).mean()
 
+            # RSI
             delta = df["Close"].diff()
             gain = delta.clip(lower=0)
             loss = -delta.clip(upper=0)
-
             avg_gain = gain.rolling(14).mean()
             avg_loss = loss.rolling(14).mean()
-
             rs = avg_gain / avg_loss
             df["RSI"] = 100 - (100 / (1 + rs))
 
+            # Ortalama Hacim
             df["VOL_AVG20"] = df["Volume"].rolling(20).mean()
-            df["HH20"] = df["Close"].rolling(20).max()
 
-            df = df.dropna().reset_index()
-
-            if len(df) < 60:
-                continue
+            # Son 20 günün en yüksek değeri
+            df["HH20"] = df["High"].rolling(20).max()
 
             latest = df.iloc[-1]
-            score, signal = scoring_engine.calculate_score(df)
+
+            score, signal = calculate_score(df)
 
             # 🔥 BREAKOUT
             if (
                 latest["Close"] > latest["MA20"]
-                and latest["Close"] > latest["MA50"]
                 and latest["MA20"] > latest["MA50"]
                 and latest["RSI"] > 60
                 and latest["Volume"] > latest["VOL_AVG20"] * 1.3
                 and latest["Close"] >= latest["HH20"]
             ):
                 breakout_list.append({
-                    "symbol": symbol,
-                    "close": float(latest["Close"]),
-                    "rsi": round(float(latest["RSI"]), 2),
+                    "symbol": symbol.replace(".IS",""),
+                    "close": round(float(latest["Close"]),2),
+                    "rsi": round(float(latest["RSI"]),2),
                     "score": score,
                     "signal": signal
                 })
@@ -149,9 +81,9 @@ def scan_market():
                 and latest["Close"] >= latest["HH20"] * 0.97
             ):
                 preparing_list.append({
-                    "symbol": symbol,
-                    "close": float(latest["Close"]),
-                    "rsi": round(float(latest["RSI"]), 2),
+                    "symbol": symbol.replace(".IS",""),
+                    "close": round(float(latest["Close"]),2),
+                    "rsi": round(float(latest["RSI"]),2),
                     "score": score,
                     "signal": signal
                 })
@@ -159,7 +91,28 @@ def scan_market():
         except:
             continue
 
+    breakout_sorted = sorted(breakout_list, key=lambda x: x["score"], reverse=True)
+    hazirlanan_sorted = sorted(preparing_list, key=lambda x: x["score"], reverse=True)
+
+    # 📊 PİYASA GÜÇ ENDEKSİ
+    breakout_count = len(breakout_sorted)
+    hazirlanan_count = len(hazirlanan_sorted)
+
+    pge_raw = (breakout_count * 3) + (hazirlanan_count * 1.5)
+    pge = min(round(pge_raw * 2), 100)
+
+    if pge < 10:
+        market_state = "ZAYIF"
+    elif pge < 25:
+        market_state = "TOPLANIYOR"
+    elif pge < 40:
+        market_state = "GÜÇLENİYOR"
+    else:
+        market_state = "ÇOK GÜÇLÜ"
+
     return {
-        "breakout": sorted(breakout_list, key=lambda x: x["score"], reverse=True),
-        "hazirlanan": sorted(preparing_list, key=lambda x: x["score"], reverse=True)
+        "piyasa_guc_endeksi": pge,
+        "durum": market_state,
+        "breakout": breakout_sorted,
+        "hazirlanan": hazirlanan_sorted
     }
