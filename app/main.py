@@ -1,3 +1,5 @@
+from app.telegram_sender import send_telegram_message
+from app.report_engine import generate_report
 from fastapi import FastAPI
 import yfinance as yf
 import pandas as pd
