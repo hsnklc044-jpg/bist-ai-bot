@@ -54,7 +54,7 @@ def scan_market():
 
             score, signal = calculate_score(df)
 
-            # 🔥 BREAKOUT (Trend teyitli)
+            # 🔥 BREAKOUT (Trend teyitli - sert filtre)
             if (
                 latest["Close"] > latest["MA20"]
                 and latest["MA20"] > latest["MA50"]
@@ -70,7 +70,7 @@ def scan_market():
                     "signal": signal
                 })
 
-            # 🟡 HAZIRLANAN (Erken dönüş - MA50 şartı yok)
+            # 🟡 HAZIRLANAN (profesyonel erken dönüş)
             elif (
                 latest["Close"] > latest["MA20"]
                 and latest["RSI"] > 48
@@ -90,10 +90,10 @@ def scan_market():
     breakout_sorted = sorted(breakout_list, key=lambda x: x["score"], reverse=True)
     hazirlanan_sorted = sorted(preparing_list, key=lambda x: x["score"], reverse=True)
 
-    # 📊 PİYASA GÜÇ ENDEKSİ
     breakout_count = len(breakout_sorted)
     hazirlanan_count = len(hazirlanan_sorted)
 
+    # 📊 Piyasa Güç Endeksi
     pge_raw = (breakout_count * 3) + (hazirlanan_count * 1.5)
     pge = min(round(pge_raw * 2), 100)
 
@@ -109,6 +109,8 @@ def scan_market():
     return {
         "piyasa_guc_endeksi": pge,
         "durum": market_state,
+        "breakout_sayisi": breakout_count,
+        "hazirlanan_sayisi": hazirlanan_count,
         "breakout": breakout_sorted,
         "hazirlanan": hazirlanan_sorted
     }
