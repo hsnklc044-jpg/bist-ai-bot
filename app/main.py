@@ -1,49 +1,16 @@
-from fastapi import FastAPI
-import yfinance as yf
-import pandas as pd
+# RSI hesaplama
+delta = df["Close"].diff()
 
-from app import scoring_engine
+gain = delta.where(delta > 0, 0)
+loss = -delta.where(delta < 0, 0)
 
-app = FastAPI()
+avg_gain = gain.rolling(window=14).mean()
+avg_loss = loss.rolling(window=14).mean()
 
+rs = avg_gain / avg_loss
+df["RSI"] = 100 - (100 / (1 + rs))
 
-@app.get("/")
-def root():
-    return {"status": "BIST Institutional Engine aktif"}
+# Ortalama hacim
+df["VOL_AVG20"] = df["Volume"].rolling(window=20).mean()
 
-
-@app.get("/analyze/{symbol}")
-def analyze_stock(symbol: str):
-    try:
-        ticker_symbol = symbol.upper() + ".IS"
-
-        df = yf.download(ticker_symbol, period="6mo", interval="1d")
-
-        if df is None or df.empty:
-            return {"error": "Veri bulunamadı"}
-
-        # Moving averages hesapla
-        df["MA20"] = df["Close"].rolling(window=20).mean()
-        df["MA50"] = df["Close"].rolling(window=50).mean()
-
-        # NaN satırları temizle
-        df = df.dropna()
-
-        if df.empty:
-            return {"error": "Yetersiz veri"}
-
-        score, signal = scoring_engine.calculate_score(df)
-
-        latest = df.iloc[-1]
-
-        return {
-            "symbol": symbol.upper(),
-            "close": float(latest["Close"]),
-            "ma20": float(latest["MA20"]),
-            "ma50": float(latest["MA50"]),
-            "score": score,
-            "signal": signal
-        }
-
-    except Exception as e:
-        return {"error": str(e)}
+df = df.dropna()
