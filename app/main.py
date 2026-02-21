@@ -22,14 +22,18 @@ def analyze_stock(symbol: str):
         if df is None or df.empty:
             return {"error": "Veri bulunamadı"}
 
-        # --- Moving Averages ---
+        # MultiIndex gelirse düzelt
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+
+        # Moving Averages
         df["MA20"] = df["Close"].rolling(window=20).mean()
         df["MA50"] = df["Close"].rolling(window=50).mean()
 
-        # --- RSI (14) ---
+        # RSI (14)
         delta = df["Close"].diff()
-        gain = delta.where(delta > 0, 0)
-        loss = -delta.where(delta < 0, 0)
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
 
         avg_gain = gain.rolling(window=14).mean()
         avg_loss = loss.rolling(window=14).mean()
@@ -37,10 +41,10 @@ def analyze_stock(symbol: str):
         rs = avg_gain / avg_loss
         df["RSI"] = 100 - (100 / (1 + rs))
 
-        # --- Ortalama Hacim ---
+        # Ortalama hacim
         df["VOL_AVG20"] = df["Volume"].rolling(window=20).mean()
 
-        df = df.dropna()
+        df = df.dropna().reset_index()
 
         if df.empty:
             return {"error": "Yetersiz veri"}
