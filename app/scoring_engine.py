@@ -1,5 +1,6 @@
 import pandas as pd
 
+
 def calculate_score(df: pd.DataFrame):
     score = 0
 
@@ -14,19 +15,22 @@ def calculate_score(df: pd.DataFrame):
     vol_avg = latest["VOL_AVG20"]
 
     # -----------------
-    # TREND
+    # TREND (0-4)
     # -----------------
     if close > ma20:
         score += 1
+
     if close > ma50:
         score += 1
+
     if ma20 > ma50:
         score += 1
+
     if ma50 > prev["MA50"]:
         score += 1
 
     # -----------------
-    # MOMENTUM
+    # MOMENTUM (0-3)
     # -----------------
     if 50 < rsi <= 65:
         score += 1
@@ -39,17 +43,17 @@ def calculate_score(df: pd.DataFrame):
         score += 1
 
     # -----------------
-    # HACİM
+    # HACİM (0-3)
     # -----------------
     if volume > vol_avg:
         score += 1
+
     if volume > vol_avg * 1.5:
         score += 2
 
     # -----------------
-    # BREAKOUT
+    # BREAKOUT (0-2)
     # -----------------
-    df["HH20"] = df["Close"].rolling(20).max()
     if close >= latest["HH20"]:
         score += 2
 
