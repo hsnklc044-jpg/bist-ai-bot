@@ -5,7 +5,7 @@ from app.scoring_engine import calculate_score
 
 app = FastAPI()
 
-# 📌 BIST30 (Yahoo formatı .IS)
+# 📌 BIST30
 BIST30 = [
     "AKBNK.IS","ALARK.IS","ASELS.IS","ASTOR.IS","BIMAS.IS",
     "EKGYO.IS","ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS",
@@ -15,11 +15,9 @@ BIST30 = [
     "TUPRS.IS","YKBNK.IS","ARCLK.IS","ODAS.IS","HALKB.IS"
 ]
 
-
 @app.get("/")
 def home():
     return {"status": "BIST AI BOT AKTİF"}
-
 
 @app.get("/scan")
 def scan_market():
@@ -35,6 +33,7 @@ def scan_market():
             if df.empty or len(df) < 50:
                 continue
 
+            # Ortalama
             df["MA20"] = df["Close"].rolling(20).mean()
             df["MA50"] = df["Close"].rolling(50).mean()
 
@@ -47,17 +46,17 @@ def scan_market():
             rs = avg_gain / avg_loss
             df["RSI"] = 100 - (100 / (1 + rs))
 
-            # Ortalama Hacim
+            # Hacim ortalaması
             df["VOL_AVG20"] = df["Volume"].rolling(20).mean()
 
-            # Son 20 günün en yüksek değeri
+            # Son 20 gün en yüksek
             df["HH20"] = df["High"].rolling(20).max()
 
             latest = df.iloc[-1]
 
             score, signal = calculate_score(df)
 
-            # 🔥 BREAKOUT
+            # 🔥 BREAKOUT (sert filtre aynı kaldı)
             if (
                 latest["Close"] > latest["MA20"]
                 and latest["MA20"] > latest["MA50"]
@@ -73,12 +72,12 @@ def scan_market():
                     "signal": signal
                 })
 
-            # 🟡 HAZIRLANAN
+            # 🟡 HAZIRLANAN (gevşetildi)
             elif (
                 latest["Close"] > latest["MA20"]
                 and latest["MA20"] > latest["MA50"]
-                and latest["RSI"] > 52
-                and latest["Close"] >= latest["HH20"] * 0.97
+                and latest["RSI"] > 48
+                and latest["Close"] >= latest["HH20"] * 0.94
             ):
                 preparing_list.append({
                     "symbol": symbol.replace(".IS",""),
