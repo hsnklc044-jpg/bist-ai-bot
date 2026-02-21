@@ -12,6 +12,9 @@ def root():
     return {"status": "BIST Institutional Engine aktif"}
 
 
+# -------------------------------------------------
+# TEK HİSSE ANALİZ
+# -------------------------------------------------
 @app.get("/analyze/{symbol}")
 def analyze_stock(symbol: str):
     try:
@@ -22,15 +25,13 @@ def analyze_stock(symbol: str):
         if df is None or df.empty:
             return {"error": "Veri bulunamadı"}
 
-        # MultiIndex düzelt
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # --- Moving Averages ---
+        # --- Göstergeler ---
         df["MA20"] = df["Close"].rolling(20).mean()
         df["MA50"] = df["Close"].rolling(50).mean()
 
-        # --- RSI (14) ---
         delta = df["Close"].diff()
         gain = delta.clip(lower=0)
         loss = -delta.clip(upper=0)
@@ -41,15 +42,12 @@ def analyze_stock(symbol: str):
         rs = avg_gain / avg_loss
         df["RSI"] = 100 - (100 / (1 + rs))
 
-        # --- Ortalama Hacim ---
         df["VOL_AVG20"] = df["Volume"].rolling(20).mean()
-
-        # --- 20 Günlük En Yüksek ---
         df["HH20"] = df["Close"].rolling(20).max()
 
         df = df.dropna().reset_index()
 
-        if df.empty:
+        if len(df) < 60:
             return {"error": "Yetersiz veri"}
 
         score, signal = scoring_engine.calculate_score(df)
@@ -71,3 +69,66 @@ def analyze_stock(symbol: str):
 
     except Exception as e:
         return {"error": str(e)}
+
+
+# -------------------------------------------------
+# TOPLU TARAMA
+# -------------------------------------------------
+@app.get("/scan")
+def scan_market():
+
+    BIST_LIST = [
+        "ASELS", "THYAO", "EREGL", "SISE", "KCHOL",
+        "AKBNK", "TUPRS", "BIMAS", "SAHOL", "ISCTR"
+    ]
+
+    results = []
+
+    for symbol in BIST_LIST:
+        try:
+            ticker_symbol = symbol + ".IS"
+            df = yf.download(ticker_symbol, period="6mo", interval="1d")
+
+            if df is None or df.empty:
+                continue
+
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            df["MA20"] = df["Close"].rolling(20).mean()
+            df["MA50"] = df["Close"].rolling(50).mean()
+
+            delta = df["Close"].diff()
+            gain = delta.clip(lower=0)
+            loss = -delta.clip(upper=0)
+
+            avg_gain = gain.rolling(14).mean()
+            avg_loss = loss.rolling(14).mean()
+
+            rs = avg_gain / avg_loss
+            df["RSI"] = 100 - (100 / (1 + rs))
+
+            df["VOL_AVG20"] = df["Volume"].rolling(20).mean()
+            df["HH20"] = df["Close"].rolling(20).max()
+
+            df = df.dropna().reset_index()
+
+            if len(df) < 60:
+                continue
+
+            score, signal = scoring_engine.calculate_score(df)
+
+            if score >= 8:
+                latest = df.iloc[-1]
+
+                results.append({
+                    "symbol": symbol,
+                    "close": float(latest["Close"]),
+                    "score": score,
+                    "signal": signal
+                })
+
+        except:
+            continue
+
+    return sorted(results, key=lambda x: x["score"], reverse=True)
