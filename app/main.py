@@ -14,19 +14,6 @@ BIST30 = [
     "TUPRS.IS","YKBNK.IS","ZOREN.IS","GUBRF.IS","HALKB.IS"
 ]
 
-@app.get("/")
-def root():
-    return {"status": "BIST AI BOT ÇALIŞIYOR"}
-
-@app.get("/test")
-def test():
-    ticker = yf.Ticker("ASELS.IS")
-    df = ticker.history(period="1mo", interval="1d")
-    return {
-        "veri_satiri": len(df),
-        "bos_mu": df.empty
-    }
-
 @app.get("/scan")
 def scan():
 
@@ -36,13 +23,13 @@ def scan():
 
     total_score_sum = 0
     valid_symbol_count = 0
+    errors = []
 
     for symbol in BIST30:
         try:
             ticker = yf.Ticker(symbol)
             df = ticker.history(period="6mo", interval="1d")
 
-            # 🔥 ÖNEMLİ DÜZELTME
             if df is None or df.empty or len(df) < 20:
                 continue
 
@@ -64,80 +51,23 @@ def scan():
 
             latest = df.iloc[-1]
 
-            if pd.isna(latest["RSI"]) or pd.isna(latest["MA20"]):
-                continue
-
             score, signal = calculate_score(latest)
 
             total_score_sum += score
             valid_symbol_count += 1
 
-            # 🔴 BREAKOUT
-            if (
-                latest["Close"] >= latest["HH20"]
-                and latest["Volume"] > latest["VOL_AVG20"] * 1.3
-                and latest["RSI"] > 60
-            ):
-                breakout_list.append({
-                    "symbol": symbol.replace(".IS",""),
-                    "close": round(float(latest["Close"]),2),
-                    "rsi": round(float(latest["RSI"]),2),
-                    "score": score,
-                    "signal": "BREAKOUT"
-                })
-
-            # 🟡 TREND
-            elif (
-                latest["Close"] > latest["MA20"]
-                and latest["MA20"] > latest["MA50"]
-                and latest["RSI"] > 50
-            ):
-                trend_list.append({
-                    "symbol": symbol.replace(".IS",""),
-                    "close": round(float(latest["Close"]),2),
-                    "rsi": round(float(latest["RSI"]),2),
-                    "score": score,
-                    "signal": "TREND"
-                })
-
-            # 🔵 DİP
-            elif (
-                latest["RSI"] > 40
-                and latest["RSI"] < 48
-                and df["RSI"].iloc[-1] > df["RSI"].iloc[-2]
-            ):
-                dip_list.append({
-                    "symbol": symbol.replace(".IS",""),
-                    "close": round(float(latest["Close"]),2),
-                    "rsi": round(float(latest["RSI"]),2),
-                    "score": score,
-                    "signal": "DIP TOPARLANMA"
-                })
-
-        except:
+        except Exception as e:
+            errors.append({symbol: str(e)})
             continue
 
-    # 🎯 PİYASA GÜÇ ENDEKSİ
     if valid_symbol_count > 0:
         pge = round((total_score_sum / (valid_symbol_count * 10)) * 100, 2)
     else:
         pge = 0
 
-    if pge > 70:
-        durum = "GÜÇLÜ"
-    elif pge > 50:
-        durum = "NÖTR"
-    else:
-        durum = "ZAYIF"
-
     return {
         "piyasa_guc_endeksi": pge,
-        "durum": durum,
         "veri_alinan_hisse": valid_symbol_count,
-        "breakout_sayisi": len(breakout_list),
-        "trend_sayisi": len(trend_list),
-        "dip_sayisi": len(dip_list),
-        "breakout": sorted(breakout_list, key=lambda x: x["score"], reverse=True),
-        "trend": sorted(trend_list, key=lambda x: x["score"], reverse=True),
-        "dip": sorted(dip_list, key=lambda x: x["score"], reverse=True)
+        "hata_sayisi": len(errors),
+        "hatalar": errors
     }
