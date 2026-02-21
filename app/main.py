@@ -18,18 +18,14 @@ BIST30 = [
 def root():
     return {"status": "BIST AI BOT ÇALIŞIYOR"}
 
-# 🔎 Yahoo Test Endpoint
 @app.get("/test")
 def test():
-    try:
-        ticker = yf.Ticker("ASELS.IS")
-        df = ticker.history(period="1mo", interval="1d")
-        return {
-            "veri_satiri": len(df),
-            "bos_mu": df.empty
-        }
-    except Exception as e:
-        return {"error": str(e)}
+    ticker = yf.Ticker("ASELS.IS")
+    df = ticker.history(period="1mo", interval="1d")
+    return {
+        "veri_satiri": len(df),
+        "bos_mu": df.empty
+    }
 
 @app.get("/scan")
 def scan():
@@ -46,7 +42,8 @@ def scan():
             ticker = yf.Ticker(symbol)
             df = ticker.history(period="6mo", interval="1d")
 
-            if df is None or df.empty or len(df) < 30:
+            # 🔥 ÖNEMLİ DÜZELTME
+            if df is None or df.empty or len(df) < 20:
                 continue
 
             df["MA20"] = df["Close"].rolling(20).mean()
@@ -75,6 +72,7 @@ def scan():
             total_score_sum += score
             valid_symbol_count += 1
 
+            # 🔴 BREAKOUT
             if (
                 latest["Close"] >= latest["HH20"]
                 and latest["Volume"] > latest["VOL_AVG20"] * 1.3
@@ -88,6 +86,7 @@ def scan():
                     "signal": "BREAKOUT"
                 })
 
+            # 🟡 TREND
             elif (
                 latest["Close"] > latest["MA20"]
                 and latest["MA20"] > latest["MA50"]
@@ -101,6 +100,7 @@ def scan():
                     "signal": "TREND"
                 })
 
+            # 🔵 DİP
             elif (
                 latest["RSI"] > 40
                 and latest["RSI"] < 48
@@ -117,6 +117,7 @@ def scan():
         except:
             continue
 
+    # 🎯 PİYASA GÜÇ ENDEKSİ
     if valid_symbol_count > 0:
         pge = round((total_score_sum / (valid_symbol_count * 10)) * 100, 2)
     else:
@@ -136,7 +137,7 @@ def scan():
         "breakout_sayisi": len(breakout_list),
         "trend_sayisi": len(trend_list),
         "dip_sayisi": len(dip_list),
-        "breakout": breakout_list,
-        "trend": trend_list,
-        "dip": dip_list
+        "breakout": sorted(breakout_list, key=lambda x: x["score"], reverse=True),
+        "trend": sorted(trend_list, key=lambda x: x["score"], reverse=True),
+        "dip": sorted(dip_list, key=lambda x: x["score"], reverse=True)
     }
