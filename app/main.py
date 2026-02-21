@@ -1,11 +1,10 @@
 from fastapi import FastAPI
-from app.data_engine import DataEngine
-from app.scoring_engine import ScoringEngine
+import yfinance as yf
+import pandas as pd
+
+from app import scoring_engine
 
 app = FastAPI()
-
-data_engine = DataEngine()
-scoring_engine = ScoringEngine()
 
 
 @app.get("/")
@@ -15,33 +14,36 @@ def root():
 
 @app.get("/analyze/{symbol}")
 def analyze_stock(symbol: str):
+    try:
+        ticker_symbol = symbol.upper() + ".IS"
 
-    # 1️⃣ Veri çek
-    df = data_engine.get_price_data(symbol)
+        df = yf.download(ticker_symbol, period="6mo", interval="1d")
 
-    if df is None or df.empty:
+        if df is None or df.empty:
+            return {"error": "Veri bulunamadı"}
+
+        # Moving averages hesapla
+        df["MA20"] = df["Close"].rolling(window=20).mean()
+        df["MA50"] = df["Close"].rolling(window=50).mean()
+
+        # NaN satırları temizle
+        df = df.dropna()
+
+        if df.empty:
+            return {"error": "Yetersiz veri"}
+
+        score, signal = scoring_engine.calculate_score(df)
+
+        latest = df.iloc[-1]
+
         return {
-            "symbol": symbol,
-            "score": 0,
-            "signal": "VERİ YETERSİZ"
+            "symbol": symbol.upper(),
+            "close": float(latest["Close"]),
+            "ma20": float(latest["MA20"]),
+            "ma50": float(latest["MA50"]),
+            "score": score,
+            "signal": signal
         }
 
-    # 2️⃣ İndikatör hesapla
-    df = data_engine.calculate_indicators(df)
-
-    if df is None or df.empty:
-        return {
-            "symbol": symbol,
-            "score": 0,
-            "signal": "VERİ YETERSİZ"
-        }
-
-    # 3️⃣ Skor hesapla
-    score, signal = scoring_engine.calculate_score(df)
-
-    # 4️⃣ JSON döndür
-    return {
-        "symbol": symbol,
-        "score": score,
-        "signal": signal
-    }
+    except Exception as e:
+        return {"error": str(e)}
