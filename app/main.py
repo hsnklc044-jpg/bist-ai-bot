@@ -5,111 +5,117 @@ from app.scoring_engine import calculate_score
 
 app = FastAPI()
 
+# 🔵 BIST30 (Yahoo formatı .IS)
 BIST30 = [
     "AKBNK.IS","ALARK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
-    "ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS","GUBRF.IS",
-    "HEKTS.IS","ISCTR.IS","KCHOL.IS",
-    "KRDMD.IS","ODAS.IS","PETKM.IS","PGSUS.IS","SAHOL.IS",
+    "ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS","HEKTS.IS",
+    "ISCTR.IS","KCHOL.IS","KOZAA.IS","KOZAL.IS","KRDMD.IS",
+    "ODAS.IS","PETKM.IS","PGSUS.IS","SAHOL.IS","SASA.IS",
     "SISE.IS","TAVHL.IS","TCELL.IS","THYAO.IS","TOASO.IS",
-    "TUPRS.IS","YKBNK.IS","SASA.IS","ARCLK.IS","DOHOL.IS"
+    "TUPRS.IS","YKBNK.IS","ZOREN.IS","GUBRF.IS","HALKB.IS"
 ]
 
-
-def calculate_rsi(data, period=14):
-    delta = data.diff()
-    gain = delta.clip(lower=0)
-    loss = -1 * delta.clip(upper=0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
-
+@app.get("/")
+def root():
+    return {"status": "BIST AI BOT ÇALIŞIYOR"}
 
 @app.get("/scan")
-def scan_market():
+def scan():
 
     breakout_list = []
     trend_list = []
     dip_list = []
 
-    total_weighted_score = 0
-    total_weight = 0
+    total_score_sum = 0
     valid_symbol_count = 0
 
     for symbol in BIST30:
         try:
             df = yf.download(symbol, period="6mo", interval="1d", progress=False)
 
-            if df is None or df.empty:
+            if df.empty or len(df) < 30:
                 continue
-
-            df = df.dropna()
-            if len(df) < 60:
-                continue
-
-            valid_symbol_count += 1
 
             df["MA20"] = df["Close"].rolling(20).mean()
             df["MA50"] = df["Close"].rolling(50).mean()
-            df["RSI"] = calculate_rsi(df["Close"])
+
+            delta = df["Close"].diff()
+            gain = delta.clip(lower=0)
+            loss = -delta.clip(upper=0)
+
+            avg_gain = gain.rolling(14).mean()
+            avg_loss = loss.rolling(14).mean()
+
+            rs = avg_gain / avg_loss
+            df["RSI"] = 100 - (100 / (1 + rs))
+
             df["VOL_AVG20"] = df["Volume"].rolling(20).mean()
             df["HH20"] = df["High"].rolling(20).max()
 
             latest = df.iloc[-1]
-            score, signal = calculate_score(df)
 
-            # 🔴 BREAKOUT (disiplinli)
+            if pd.isna(latest["RSI"]) or pd.isna(latest["MA20"]):
+                continue
+
+            score, signal = calculate_score(latest)
+
+            total_score_sum += score
+            valid_symbol_count += 1
+
+            # 🔴 BREAKOUT
             if (
-                latest["Close"] > latest["MA20"]
-                and latest["RSI"] > 58
-                and latest["Close"] >= latest["HH20"] * 0.99
+                latest["Close"] >= latest["HH20"]
+                and latest["Volume"] > latest["VOL_AVG20"] * 1.3
+                and latest["RSI"] > 60
             ):
                 breakout_list.append({
                     "symbol": symbol.replace(".IS",""),
                     "close": round(float(latest["Close"]),2),
                     "rsi": round(float(latest["RSI"]),2),
-                    "score": score
+                    "score": score,
+                    "signal": "BREAKOUT"
                 })
-                total_weighted_score += score * 3
-                total_weight += 3
 
-            # 🟡 TREND (yumuşatıldı)
-            elif latest["RSI"] > 45:
+            # 🟡 TREND
+            elif (
+                latest["Close"] > latest["MA20"]
+                and latest["MA20"] > latest["MA50"]
+                and latest["RSI"] > 50
+            ):
                 trend_list.append({
                     "symbol": symbol.replace(".IS",""),
                     "close": round(float(latest["Close"]),2),
                     "rsi": round(float(latest["RSI"]),2),
-                    "score": score
+                    "score": score,
+                    "signal": "TREND"
                 })
-                total_weighted_score += score * 2
-                total_weight += 2
 
-            # 🔵 DIP
+            # 🔵 DİP
             elif (
-                38 < latest["RSI"] < 45
+                latest["RSI"] > 40
+                and latest["RSI"] < 48
                 and df["RSI"].iloc[-1] > df["RSI"].iloc[-2]
             ):
                 dip_list.append({
                     "symbol": symbol.replace(".IS",""),
                     "close": round(float(latest["Close"]),2),
                     "rsi": round(float(latest["RSI"]),2),
-                    "score": score
+                    "score": score,
+                    "signal": "DIP TOPARLANMA"
                 })
-                total_weighted_score += score
-                total_weight += 1
 
-        except Exception:
+        except:
             continue
 
-    # 📊 PGE
-    if total_weight > 0 and valid_symbol_count >= 10:
-        pge = round((total_weighted_score / (total_weight * 10)) * 100, 2)
+    # 🎯 PİYASA GÜÇ ENDEKSİ (GERÇEK ORTALAMA MODEL)
+    if valid_symbol_count > 0:
+        pge = round((total_score_sum / (valid_symbol_count * 10)) * 100, 2)
     else:
         pge = 0
 
-    if pge > 65:
+    if pge > 70:
         durum = "GÜÇLÜ"
-    elif pge > 45:
+    elif pge > 50:
         durum = "NÖTR"
     else:
         durum = "ZAYIF"
