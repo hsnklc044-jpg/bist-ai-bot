@@ -12,7 +12,7 @@ app = FastAPI()
 # -------------------------------------------------
 @app.get("/")
 def root():
-    return {"status": "BIST Institutional Engine v2 aktif"}
+    return {"status": "BIST30 Institutional Engine v3 aktif"}
 
 
 # -------------------------------------------------
@@ -22,7 +22,6 @@ def root():
 def analyze_stock(symbol: str):
     try:
         ticker_symbol = symbol.upper() + ".IS"
-
         df = yf.download(ticker_symbol, period="6mo", interval="1d")
 
         if df is None or df.empty:
@@ -31,7 +30,6 @@ def analyze_stock(symbol: str):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # --- Göstergeler ---
         df["MA20"] = df["Close"].rolling(20).mean()
         df["MA50"] = df["Close"].rolling(50).mean()
 
@@ -54,7 +52,6 @@ def analyze_stock(symbol: str):
             return {"error": "Yetersiz veri"}
 
         score, signal = scoring_engine.calculate_score(df)
-
         latest = df.iloc[-1]
 
         return {
@@ -75,20 +72,24 @@ def analyze_stock(symbol: str):
 
 
 # -------------------------------------------------
-# 2 KATMANLI KURUMSAL TARAMA
+# BIST30 - 2 KATMANLI KURUMSAL TARAMA
 # -------------------------------------------------
 @app.get("/scan")
 def scan_market():
 
-    BIST_LIST = [
-        "ASELS", "THYAO", "EREGL", "SISE", "KCHOL",
-        "AKBNK", "TUPRS", "BIMAS", "SAHOL", "ISCTR"
+    BIST30 = [
+        "AKBNK","ALARK","ASELS","BIMAS","EKGYO",
+        "ENKAI","EREGL","FROTO","GARAN","GUBRF",
+        "HEKTS","ISCTR","KCHOL","KOZAA","KOZAL",
+        "KRDMD","ODAS","PETKM","PGSUS","SAHOL",
+        "SASA","SISE","TAVHL","TCELL","THYAO",
+        "TKFEN","TOASO","TUPRS","YKBNK","ARCLK"
     ]
 
     breakout_list = []
     preparing_list = []
 
-    for symbol in BIST_LIST:
+    for symbol in BIST30:
         try:
             ticker_symbol = symbol + ".IS"
             df = yf.download(ticker_symbol, period="6mo", interval="1d")
@@ -122,7 +123,7 @@ def scan_market():
 
             latest = df.iloc[-1]
 
-            # 🔥 BREAKOUT KATMANI
+            # 🔥 BREAKOUT
             if (
                 latest["Close"] > latest["MA20"]
                 and latest["Close"] > latest["MA50"]
@@ -136,7 +137,7 @@ def scan_market():
                     "close": float(latest["Close"])
                 })
 
-            # 🟡 HAZIRLANAN KATMANI
+            # 🟡 HAZIRLANAN
             elif (
                 latest["Close"] > latest["MA20"]
                 and latest["MA20"] > latest["MA50"]
