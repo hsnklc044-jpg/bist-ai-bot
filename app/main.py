@@ -7,6 +7,9 @@ from app import scoring_engine
 app = FastAPI()
 
 
+# -------------------------------------------------
+# ROOT
+# -------------------------------------------------
 @app.get("/")
 def root():
     return {"status": "BIST Institutional Engine aktif"}
@@ -28,7 +31,7 @@ def analyze_stock(symbol: str):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
 
-        # --- Göstergeler ---
+        # ---- Göstergeler ----
         df["MA20"] = df["Close"].rolling(20).mean()
         df["MA50"] = df["Close"].rolling(50).mean()
 
@@ -72,7 +75,7 @@ def analyze_stock(symbol: str):
 
 
 # -------------------------------------------------
-# TOPLU TARAMA
+# TOPLU KURUMSAL TARAMA
 # -------------------------------------------------
 @app.get("/scan")
 def scan_market():
@@ -116,10 +119,19 @@ def scan_market():
             if len(df) < 60:
                 continue
 
-            score, signal = scoring_engine.calculate_score(df)
+            latest = df.iloc[-1]
 
-            if score >= 8:
-                latest = df.iloc[-1]
+            # 🔥 KURUMSAL FİLTRE
+            if (
+                latest["Close"] > latest["MA20"]
+                and latest["Close"] > latest["MA50"]
+                and latest["MA20"] > latest["MA50"]
+                and latest["RSI"] > 55
+                and latest["Volume"] > latest["VOL_AVG20"]
+                and latest["Close"] >= latest["HH20"] * 0.97
+            ):
+
+                score, signal = scoring_engine.calculate_score(df)
 
                 results.append({
                     "symbol": symbol,
