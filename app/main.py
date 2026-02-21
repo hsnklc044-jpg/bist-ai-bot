@@ -14,6 +14,7 @@ last_scan_time = 0
 cached_result = None
 previous_breakout_count = None
 previous_pge = None
+previous_regime = None
 
 CACHE_SECONDS = 300  # 5 dk
 
@@ -40,13 +41,23 @@ def send_telegram(text):
     payload = {"chat_id": AUTHORIZED_CHAT_ID, "text": text}
     requests.post(url, data=payload)
 
+def detect_regime(pge):
+    if pge < 30:
+        return "🔴 Savunma"
+    elif pge < 50:
+        return "🟡 Geçiş"
+    elif pge < 70:
+        return "🟢 Trend"
+    else:
+        return "🚀 Momentum"
+
 @app.get("/")
 def root():
-    return {"status": "BIST AI HIBRIT KURUMSAL AKTIF"}
+    return {"status": "BIST AI REJIMLI AKTIF"}
 
 def scan_market():
     global last_scan_time, cached_result
-    global previous_breakout_count, previous_pge
+    global previous_breakout_count, previous_pge, previous_regime
 
     now = time.time()
 
@@ -101,27 +112,40 @@ def scan_market():
         /(len(BIST30)*3)*100,2
     )
 
-    # 🔥 ALARM MANTIĞI
+    regime = detect_regime(pge)
+
+    # 🔔 REJİM DEĞİŞİM ALARMI
+    if previous_regime is not None and regime != previous_regime:
+        send_telegram(f"🔄 Rejim değişti: {previous_regime} → {regime} (PGE %{pge})")
+
+    # 🚀 BREAKOUT ALARMI (Rejime göre)
     if previous_breakout_count is not None:
 
-        # Breakout artışı sadece PGE >= 50 ise
-        if len(breakout) > previous_breakout_count and pge >= 50:
-            send_telegram(f"🚀 Güçlü Breakout artışı! ({len(breakout)}) PGE:%{pge}")
+        if regime == "🟢 Trend" and len(breakout) > previous_breakout_count:
+            send_telegram(f"🚀 Breakout artışı ({len(breakout)}) - Trend Modu")
 
-        # PGE eşik geçişleri
-        if previous_pge < 30 and pge >= 30:
-            send_telegram(f"📈 PGE 30 üstüne çıktı! (%{pge})")
+        if regime == "🚀 Momentum" and len(breakout) > previous_breakout_count:
+            send_telegram(f"🚀 Güçlü Breakout! ({len(breakout)}) - Momentum Modu")
 
-        if previous_pge < 50 and pge >= 50:
-            send_telegram(f"💪 PGE 50 üstüne çıktı! (%{pge})")
+            # Momentum'da Top3 de gönder
+            all_stocks = breakout + trend + dip
+            top3 = sorted(all_stocks, key=lambda x: x["score"], reverse=True)[:3]
+            msg = "🏆 MOMENTUM TOP 3\n"
+            for h in top3:
+                msg += f"{h['symbol']} RSI:{h['rsi']} Skor:{h['score']}\n"
+            send_telegram(msg)
 
-        if previous_pge < 70 and pge >= 70:
-            send_telegram(f"🚀 PGE 70 üstüne çıktı! (%{pge})")
+        if regime == "🟡 Geçiş":
+            # Sadece RSI>=65 olan breakout bildir
+            strong = [b for b in breakout if b["rsi"] >= 65]
+            if strong and len(breakout) > previous_breakout_count:
+                send_telegram(f"⚡ Güçlü Breakout (Geçiş Modu): {len(strong)} adet")
 
     previous_breakout_count = len(breakout)
     previous_pge = pge
+    previous_regime = regime
 
-    result = (pge, breakout, trend, dip)
+    result = (pge, regime, breakout, trend, dip)
     cached_result = result
     last_scan_time = now
 
@@ -143,36 +167,36 @@ async def telegram_webhook(request: Request):
 
     if text == "/start":
         send_telegram("""
-📊 BIST AI HIBRIT PANEL
+📊 BIST AI REJİMLİ PANEL
 
 /scan → Anlık Tarama
 /breakout → Breakout
 /top3 → En Güçlü 3
-/yorum → Piyasa Yorumu
+/yorum → Rejim & PGE
 """)
 
     elif text == "/scan":
-        pge, _, _, _ = scan_market()
-        send_telegram(f"📊 PGE: %{pge}")
+        pge, regime, _, _, _ = scan_market()
+        send_telegram(f"📊 PGE: %{pge}\n🧭 Rejim: {regime}")
+
+    elif text == "/yorum":
+        pge, regime, _, _, _ = scan_market()
+        send_telegram(f"🧠 Rejim: {regime}\n📊 PGE: %{pge}")
 
     elif text == "/breakout":
-        _, breakout, _, _ = scan_market()
-        msg = "🚀 BREAKOUT\n"
+        _, regime, breakout, _, _ = scan_market()
+        msg = f"🚀 BREAKOUT ({regime})\n"
         for h in breakout:
             msg += f"{h['symbol']} RSI:{h['rsi']} Skor:{h['score']}\n"
         send_telegram(msg)
 
     elif text == "/top3":
-        _, breakout, trend, dip = scan_market()
+        _, regime, breakout, trend, dip = scan_market()
         all_stocks = breakout + trend + dip
         top3 = sorted(all_stocks, key=lambda x: x["score"], reverse=True)[:3]
-        msg = "🏆 TOP 3\n"
+        msg = f"🏆 TOP 3 ({regime})\n"
         for h in top3:
             msg += f"{h['symbol']} RSI:{h['rsi']} Skor:{h['score']}\n"
         send_telegram(msg)
-
-    elif text == "/yorum":
-        pge, _, _, _ = scan_market()
-        send_telegram(f"🧠 PGE: %{pge}")
 
     return {"ok": True}
