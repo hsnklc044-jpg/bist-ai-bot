@@ -1,11 +1,9 @@
 from fastapi import FastAPI
 import yfinance as yf
-import pandas as pd
 from app.scoring_engine import calculate_score
 
 app = FastAPI()
 
-# 📌 BIST30
 BIST30 = [
     "AKBNK.IS","ALARK.IS","ASELS.IS","ASTOR.IS","BIMAS.IS",
     "EKGYO.IS","ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS",
@@ -33,7 +31,6 @@ def scan_market():
             if df.empty or len(df) < 50:
                 continue
 
-            # Ortalama
             df["MA20"] = df["Close"].rolling(20).mean()
             df["MA50"] = df["Close"].rolling(50).mean()
 
@@ -46,17 +43,18 @@ def scan_market():
             rs = avg_gain / avg_loss
             df["RSI"] = 100 - (100 / (1 + rs))
 
-            # Hacim ortalaması
             df["VOL_AVG20"] = df["Volume"].rolling(20).mean()
-
-            # Son 20 gün en yüksek
             df["HH20"] = df["High"].rolling(20).max()
 
             latest = df.iloc[-1]
 
+            # NaN kontrolü
+            if latest[["MA20","MA50","RSI","VOL_AVG20","HH20"]].isna().any():
+                continue
+
             score, signal = calculate_score(df)
 
-            # 🔥 BREAKOUT (sert filtre aynı kaldı)
+            # 🔥 BREAKOUT (Trend teyitli)
             if (
                 latest["Close"] > latest["MA20"]
                 and latest["MA20"] > latest["MA50"]
@@ -72,10 +70,9 @@ def scan_market():
                     "signal": signal
                 })
 
-            # 🟡 HAZIRLANAN (gevşetildi)
+            # 🟡 HAZIRLANAN (Erken dönüş - MA50 şartı yok)
             elif (
                 latest["Close"] > latest["MA20"]
-                and latest["MA20"] > latest["MA50"]
                 and latest["RSI"] > 48
                 and latest["Close"] >= latest["HH20"] * 0.94
             ):
