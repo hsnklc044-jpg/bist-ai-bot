@@ -1,128 +1,155 @@
-from fastapi import FastAPI
+import os
+import time
+import requests
 import yfinance as yf
 import pandas as pd
-import os
-import requests
+from fastapi import FastAPI
 
 app = FastAPI()
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 BIST30 = [
     "AKBNK.IS","ALARK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
     "ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS","HEKTS.IS",
-    "ISCTR.IS","KCHOL.IS","KOZAA.IS","KOZAL.IS","KRDMD.IS",
-    "ODAS.IS","PETKM.IS","PGSUS.IS","SAHOL.IS","SASA.IS",
-    "SISE.IS","TAVHL.IS","TCELL.IS","THYAO.IS","TOASO.IS",
-    "TUPRS.IS","YKBNK.IS","ZOREN.IS","GUBRF.IS","HALKB.IS"
+    "ISCTR.IS","KCHOL.IS","KRDMD.IS","ODAS.IS","PETKM.IS",
+    "PGSUS.IS","SAHOL.IS","SISE.IS","TAVHL.IS","TCELL.IS",
+    "THYAO.IS","TOASO.IS","TUPRS.IS","YKBNK.IS","ZOREN.IS",
+    "GUBRF.IS","HALKB.IS","KOZAA.IS","KOZAL.IS","SASA.IS"
 ]
 
-BOT_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+def calculate_rsi(data, period=14):
+    delta = data.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
 
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
 
-def send_telegram_message(text):
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown"
-    }
-    requests.post(url, json=payload)
-
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 @app.get("/")
 def root():
     return {"status": "BIST AI BOT AKTIF"}
 
-
 @app.get("/scan")
-def scan():
+def scan_market():
 
+    breakout = []
     trend = []
     dip = []
-
-    total_score = 0
-    count = 0
+    hata_listesi = []
+    veri_alinan = 0
 
     for symbol in BIST30:
-        try:
-            df = yf.download(symbol, period="6mo", interval="1d", progress=False)
 
-            if df.empty or len(df) < 50:
+        try:
+            ticker = yf.Ticker(symbol)
+            df = ticker.history(period="6mo")
+
+            if df.empty:
                 continue
+
+            veri_alinan += 1
 
             df["MA20"] = df["Close"].rolling(20).mean()
             df["MA50"] = df["Close"].rolling(50).mean()
-
-            delta = df["Close"].diff()
-            gain = delta.clip(lower=0)
-            loss = -delta.clip(upper=0)
-
-            avg_gain = gain.rolling(14).mean()
-            avg_loss = loss.rolling(14).mean()
-
-            rs = avg_gain / avg_loss
-            df["RSI"] = 100 - (100 / (1 + rs))
+            df["RSI"] = calculate_rsi(df["Close"])
 
             latest = df.iloc[-1]
 
-            if pd.isna(latest["RSI"]):
-                continue
+            close = float(latest["Close"])
+            rsi = float(latest["RSI"])
+            ma20 = float(latest["MA20"])
+            ma50 = float(latest["MA50"])
 
             score = 0
-            if latest["Close"] > latest["MA20"]:
-                score += 3
-            if latest["MA20"] > latest["MA50"]:
-                score += 3
-            if latest["RSI"] > 50:
-                score += 4
 
-            total_score += score
-            count += 1
+            if close > ma20:
+                score += 2
+            if ma20 > ma50:
+                score += 2
+            if rsi > 55:
+                score += 2
+            if rsi > 60:
+                score += 1
 
-            if latest["Close"] > latest["MA20"] and latest["RSI"] > 50:
+            # BREAKOUT
+            if close > ma20 and ma20 > ma50 and rsi > 60:
+                breakout.append({
+                    "symbol": symbol.replace(".IS",""),
+                    "close": round(close,2),
+                    "rsi": round(rsi,2),
+                    "score": score
+                })
+
+            # TREND
+            elif close > ma20 and rsi > 48:
                 trend.append({
                     "symbol": symbol.replace(".IS",""),
+                    "close": round(close,2),
+                    "rsi": round(rsi,2),
                     "score": score
                 })
 
-            if 40 < latest["RSI"] < 48:
+            # DİP
+            elif 40 < rsi < 48:
                 dip.append({
                     "symbol": symbol.replace(".IS",""),
+                    "close": round(close,2),
+                    "rsi": round(rsi,2),
                     "score": score
                 })
 
-        except:
+            time.sleep(0.7)  # rate limit koruma
+
+        except Exception as e:
+            hata_listesi.append({symbol: str(e)})
             continue
 
-    if count > 0:
-        pge = round((total_score / (count * 10)) * 100, 2)
-    else:
-        pge = 0
+    piyasa_guc = round(
+        ((len(breakout)*3)+(len(trend)*2)+(len(dip)*1)) 
+        / (len(BIST30)*3) * 100, 2
+    )
 
     return {
-        "piyasa_guc_endeksi": pge,
-        "veri_alinan_hisse": count,
+        "piyasa_guc_endeksi": piyasa_guc,
+        "veri_alinan_hisse": veri_alinan,
+        "breakout_sayisi": len(breakout),
         "trend_sayisi": len(trend),
         "dip_sayisi": len(dip),
+        "breakout": breakout,
         "trend": trend,
-        "dip": dip
+        "dip": dip,
+        "hata_sayisi": len(hata_listesi)
     }
-
 
 @app.get("/send_report")
 def send_report():
 
-    data = scan()
+    result = scan_market()
 
-    message = f"""
-📊 *BIST AI RAPOR*
+    mesaj = f"""
+📊 BIST AI Günlük Rapor
 
-PGE: {data['piyasa_guc_endeksi']}
+Piyasa Güç Endeksi: %{result['piyasa_guc_endeksi']}
+Veri Alınan Hisse: {result['veri_alinan_hisse']}
 
-Trend: {data['trend_sayisi']}
-Dip: {data['dip_sayisi']}
+🚀 Breakout: {result['breakout_sayisi']}
+📈 Trend: {result['trend_sayisi']}
+🔄 Dip: {result['dip_sayisi']}
 """
 
-    send_telegram_message(message)
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": mesaj
+    }
+
+    requests.post(url, data=payload)
 
     return {"status": "Telegram Gönderildi"}
