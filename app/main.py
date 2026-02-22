@@ -135,21 +135,21 @@ def morning():
     if pge < 40:
         rsi_limit = 45
         mom_limit = 0.01
-        atr_stop = 1.1
-        atr_target = 2.0
         regime = "AGRESİF"
+        atr_stop = 0.8
+        atr_target = 1.4
     elif pge > 65:
         rsi_limit = 55
         mom_limit = 0.03
-        atr_stop = 1.4
-        atr_target = 2.8
         regime = "DİSİPLİNLİ"
+        atr_stop = 1.0
+        atr_target = 1.6
     else:
         rsi_limit = 50
         mom_limit = 0.02
-        atr_stop = 1.2
-        atr_target = 2.2
         regime = "NORMAL"
+        atr_stop = 0.9
+        atr_target = 1.5
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -157,7 +157,7 @@ def morning():
     c.execute("SELECT COUNT(*) FROM trades WHERE active=1")
     open_positions = c.fetchone()[0]
 
-    message = f"🚀 ALGORİTMA 14.0\nPGE:{round(pge,2)} | {regime}\n\n"
+    message = f"🚀 ALGORİTMA 14.1 HIZLI MOD\nPGE:{round(pge,2)} | {regime}\n\n"
 
     for symbol in BIST_SYMBOLS:
 
@@ -366,4 +366,4 @@ Sharpe Benzeri: {round(sharpe_like,2)}
 
 @app.get("/")
 def root():
-    return {"status": "ALGORİTMA 14.0 REJİM ADAPTİF + PERFORMANS BİLİMİ AKTİF"}
+    return {"status": "ALGORİTMA 14.1 HIZLI MOD AKTİF"}
