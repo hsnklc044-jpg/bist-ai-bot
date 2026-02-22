@@ -54,7 +54,7 @@ def calculate_pge():
         return 50.0
 
 # ------------------------------------------------
-# SKOR (0-100)
+# REJİM ADAPTİF SKOR
 # ------------------------------------------------
 def calculate_score(df, pge):
     latest = df.iloc[-1]
@@ -67,23 +67,30 @@ def calculate_score(df, pge):
 
     score = 0
 
+    # Momentum Katmanı
     if rsi > 55: score += 10
     if rsi > 60: score += 10
-
     if latest["Close"] > ma20: score += 15
     if ma20 > ma50: score += 15
-
-    if volume > avg_vol: score += 20
+    if volume > avg_vol: score += 15
 
     momentum = df["Close"].pct_change(3).iloc[-1]
     if momentum > 0.02: score += 15
 
-    if pge > 50: score += 15
+    # REJİM ADAPTASYONU
+    if pge < 30:
+        score -= 20
+    elif pge < 50:
+        pass
+    elif pge < 70:
+        score += 10
+    else:
+        score += 20
 
     return round(score,2)
 
 # ------------------------------------------------
-# SON 3 GÜN FİLTRESİ
+# 3 GÜN FİLTRESİ
 # ------------------------------------------------
 def recently_sent(symbol):
     try:
@@ -97,8 +104,7 @@ def recently_sent(symbol):
     for signal in signals:
         if signal["symbol"] == symbol:
             signal_date = datetime.strptime(signal["date"], "%Y-%m-%d")
-            days_diff = (today - signal_date).days
-            if days_diff <= 3:
+            if (today - signal_date).days <= 3:
                 return True
     return False
 
@@ -144,12 +150,21 @@ def scan_market():
             score = calculate_score(df, pge)
 
             if score >= 65 and not recently_sent(symbol):
+
+                risk = "DÜŞÜK"
+                if latest["rsi"] > 70:
+                    risk = "YÜKSEK"
+                elif latest["rsi"] > 60:
+                    risk = "ORTA"
+
                 data = {
                     "symbol": symbol,
                     "close": round(float(latest["Close"]),2),
                     "rsi": round(float(latest["rsi"]),2),
-                    "score": score
+                    "score": score,
+                    "risk": risk
                 }
+
                 breakout.append(data)
                 save_signal(symbol, data["close"], score)
 
@@ -162,102 +177,24 @@ def scan_market():
     }
 
 # ------------------------------------------------
-# PERFORMANS
-# ------------------------------------------------
-def calculate_performance():
-    try:
-        with open(SIGNAL_FILE,"r") as f:
-            signals = json.load(f)
-    except:
-        return {"message":"Henüz sinyal yok"}
-
-    results = []
-    success = 0
-    total_return = 0
-
-    for signal in signals:
-        try:
-            symbol = signal["symbol"]
-            entry_price = signal["price"]
-            entry_date = signal["date"]
-
-            df = yf.download(symbol, start=entry_date, progress=False)
-            if len(df) < 6:
-                continue
-
-            t3 = df["Close"].iloc[3]
-            t5 = df["Close"].iloc[5]
-
-            r3 = ((t3-entry_price)/entry_price)*100
-            r5 = ((t5-entry_price)/entry_price)*100
-
-            avg = (r3+r5)/2
-
-            total_return += avg
-            if avg > 0:
-                success += 1
-
-            results.append(avg)
-        except:
-            continue
-
-    if len(results)==0:
-        return {"message":"Yeterli veri yok"}
-
-    return {
-        "total_signals": len(results),
-        "success_rate": round((success/len(results))*100,2),
-        "average_return": round(total_return/len(results),2)
-    }
-
-# ------------------------------------------------
 # SABAH RAPORU
 # ------------------------------------------------
 @app.get("/morning_report")
 def morning_report():
+
     result = scan_market()
 
-    message = f"📊 ALGORİTMA 3.0 RAPOR\n\n📈 PGE: %{result['pge']}\n🚀 Güçlü Sinyal: {len(result['breakout'])}\n\n"
+    message = f"📊 ALGORİTMA 4.0 RAPOR\n\n📈 PGE: %{result['pge']}\n🚀 Güçlü Sinyal: {len(result['breakout'])}\n\n"
 
     for stock in result["breakout"]:
-        message += f"{stock['symbol']} | RSI:{stock['rsi']} | Skor:{stock['score']}\n"
+        message += f"{stock['symbol']} | RSI:{stock['rsi']} | Skor:{stock['score']} | Risk:{stock['risk']}\n"
 
     send_telegram(message)
     return {"status":"Morning Sent"}
-
-# ------------------------------------------------
-# PERFORMANS ENDPOINT
-# ------------------------------------------------
-@app.get("/performance")
-def performance():
-    perf = calculate_performance()
-
-    if "message" in perf:
-        return perf
-
-    message = f"📊 PERFORMANS\n\nToplam: {perf['total_signals']}\nBaşarı: %{perf['success_rate']}\nOrt. Getiri: %{perf['average_return']}"
-
-    send_telegram(message)
-    return perf
-
-# ------------------------------------------------
-# HAFTALIK RAPOR
-# ------------------------------------------------
-@app.get("/weekly_report")
-def weekly_report():
-    perf = calculate_performance()
-
-    if "message" in perf:
-        return perf
-
-    message = f"📅 HAFTALIK RAPOR\n\nToplam: {perf['total_signals']}\nBaşarı: %{perf['success_rate']}\nOrt. Getiri: %{perf['average_return']}"
-
-    send_telegram(message)
-    return {"status":"Weekly Sent"}
 
 # ------------------------------------------------
 # ROOT
 # ------------------------------------------------
 @app.get("/")
 def root():
-    return {"status":"ALGORİTMA 3.0 AKTİF"}
+    return {"status":"ALGORİTMA 4.0 REJİM ADAPTİF AKTİF"}
