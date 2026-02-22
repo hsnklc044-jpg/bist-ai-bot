@@ -16,7 +16,7 @@ DB_FILE = "signals.db"
 
 ACCOUNT_SIZE = 100000
 RISK_PERCENT = 0.02
-MAX_WORKERS = 6  # Paralel thread sayısı
+MAX_WORKERS = 6
 
 BIST_SYMBOLS = [
     "AKBNK.IS","ARCLK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
@@ -42,6 +42,19 @@ def init_db():
         ma20 REAL,
         ma50 REAL,
         atr REAL,
+        date TEXT
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS signals (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        symbol TEXT,
+        entry REAL,
+        stop REAL,
+        target REAL,
+        lot INTEGER,
+        active INTEGER,
         date TEXT
     )
     """)
@@ -84,7 +97,7 @@ def send_telegram(message):
     requests.post(url, json=payload)
 
 # ------------------------------------------------
-# HİSSE VERİ ÇEKME (THREAD)
+# DATA UPDATE (PARALEL)
 # ------------------------------------------------
 def fetch_symbol(symbol):
     try:
@@ -112,9 +125,6 @@ def fetch_symbol(symbol):
     except:
         return None
 
-# ------------------------------------------------
-# PARALEL UPDATE
-# ------------------------------------------------
 @app.get("/update_data")
 def update_data():
 
@@ -125,7 +135,7 @@ def update_data():
     conn.commit()
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        futures = [executor.submit(fetch_symbol, symbol) for symbol in BIST_SYMBOLS]
+        futures = [executor.submit(fetch_symbol, s) for s in BIST_SYMBOLS]
 
         for future in as_completed(futures):
             result = future.result()
@@ -135,10 +145,10 @@ def update_data():
     conn.commit()
     conn.close()
 
-    return {"status": "PARALEL DATA UPDATED"}
+    return {"status": "DATA UPDATED"}
 
 # ------------------------------------------------
-# POZİSYON HESABI
+# POZİSYON BOYUTU
 # ------------------------------------------------
 def calculate_position_size(entry, stop):
     risk_amount = ACCOUNT_SIZE * RISK_PERCENT
@@ -148,7 +158,7 @@ def calculate_position_size(entry, stop):
     return int(risk_amount / risk_per_share)
 
 # ------------------------------------------------
-# SABAH RAPORU (CACHE'DEN)
+# SABAH RAPORU (SİNYAL ÜRETİR)
 # ------------------------------------------------
 @app.get("/morning_report")
 def morning_report():
@@ -159,7 +169,7 @@ def morning_report():
     cursor.execute("SELECT * FROM market_data")
     rows = cursor.fetchall()
 
-    breakout = []
+    message = "🚀 ALGORİTMA 9.0 RAPOR\n\n"
 
     for row in rows:
         symbol, close, rsi, ma20, ma50, atr, _ = row
@@ -177,27 +187,69 @@ def morning_report():
 
             lot = calculate_position_size(close, stop)
 
-            breakout.append({
-                "symbol": symbol,
-                "score": score,
-                "rr": round(rr,2),
-                "lot": lot
-            })
+            cursor.execute("""
+            INSERT INTO signals (symbol, entry, stop, target, lot, active, date)
+            VALUES (?,?,?,?,?,?,?)
+            """, (
+                symbol,
+                close,
+                stop,
+                target,
+                lot,
+                1,
+                datetime.now().strftime("%Y-%m-%d")
+            ))
 
+            message += f"{symbol}\nEntry:{round(close,2)}\nStop:{round(stop,2)}\nTarget:{round(target,2)}\nLot:{lot}\n\n"
+
+    conn.commit()
     conn.close()
 
-    message = "🚀 ALGORİTMA 8.1 PARALEL RAPOR\n\n"
+    send_telegram(message)
+    return {"status":"Sent"}
 
-    for s in breakout:
-        message += (
-            f"{s['symbol']} | Skor:{s['score']} | RR:{s['rr']}\n"
-            f"Lot:{s['lot']}\n\n"
-        )
+# ------------------------------------------------
+# TRAILING STOP & YÖNETİM
+# ------------------------------------------------
+@app.get("/manage_positions")
+def manage_positions():
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT id, symbol, entry, stop, target, lot FROM signals WHERE active=1")
+    positions = cursor.fetchall()
+
+    message = "📊 POZİSYON YÖNETİMİ\n\n"
+
+    for pos in positions:
+        pid, symbol, entry, stop, target, lot = pos
+
+        df = yf.download(symbol, period="5d", progress=False)
+        current_price = float(df["Close"].iloc[-1])
+
+        # 1️⃣ Kâr kilidi
+        if current_price > entry * 1.03:
+            stop = entry
+
+        # 2️⃣ Trailing
+        if current_price > target:
+            stop = current_price - (0.5 * (target - entry))
+
+        # 3️⃣ Stop kırıldıysa kapat
+        if current_price <= stop:
+            cursor.execute("UPDATE signals SET active=0 WHERE id=?", (pid,))
+            message += f"{symbol} STOP ÇALIŞTI\n\n"
+        else:
+            cursor.execute("UPDATE signals SET stop=? WHERE id=?", (stop, pid))
+            message += f"{symbol} Güncel Stop:{round(stop,2)}\n\n"
+
+    conn.commit()
+    conn.close()
 
     send_telegram(message)
-
-    return {"status": "Sent"}
+    return {"status":"Managed"}
 
 @app.get("/")
 def root():
-    return {"status": "ALGORİTMA 8.1 PARALEL MOD AKTİF"}
+    return {"status":"ALGORİTMA 9.0 TRAILING STOP AKTİF"}
