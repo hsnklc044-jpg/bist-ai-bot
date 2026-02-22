@@ -157,7 +157,7 @@ def morning():
     c.execute("SELECT COUNT(*) FROM trades WHERE active=1")
     open_positions = c.fetchone()[0]
 
-    message = f"🚀 ALGORİTMA 14.1 HIZLI MOD\nPGE:{round(pge,2)} | {regime}\n\n"
+    message = f"🚀 ALGORİTMA 14.2 DENGELİ HIZLI MOD\nPGE:{round(pge,2)} | {regime}\n\n"
 
     for symbol in BIST_SYMBOLS:
 
@@ -184,7 +184,8 @@ def morning():
             if last["Volume"] > last["vol_avg"]:
                 score += 1
 
-            if score < 2:
+            # DENGELİ GİRİŞ
+            if score < 1:
                 continue
 
             entry = float(last["Close"])
@@ -336,21 +337,6 @@ def performance():
     if np.std(pnl_list) != 0:
         sharpe_like = np.mean(pnl_list) / np.std(pnl_list)
 
-    report = f"""
-📊 PERFORMANS BİLİMİ
-
-Toplam İşlem: {total_trades}
-Win Rate: {round(win_rate,2)}%
-Ortalama Kazanç: {round(avg_win,2)}
-Ortalama Kayıp: {round(avg_loss,2)}
-Risk/Reward: {round(rr_ratio,2)}
-Expectancy: {round(expectancy,2)}
-Max Drawdown: %{round(max_dd*100,2)}
-Sharpe Benzeri: {round(sharpe_like,2)}
-"""
-
-    send_telegram(report)
-
     return {
         "total_trades": total_trades,
         "win_rate": win_rate,
@@ -366,4 +352,4 @@ Sharpe Benzeri: {round(sharpe_like,2)}
 
 @app.get("/")
 def root():
-    return {"status": "ALGORİTMA 14.1 HIZLI MOD AKTİF"}
+    return {"status": "ALGORİTMA 14.2 DENGELİ HIZLI MOD AKTİF"}
