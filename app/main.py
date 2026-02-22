@@ -1,184 +1,177 @@
-# ⚠️ UZUN KOD — TAMAMINI YAPIŞTIR
 import os
-import time
 import requests
+from fastapi import FastAPI
+from datetime import datetime
 import yfinance as yf
-from fastapi import FastAPI, Request
+import pandas as pd
+import numpy as np
 
 app = FastAPI()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-AUTHORIZED_CHAT_ID = int(os.getenv("TELEGRAM_CHAT_ID"))
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-CACHE_SECONDS = 300
-ALARM_COOLDOWN = 1800  # 30 dakika
-
-last_scan_time = 0
-cached_result = None
-previous_breakout_count = None
-previous_regime = None
-previous_pge = None
-last_alarm_time = 0
-
-BIST30 = [
-    "AKBNK.IS","ALARK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
-    "ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS","HEKTS.IS",
-    "ISCTR.IS","KCHOL.IS","KRDMD.IS","ODAS.IS","PETKM.IS",
-    "PGSUS.IS","SAHOL.IS","SISE.IS","TAVHL.IS","TCELL.IS",
-    "THYAO.IS","TOASO.IS","TUPRS.IS","YKBNK.IS","ZOREN.IS",
-    "GUBRF.IS","HALKB.IS","KOZAA.IS","KOZAL.IS","SASA.IS"
+BIST_SYMBOLS = [
+    "ENKAI.IS","EREGL.IS","KCHOL.IS","TCELL.IS","GUBRF.IS",
+    "HALKB.IS","ASELS.IS","BIMAS.IS","FROTO.IS","ISCTR.IS",
+    "TOASO.IS","YKBNK.IS","ZOREN.IS","AKBNK.IS","GARAN.IS",
+    "PETKM.IS","SAHOL.IS","TAVHL.IS","TUPRS.IS","SASA.IS"
 ]
 
+# ------------------------------------------------
+# RSI HESAPLAMA
+# ------------------------------------------------
 def calculate_rsi(data, period=14):
     delta = data.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / avg_loss
+    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-def send_telegram(text):
+# ------------------------------------------------
+# TELEGRAM GÖNDER
+# ------------------------------------------------
+def send_telegram(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": AUTHORIZED_CHAT_ID, "text": text}
-    requests.post(url, data=payload)
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message
+    }
+    requests.post(url, json=payload)
 
-def detect_regime(pge):
-    if pge < 30:
-        return "🔴 Savunma"
-    elif pge < 50:
-        return "🟡 Geçiş"
-    elif pge < 70:
-        return "🟢 Trend"
-    else:
-        return "🚀 Momentum"
+# ------------------------------------------------
+# PİYASA GÜÇ ENDEKSİ (PGE)
+# ------------------------------------------------
+def calculate_pge():
+    try:
+        data = yf.download("^XU100", period="3mo")
+        data["rsi"] = calculate_rsi(data["Close"])
+        pge = round(float(data["rsi"].iloc[-1]), 2)
+        return pge
+    except:
+        return 50.0
 
-@app.get("/")
-def root():
-    return {"status": "BIST AI FULL PROFESYONEL AKTIF"}
-
-@app.get("/morning_report")
-def morning_report():
-    pge, regime, breakout, trend, dip = scan_market()
-    send_telegram(
-        f"🌅 AÇILIŞ RAPORU\n"
-        f"🧭 Rejim: {regime}\n"
-        f"📊 PGE: %{pge}\n"
-        f"🚀 Breakout: {len(breakout)}"
-    )
-    return {"status": "Morning sent"}
-
-@app.get("/evening_report")
-def evening_report():
-    pge, regime, breakout, trend, dip = scan_market()
-    send_telegram(
-        f"🌆 GÜN SONU RAPORU\n"
-        f"🧭 Rejim: {regime}\n"
-        f"📊 PGE: %{pge}\n"
-        f"🚀 Breakout: {len(breakout)}\n"
-        f"📈 Trend: {len(trend)}\n"
-        f"🔄 Dip: {len(dip)}"
-    )
-    return {"status": "Evening sent"}
-
+# ------------------------------------------------
+# ANA TARAMA
+# ------------------------------------------------
 def scan_market():
-    global last_scan_time, cached_result
-    global previous_breakout_count, previous_regime
-    global previous_pge, last_alarm_time
+    breakout = []
+    dip = []
+    trend = []
+    hata = 0
 
-    now = time.time()
+    pge = calculate_pge()
 
-    if cached_result and now - last_scan_time < CACHE_SECONDS:
-        return cached_result
-
-    breakout, trend, dip = [], [], []
-
-    for symbol in BIST30:
+    for symbol in BIST_SYMBOLS:
         try:
-            df = yf.Ticker(symbol).history(period="6mo")
-            if df.empty or len(df) < 50:
+            df = yf.download(symbol, period="6mo")
+            if df.empty:
                 continue
 
-            df["MA20"] = df["Close"].rolling(20).mean()
-            df["MA50"] = df["Close"].rolling(50).mean()
-            df["RSI"] = calculate_rsi(df["Close"])
-            df["AVG_VOL"] = df["Volume"].rolling(20).mean()
-
-            latest = df.iloc[-1]
-            close = float(latest["Close"])
-            rsi = float(latest["RSI"])
-            ma20 = float(latest["MA20"])
-            ma50 = float(latest["MA50"])
-            volume = float(latest["Volume"])
-            avg_volume = float(latest["AVG_VOL"])
+            df["rsi"] = calculate_rsi(df["Close"])
+            rsi = round(float(df["rsi"].iloc[-1]), 2)
+            close = round(float(df["Close"].iloc[-1]), 2)
 
             score = 0
-            if close > ma20: score += 2
-            if ma20 > ma50: score += 2
-            if rsi > 55: score += 2
-            if rsi > 60: score += 1
-            if volume > avg_volume: score += 2
+            if rsi > 60: score += 2
+            if rsi > 65: score += 2
+            if rsi > 70: score += 2
+            if close > df["Close"].rolling(20).mean().iloc[-1]: score += 1
 
-            data = {
-                "symbol": symbol.replace(".IS",""),
-                "rsi": round(rsi,2),
-                "score": score
-            }
+            # -----------------------------------------
+            # REJİM + KURUMSAL FİLTRE
+            # -----------------------------------------
 
-            if close > ma20 and ma20 > ma50 and rsi > 60 and volume > avg_volume:
-                breakout.append(data)
-            elif close > ma20 and rsi > 48:
-                trend.append(data)
-            elif 40 < rsi < 48:
-                dip.append(data)
+            # BREAKOUT
+            if (
+                55 <= rsi <= 70 and
+                score >= 6 and
+                pge >= 30
+            ):
+                breakout.append({"symbol": symbol, "close": close, "rsi": rsi})
 
-            time.sleep(0.4)
+            # DIP
+            if (
+                35 <= rsi <= 45 and
+                score >= 4 and
+                pge <= 60
+            ):
+                dip.append({"symbol": symbol, "close": close, "rsi": rsi})
+
+            # TREND
+            if (
+                rsi >= 60 and
+                score >= 6 and
+                pge >= 40
+            ):
+                trend.append({"symbol": symbol, "close": close, "rsi": rsi})
 
         except:
-            continue
+            hata += 1
 
-    pge = round(((len(breakout)*3)+(len(trend)*2)+(len(dip))) / (len(BIST30)*3)*100,2)
-    regime = detect_regime(pge)
+    return {
+        "pge": pge,
+        "breakout": breakout,
+        "dip": dip,
+        "trend": trend,
+        "hata": hata
+    }
 
-    # 🔔 PGE kritik alarm
-    if previous_pge is not None:
-        if previous_pge < 50 and pge >= 50:
-            send_telegram("📈 PGE 50 üstüne çıktı!")
-        if previous_pge < 70 and pge >= 70:
-            send_telegram("🚀 PGE 70 geçti! Momentum başlıyor!")
-        if previous_pge > 30 and pge <= 30:
-            send_telegram("⚠️ PGE 30 altına düştü! Savunma modu!")
+# ------------------------------------------------
+# MORNING REPORT
+# ------------------------------------------------
+@app.get("/morning_report")
+def morning_report():
 
-    # 🚀 Breakout alarm + cooldown
-    if previous_breakout_count is not None:
-        if len(breakout) > previous_breakout_count:
-            if now - last_alarm_time > ALARM_COOLDOWN:
-                send_telegram(f"🚀 Breakout artışı: {len(breakout)}")
-                last_alarm_time = now
+    now = datetime.now()
+    if now.hour < 9:
+        return {"status": "Saat dışı"}
 
-    previous_breakout_count = len(breakout)
-    previous_regime = regime
-    previous_pge = pge
+    result = scan_market()
 
-    result = (pge, regime, breakout, trend, dip)
-    cached_result = result
-    last_scan_time = now
-    return result
+    message = f"""
+📊 BIST AI KURUMSAL RAPOR
 
-@app.post("/telegram")
-async def telegram_webhook(request: Request):
-    data = await request.json()
-    if "message" not in data:
-        return {"ok": True}
+📈 PGE: %{result['pge']}
 
-    chat_id = data["message"]["chat"]["id"]
-    text = data["message"].get("text","")
+🚀 Breakout: {len(result['breakout'])}
+📉 Dip: {len(result['dip'])}
+📊 Trend: {len(result['trend'])}
 
-    if chat_id != AUTHORIZED_CHAT_ID:
-        return {"ok": True}
+"""
 
-    if text == "/scan":
-        pge, regime, _, _, _ = scan_market()
-        send_telegram(f"📊 PGE: %{pge}\n🧭 Rejim: {regime}")
+    send_telegram(message)
+    return {"status": "Sabah Rapor Gönderildi"}
 
-    return {"ok": True}
+# ------------------------------------------------
+# EVENING REPORT
+# ------------------------------------------------
+@app.get("/evening_report")
+def evening_report():
+
+    now = datetime.now()
+    if now.hour < 18:
+        return {"status": "Saat dışı"}
+
+    result = scan_market()
+
+    message = f"""
+🌆 AKŞAM KAPANIŞ RAPORU
+
+📈 PGE: %{result['pge']}
+
+🚀 Breakout: {len(result['breakout'])}
+📉 Dip: {len(result['dip'])}
+📊 Trend: {len(result['trend'])}
+
+"""
+
+    send_telegram(message)
+    return {"status": "Akşam Rapor Gönderildi"}
+
+# ------------------------------------------------
+# ROOT
+# ------------------------------------------------
+@app.get("/")
+def root():
+    return {"status": "BIST AI KURUMSAL AKTİF"}
