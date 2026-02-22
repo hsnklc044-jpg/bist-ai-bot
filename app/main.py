@@ -8,6 +8,10 @@ import pandas as pd
 
 app = FastAPI()
 
+# ==============================
+# CONFIG
+# ==============================
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -23,9 +27,10 @@ BIST_SYMBOLS = [
     "TUPRS.IS","VAKBN.IS","YKBNK.IS","ALARK.IS","BRISA.IS"
 ]
 
-# ------------------------------------------------
-# DB INIT
-# ------------------------------------------------
+# ==============================
+# DATABASE INIT
+# ==============================
+
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
@@ -50,9 +55,10 @@ def init_db():
 
 init_db()
 
-# ------------------------------------------------
+# ==============================
 # TELEGRAM
-# ------------------------------------------------
+# ==============================
+
 def send_telegram(message):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return
@@ -63,9 +69,10 @@ def send_telegram(message):
     except:
         pass
 
-# ------------------------------------------------
+# ==============================
 # RSI
-# ------------------------------------------------
+# ==============================
+
 def calculate_rsi(data, period=14):
     delta = data.diff()
     gain = delta.clip(lower=0)
@@ -75,9 +82,10 @@ def calculate_rsi(data, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-# ------------------------------------------------
-# PGE
-# ------------------------------------------------
+# ==============================
+# PGE (XU100 RSI)
+# ==============================
+
 def calculate_pge():
     try:
         df = yf.download("^XU100", period="3mo", progress=False)
@@ -88,9 +96,10 @@ def calculate_pge():
     except:
         return 50
 
-# ------------------------------------------------
+# ==============================
 # RISK MODEL
-# ------------------------------------------------
+# ==============================
+
 def get_risk_model(pge):
     if pge < 35:
         return 0.01, 2.0, "DEFANSİF"
@@ -99,9 +108,10 @@ def get_risk_model(pge):
     else:
         return 0.02, 1.5, "NORMAL"
 
-# ------------------------------------------------
-# SABAH SİNYAL
-# ------------------------------------------------
+# ==============================
+# MORNING SIGNAL
+# ==============================
+
 @app.get("/morning_report")
 def morning_report():
 
@@ -109,7 +119,7 @@ def morning_report():
         pge = calculate_pge()
         risk_percent, min_rr, regime = get_risk_model(pge)
 
-        message = f"🚀 ALGORİTMA 11.1\nPGE:{round(pge,2)} | Rejim:{regime}\n\n"
+        message = f"🚀 ALGORİTMA 11.2\nPGE:{round(pge,2)} | Rejim:{regime}\n\n"
 
         conn = sqlite3.connect(DB_FILE)
         cursor = conn.cursor()
@@ -118,8 +128,7 @@ def morning_report():
 
             try:
                 df = yf.download(symbol, period="3mo", progress=False)
-
-                if df is None or df.empty:
+                if df.empty:
                     continue
 
                 df["rsi"] = calculate_rsi(df["Close"])
@@ -179,9 +188,10 @@ def morning_report():
     except Exception as e:
         return {"error": str(e)}
 
-# ------------------------------------------------
-# POZİSYON KONTROL
-# ------------------------------------------------
+# ==============================
+# CHECK POSITIONS
+# ==============================
+
 @app.get("/check_positions")
 def check_positions():
 
@@ -216,7 +226,6 @@ def check_positions():
                     continue
 
                 total_pnl += pnl
-
                 cursor.execute("UPDATE signals SET active=0, pnl=? WHERE id=?", (pnl, id_))
 
             except:
@@ -242,6 +251,27 @@ def check_positions():
     except Exception as e:
         return {"error": str(e)}
 
+# ==============================
+# ACTIVE POSITIONS
+# ==============================
+
+@app.get("/active_positions")
+def active_positions():
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT symbol, entry, stop, target, lot, regime FROM signals WHERE active=1")
+    rows = cursor.fetchall()
+
+    conn.close()
+
+    return {"active_positions": rows}
+
+# ==============================
+# ROOT
+# ==============================
+
 @app.get("/")
 def root():
-    return {"status":"ALGORİTMA 11.1 STABİL PERFORMANS MOTORU AKTİF"}
+    return {"status":"ALGORİTMA 11.2 KURUMSAL STABİL AKTİF"}
