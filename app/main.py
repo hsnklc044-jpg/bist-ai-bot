@@ -33,6 +33,17 @@ def calculate_rsi(data, period=14):
     return 100 - (100 / (1 + rs))
 
 # ------------------------------------------------
+# ATR
+# ------------------------------------------------
+def calculate_atr(df, period=14):
+    df["H-L"] = df["High"] - df["Low"]
+    df["H-C"] = abs(df["High"] - df["Close"].shift())
+    df["L-C"] = abs(df["Low"] - df["Close"].shift())
+    tr = df[["H-L","H-C","L-C"]].max(axis=1)
+    atr = tr.rolling(period).mean()
+    return atr
+
+# ------------------------------------------------
 # TELEGRAM
 # ------------------------------------------------
 def send_telegram(message):
@@ -54,7 +65,7 @@ def calculate_pge():
         return 50.0
 
 # ------------------------------------------------
-# REJİM ADAPTİF SKOR
+# SKOR + REJİM
 # ------------------------------------------------
 def calculate_score(df, pge):
     latest = df.iloc[-1]
@@ -67,7 +78,6 @@ def calculate_score(df, pge):
 
     score = 0
 
-    # Momentum Katmanı
     if rsi > 55: score += 10
     if rsi > 60: score += 10
     if latest["Close"] > ma20: score += 15
@@ -77,11 +87,8 @@ def calculate_score(df, pge):
     momentum = df["Close"].pct_change(3).iloc[-1]
     if momentum > 0.02: score += 15
 
-    # REJİM ADAPTASYONU
     if pge < 30:
         score -= 20
-    elif pge < 50:
-        pass
     elif pge < 70:
         score += 10
     else:
@@ -145,17 +152,21 @@ def scan_market():
                 continue
 
             df["rsi"] = calculate_rsi(df["Close"])
-            latest = df.iloc[-1]
+            df["atr"] = calculate_atr(df)
 
+            latest = df.iloc[-1]
             score = calculate_score(df, pge)
 
             if score >= 65 and not recently_sent(symbol):
 
-                risk = "DÜŞÜK"
-                if latest["rsi"] > 70:
-                    risk = "YÜKSEK"
-                elif latest["rsi"] > 60:
+                volatility = (latest["atr"] / latest["Close"]) * 100
+
+                if volatility < 2:
+                    risk = "DÜŞÜK"
+                elif volatility < 4:
                     risk = "ORTA"
+                else:
+                    risk = "YÜKSEK"
 
                 data = {
                     "symbol": symbol,
@@ -184,17 +195,14 @@ def morning_report():
 
     result = scan_market()
 
-    message = f"📊 ALGORİTMA 4.0 RAPOR\n\n📈 PGE: %{result['pge']}\n🚀 Güçlü Sinyal: {len(result['breakout'])}\n\n"
+    message = f"📊 ALGORİTMA 4.1 RAPOR\n\n📈 PGE: %{result['pge']}\n🚀 Güçlü Sinyal: {len(result['breakout'])}\n\n"
 
     for stock in result["breakout"]:
-        message += f"{stock['symbol']} | RSI:{stock['rsi']} | Skor:{stock['score']} | Risk:{stock['risk']}\n"
+        message += f"{stock['symbol']} | Skor:{stock['score']} | Risk:{stock['risk']}\n"
 
     send_telegram(message)
     return {"status":"Morning Sent"}
 
-# ------------------------------------------------
-# ROOT
-# ------------------------------------------------
 @app.get("/")
 def root():
-    return {"status":"ALGORİTMA 4.0 REJİM ADAPTİF AKTİF"}
+    return {"status":"ALGORİTMA 4.1 ATR RİSK AKTİF"}
