@@ -66,22 +66,17 @@ def calculate_score(df, pge):
 
     score = 0
 
-    # RSI momentum (20 puan)
     if rsi > 55: score += 10
     if rsi > 60: score += 10
 
-    # MA trend (30 puan)
     if latest["Close"] > ma20: score += 15
     if ma20 > ma50: score += 15
 
-    # Hacim (20 puan)
     if volume > avg_vol: score += 20
 
-    # 3 günlük ivme (15 puan)
     momentum = df["Close"].pct_change(3).iloc[-1]
     if momentum > 0.02: score += 15
 
-    # PGE uyumu (15 puan)
     if pge > 50: score += 15
 
     return round(score,2)
@@ -146,7 +141,63 @@ def scan_market():
     }
 
 # ------------------------------------------------
-# RAPOR
+# PERFORMANS HESAPLAMA
+# ------------------------------------------------
+def calculate_performance():
+
+    try:
+        with open(SIGNAL_FILE, "r") as f:
+            signals = json.load(f)
+    except:
+        return {"message": "Henüz sinyal yok"}
+
+    results = []
+    success = 0
+    total_return = 0
+
+    for signal in signals:
+        try:
+            symbol = signal["symbol"]
+            entry_price = signal["price"]
+            entry_date = signal["date"]
+
+            df = yf.download(symbol, start=entry_date)
+
+            if len(df) < 6:
+                continue
+
+            t3_price = df["Close"].iloc[3]
+            t5_price = df["Close"].iloc[5]
+
+            t3_return = ((t3_price - entry_price) / entry_price) * 100
+            t5_return = ((t5_price - entry_price) / entry_price) * 100
+
+            avg_return = (t3_return + t5_return) / 2
+
+            total_return += avg_return
+
+            if avg_return > 0:
+                success += 1
+
+            results.append(avg_return)
+
+        except:
+            continue
+
+    if len(results) == 0:
+        return {"message": "Yeterli veri yok"}
+
+    success_rate = round((success / len(results)) * 100, 2)
+    avg_gain = round(total_return / len(results), 2)
+
+    return {
+        "total_signals": len(results),
+        "success_rate": success_rate,
+        "average_return": avg_gain
+    }
+
+# ------------------------------------------------
+# SABAH RAPORU
 # ------------------------------------------------
 @app.get("/morning_report")
 def morning_report():
@@ -166,8 +217,57 @@ def morning_report():
 
     send_telegram(message)
 
-    return {"status":"Rapor Gönderildi"}
+    return {"status":"Morning Sent"}
 
+# ------------------------------------------------
+# PERFORMANS ENDPOINT
+# ------------------------------------------------
+@app.get("/performance")
+def performance():
+
+    perf = calculate_performance()
+
+    if "message" in perf:
+        return perf
+
+    message = f"""
+📊 ALGORİTMA PERFORMANS
+
+Toplam Sinyal: {perf['total_signals']}
+Başarı Oranı: %{perf['success_rate']}
+Ortalama Getiri: %{perf['average_return']}
+"""
+
+    send_telegram(message)
+
+    return perf
+
+# ------------------------------------------------
+# HAFTALIK RAPOR
+# ------------------------------------------------
+@app.get("/weekly_report")
+def weekly_report():
+
+    perf = calculate_performance()
+
+    if "message" in perf:
+        return perf
+
+    message = f"""
+📅 HAFTALIK PERFORMANS RAPORU
+
+Toplam Sinyal: {perf['total_signals']}
+Başarı Oranı: %{perf['success_rate']}
+Ortalama Getiri: %{perf['average_return']}
+"""
+
+    send_telegram(message)
+
+    return {"status": "Weekly Sent"}
+
+# ------------------------------------------------
+# ROOT
+# ------------------------------------------------
 @app.get("/")
 def root():
-    return {"status":"ALGORİTMA 2.0 AKTİF"}
+    return {"status":"ALGORİTMA 2.0 + PERFORMANS AKTİF"}
