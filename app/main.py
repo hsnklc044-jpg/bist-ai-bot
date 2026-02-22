@@ -5,7 +5,6 @@ from datetime import datetime
 from fastapi import FastAPI
 import yfinance as yf
 import pandas as pd
-import numpy as np
 
 app = FastAPI()
 
@@ -37,6 +36,8 @@ def calculate_rsi(data, period=14):
 # TELEGRAM
 # ------------------------------------------------
 def send_telegram(message):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        return
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
     requests.post(url, json=payload)
@@ -46,14 +47,14 @@ def send_telegram(message):
 # ------------------------------------------------
 def calculate_pge():
     try:
-        data = yf.download("^XU100", period="3mo")
+        data = yf.download("^XU100", period="3mo", progress=False)
         data["rsi"] = calculate_rsi(data["Close"])
         return round(float(data["rsi"].iloc[-1]),2)
     except:
         return 50.0
 
 # ------------------------------------------------
-# ALGORİTMİK SKOR (0–100)
+# SKOR (0-100)
 # ------------------------------------------------
 def calculate_score(df, pge):
     latest = df.iloc[-1]
@@ -80,6 +81,26 @@ def calculate_score(df, pge):
     if pge > 50: score += 15
 
     return round(score,2)
+
+# ------------------------------------------------
+# SON 3 GÜN FİLTRESİ
+# ------------------------------------------------
+def recently_sent(symbol):
+    try:
+        with open(SIGNAL_FILE,"r") as f:
+            signals = json.load(f)
+    except:
+        return False
+
+    today = datetime.now()
+
+    for signal in signals:
+        if signal["symbol"] == symbol:
+            signal_date = datetime.strptime(signal["date"], "%Y-%m-%d")
+            days_diff = (today - signal_date).days
+            if days_diff <= 3:
+                return True
+    return False
 
 # ------------------------------------------------
 # SİNYAL KAYDET
@@ -113,7 +134,7 @@ def scan_market():
 
     for symbol in BIST_SYMBOLS:
         try:
-            df = yf.download(symbol, period="6mo")
+            df = yf.download(symbol, period="6mo", progress=False)
             if df.empty:
                 continue
 
@@ -122,7 +143,7 @@ def scan_market():
 
             score = calculate_score(df, pge)
 
-            if score >= 65:
+            if score >= 65 and not recently_sent(symbol):
                 data = {
                     "symbol": symbol,
                     "close": round(float(latest["Close"]),2),
@@ -141,15 +162,14 @@ def scan_market():
     }
 
 # ------------------------------------------------
-# PERFORMANS HESAPLAMA
+# PERFORMANS
 # ------------------------------------------------
 def calculate_performance():
-
     try:
-        with open(SIGNAL_FILE, "r") as f:
+        with open(SIGNAL_FILE,"r") as f:
             signals = json.load(f)
     except:
-        return {"message": "Henüz sinyal yok"}
+        return {"message":"Henüz sinyal yok"}
 
     results = []
     success = 0
@@ -161,39 +181,33 @@ def calculate_performance():
             entry_price = signal["price"]
             entry_date = signal["date"]
 
-            df = yf.download(symbol, start=entry_date)
-
+            df = yf.download(symbol, start=entry_date, progress=False)
             if len(df) < 6:
                 continue
 
-            t3_price = df["Close"].iloc[3]
-            t5_price = df["Close"].iloc[5]
+            t3 = df["Close"].iloc[3]
+            t5 = df["Close"].iloc[5]
 
-            t3_return = ((t3_price - entry_price) / entry_price) * 100
-            t5_return = ((t5_price - entry_price) / entry_price) * 100
+            r3 = ((t3-entry_price)/entry_price)*100
+            r5 = ((t5-entry_price)/entry_price)*100
 
-            avg_return = (t3_return + t5_return) / 2
+            avg = (r3+r5)/2
 
-            total_return += avg_return
-
-            if avg_return > 0:
+            total_return += avg
+            if avg > 0:
                 success += 1
 
-            results.append(avg_return)
-
+            results.append(avg)
         except:
             continue
 
-    if len(results) == 0:
-        return {"message": "Yeterli veri yok"}
-
-    success_rate = round((success / len(results)) * 100, 2)
-    avg_gain = round(total_return / len(results), 2)
+    if len(results)==0:
+        return {"message":"Yeterli veri yok"}
 
     return {
         "total_signals": len(results),
-        "success_rate": success_rate,
-        "average_return": avg_gain
+        "success_rate": round((success/len(results))*100,2),
+        "average_return": round(total_return/len(results),2)
     }
 
 # ------------------------------------------------
@@ -201,22 +215,14 @@ def calculate_performance():
 # ------------------------------------------------
 @app.get("/morning_report")
 def morning_report():
-
     result = scan_market()
 
-    message = f"""
-📊 ALGORİTMA 2.0 RAPOR
-
-📈 PGE: %{result['pge']}
-🚀 Güçlü Sinyal: {len(result['breakout'])}
-
-"""
+    message = f"📊 ALGORİTMA 3.0 RAPOR\n\n📈 PGE: %{result['pge']}\n🚀 Güçlü Sinyal: {len(result['breakout'])}\n\n"
 
     for stock in result["breakout"]:
         message += f"{stock['symbol']} | RSI:{stock['rsi']} | Skor:{stock['score']}\n"
 
     send_telegram(message)
-
     return {"status":"Morning Sent"}
 
 # ------------------------------------------------
@@ -224,22 +230,14 @@ def morning_report():
 # ------------------------------------------------
 @app.get("/performance")
 def performance():
-
     perf = calculate_performance()
 
     if "message" in perf:
         return perf
 
-    message = f"""
-📊 ALGORİTMA PERFORMANS
-
-Toplam Sinyal: {perf['total_signals']}
-Başarı Oranı: %{perf['success_rate']}
-Ortalama Getiri: %{perf['average_return']}
-"""
+    message = f"📊 PERFORMANS\n\nToplam: {perf['total_signals']}\nBaşarı: %{perf['success_rate']}\nOrt. Getiri: %{perf['average_return']}"
 
     send_telegram(message)
-
     return perf
 
 # ------------------------------------------------
@@ -247,27 +245,19 @@ Ortalama Getiri: %{perf['average_return']}
 # ------------------------------------------------
 @app.get("/weekly_report")
 def weekly_report():
-
     perf = calculate_performance()
 
     if "message" in perf:
         return perf
 
-    message = f"""
-📅 HAFTALIK PERFORMANS RAPORU
-
-Toplam Sinyal: {perf['total_signals']}
-Başarı Oranı: %{perf['success_rate']}
-Ortalama Getiri: %{perf['average_return']}
-"""
+    message = f"📅 HAFTALIK RAPOR\n\nToplam: {perf['total_signals']}\nBaşarı: %{perf['success_rate']}\nOrt. Getiri: %{perf['average_return']}"
 
     send_telegram(message)
-
-    return {"status": "Weekly Sent"}
+    return {"status":"Weekly Sent"}
 
 # ------------------------------------------------
 # ROOT
 # ------------------------------------------------
 @app.get("/")
 def root():
-    return {"status":"ALGORİTMA 2.0 + PERFORMANS AKTİF"}
+    return {"status":"ALGORİTMA 3.0 AKTİF"}
