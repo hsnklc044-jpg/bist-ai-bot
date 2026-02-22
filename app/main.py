@@ -124,7 +124,7 @@ def update_equity(value):
     conn.commit()
     conn.close()
 
-# ================= MORNING SIGNAL =================
+# ================= MORNING REPORT =================
 
 @app.get("/morning_report")
 def morning():
@@ -153,11 +153,12 @@ def morning():
 
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-
     c.execute("SELECT COUNT(*) FROM trades WHERE active=1")
     open_positions = c.fetchone()[0]
 
-    message = f"🚀 ALGORİTMA 14.2 DENGELİ HIZLI MOD\nPGE:{round(pge,2)} | {regime}\n\n"
+    message = f"🚀 ALGORİTMA 14.3 ŞEFFAF MOD\nPGE:{round(pge,2)} | {regime}\n\n"
+
+    signals_found = 0
 
     for symbol in BIST_SYMBOLS:
 
@@ -184,7 +185,6 @@ def morning():
             if last["Volume"] > last["vol_avg"]:
                 score += 1
 
-            # DENGELİ GİRİŞ
             if score < 1:
                 continue
 
@@ -210,146 +210,24 @@ def morning():
                 datetime.now().strftime("%Y-%m-%d")
             ))
 
-            open_positions += 1
             message += f"{symbol} | Entry:{round(entry,2)} Lot:{lot}\n"
+            open_positions += 1
+            signals_found += 1
 
         except:
             continue
 
     conn.commit()
     conn.close()
+
+    if signals_found == 0:
+        message += "⚠️ Bugün uygun teknik setup bulunamadı."
 
     send_telegram(message)
     return {"status": "Morning Signals Sent"}
-
-# ================= CHECK POSITIONS =================
-
-@app.get("/check_positions")
-def check():
-
-    equity = get_equity()
-
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-
-    c.execute("SELECT id,symbol,entry,stop,target,lot FROM trades WHERE active=1")
-    trades = c.fetchall()
-
-    total_pnl = 0
-    wins = 0
-    losses = 0
-
-    for t in trades:
-        id_, symbol, entry, stop, target, lot = t
-
-        try:
-            df = yf.download(symbol, period="5d", progress=False)
-            if df.empty:
-                continue
-
-            price = float(df["Close"].iloc[-1])
-
-            if price >= target:
-                pnl = (target - entry) * lot
-                wins += 1
-            elif price <= stop:
-                pnl = (stop - entry) * lot
-                losses += 1
-            else:
-                continue
-
-            total_pnl += pnl
-            equity += pnl
-
-            c.execute(
-                "UPDATE trades SET active=0,pnl=? WHERE id=?",
-                (pnl, id_)
-            )
-
-        except:
-            continue
-
-    conn.commit()
-    conn.close()
-
-    update_equity(equity)
-
-    total = wins + losses
-    win_rate = (wins / total * 100) if total > 0 else 0
-
-    report = f"""
-📊 FON RAPORU
-Equity: {round(equity,2)}
-PnL: {round(total_pnl,2)}
-Win Rate: {round(win_rate,2)}%
-Trades: {total}
-"""
-
-    send_telegram(report)
-
-    return {"status": "Positions Checked"}
-
-# ================= PERFORMANCE =================
-
-@app.get("/performance")
-def performance():
-
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-
-    c.execute("SELECT pnl FROM trades WHERE active=0")
-    trades = c.fetchall()
-
-    c.execute("SELECT value FROM equity ORDER BY id ASC")
-    equity_data = c.fetchall()
-
-    conn.close()
-
-    if not trades:
-        return {"message": "Henüz kapanmış işlem yok"}
-
-    pnl_list = [t[0] for t in trades]
-
-    total_trades = len(pnl_list)
-    wins = [p for p in pnl_list if p > 0]
-    losses = [p for p in pnl_list if p <= 0]
-
-    win_rate = (len(wins) / total_trades) * 100
-    avg_win = np.mean(wins) if wins else 0
-    avg_loss = np.mean(losses) if losses else 0
-
-    rr_ratio = abs(avg_win / avg_loss) if avg_loss != 0 else 0
-    expectancy = (win_rate/100 * avg_win) + ((1 - win_rate/100) * avg_loss)
-
-    equity_curve = [e[0] for e in equity_data]
-
-    max_dd = 0
-    if equity_curve:
-        peak = equity_curve[0]
-        for value in equity_curve:
-            if value > peak:
-                peak = value
-            drawdown = (peak - value) / peak
-            if drawdown > max_dd:
-                max_dd = drawdown
-
-    sharpe_like = 0
-    if np.std(pnl_list) != 0:
-        sharpe_like = np.mean(pnl_list) / np.std(pnl_list)
-
-    return {
-        "total_trades": total_trades,
-        "win_rate": win_rate,
-        "avg_win": avg_win,
-        "avg_loss": avg_loss,
-        "rr_ratio": rr_ratio,
-        "expectancy": expectancy,
-        "max_drawdown_percent": max_dd * 100,
-        "sharpe_like": sharpe_like
-    }
 
 # ================= ROOT =================
 
 @app.get("/")
 def root():
-    return {"status": "ALGORİTMA 14.2 DENGELİ HIZLI MOD AKTİF"}
+    return {"status": "ALGORİTMA 14.3 ŞEFFAF MOD AKTİF"}
