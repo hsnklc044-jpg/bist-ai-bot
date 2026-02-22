@@ -79,7 +79,7 @@ def send_telegram(message):
     requests.post(url, json=payload)
 
 # ------------------------------------------------
-# REJİM (PGE)
+# PGE (REJİM)
 # ------------------------------------------------
 def calculate_pge():
     try:
@@ -109,7 +109,7 @@ def calculate_score(df, pge):
     momentum = df["Close"].pct_change(3).iloc[-1]
     if momentum > 0.02: score += 20
 
-    # REJİM ADAPTASYONU
+    # Rejim adaptasyonu
     if pge < 30:
         score -= 20
     elif pge < 70:
@@ -117,10 +117,10 @@ def calculate_score(df, pge):
     else:
         score += 20
 
-    return score
+    return round(score,2)
 
 # ------------------------------------------------
-# SQI (KALİTE METRİĞİ)
+# SQI (Kalite)
 # ------------------------------------------------
 def calculate_sqi(df):
 
@@ -133,24 +133,20 @@ def calculate_sqi(df):
 
     sqi = 50
 
-    # Trend gücü
     if ma20 > ma50:
         sqi += 15
 
-    # RSI dengesi
     if 55 < latest["rsi"] < 68:
         sqi += 15
     elif latest["rsi"] > 75:
         sqi -= 10
 
-    # Volatilite dengesi
     volatility = (latest["atr"] / latest["Close"]) * 100
     if volatility < 2:
         sqi += 10
     elif volatility > 4:
         sqi -= 10
 
-    # Momentum sürdürülebilirlik
     momentum = df["Close"].pct_change(5).iloc[-1]
     if momentum > 0.03:
         sqi += 10
@@ -239,7 +235,7 @@ def morning_report():
 
     regime = "DEFANSİF" if pge < 40 else "MOMENTUM"
 
-    message = f"📊 ALGORİTMA 5.1 RAPOR\n\nPGE: {round(pge,2)}\nRejim: {regime}\n\n"
+    message = f"📊 ALGORİTMA 5.2 RAPOR\n\nPGE: {round(pge,2)}\nRejim: {regime}\n\n"
 
     for i, s in enumerate(signals,1):
         message += f"{i}️⃣ {s['symbol']} | Skor:{s['score']} | Risk:{s['risk']} | SQI:{s['sqi']}\n"
@@ -247,6 +243,75 @@ def morning_report():
     send_telegram(message)
     return {"status":"Sent"}
 
+# ------------------------------------------------
+# PERFORMANCE PANEL
+# ------------------------------------------------
+@app.get("/performance")
+def performance_panel():
+
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
+    cursor.execute("SELECT symbol, price, date FROM signals")
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        return {"message": "Henüz sinyal yok"}
+
+    total = 0
+    success = 0
+    returns = []
+
+    for symbol, entry_price, entry_date in rows:
+        try:
+            df = yf.download(symbol, start=entry_date, progress=False)
+            if len(df) < 6:
+                continue
+
+            t3 = df["Close"].iloc[3]
+            t5 = df["Close"].iloc[5]
+
+            r3 = ((t3-entry_price)/entry_price)*100
+            r5 = ((t5-entry_price)/entry_price)*100
+            avg = (r3+r5)/2
+
+            returns.append(avg)
+            total += 1
+
+            if avg > 0:
+                success += 1
+
+        except:
+            continue
+
+    if total == 0:
+        return {"message":"Yeterli veri yok"}
+
+    success_rate = round((success/total)*100,2)
+    avg_return = round(sum(returns)/len(returns),2)
+    best = round(max(returns),2)
+    worst = round(min(returns),2)
+
+    message = f"""
+📊 PERFORMANS PANELİ
+
+Toplam Sinyal: {total}
+Başarı Oranı: %{success_rate}
+Ortalama Getiri: %{avg_return}
+En Yüksek: %{best}
+En Kötü: %{worst}
+"""
+
+    send_telegram(message)
+
+    return {
+        "total": total,
+        "success_rate": success_rate,
+        "average_return": avg_return,
+        "best": best,
+        "worst": worst
+    }
+
 @app.get("/")
 def root():
-    return {"status":"ALGORİTMA 5.1 KURUMSAL AKTİF"}
+    return {"status":"ALGORİTMA 5.2 FULL KURUMSAL AKTİF"}
