@@ -14,6 +14,12 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 DB_FILE = "signals.db"
 
 # ------------------------------------------------
+# RİSK PARAMETRELERİ
+# ------------------------------------------------
+ACCOUNT_SIZE = 100000   # TL
+RISK_PERCENT = 0.02     # %2 risk
+
+# ------------------------------------------------
 # BIST30
 # ------------------------------------------------
 BIST_SYMBOLS = [
@@ -39,6 +45,7 @@ def init_db():
             score REAL,
             sqi REAL,
             rr REAL,
+            lot INTEGER,
             date TEXT
         )
     """)
@@ -80,7 +87,7 @@ def send_telegram(message):
     requests.post(url, json=payload)
 
 # ------------------------------------------------
-# PGE (REJİM)
+# PGE
 # ------------------------------------------------
 def calculate_pge():
     try:
@@ -172,6 +179,19 @@ def calculate_rr(df):
     return round(rr,2), round(stop,2), round(target,2)
 
 # ------------------------------------------------
+# POZİSYON HESABI
+# ------------------------------------------------
+def calculate_position_size(entry, stop):
+    risk_amount = ACCOUNT_SIZE * RISK_PERCENT
+    risk_per_share = entry - stop
+
+    if risk_per_share <= 0:
+        return 0
+
+    lot = risk_amount / risk_per_share
+    return int(lot)
+
+# ------------------------------------------------
 # 3 GÜN FİLTRE
 # ------------------------------------------------
 def recently_sent(symbol):
@@ -188,14 +208,14 @@ def recently_sent(symbol):
     return (datetime.now() - last_date).days <= 3
 
 # ------------------------------------------------
-# SAVE SIGNAL
+# SAVE
 # ------------------------------------------------
-def save_signal(symbol, price, score, sqi, rr):
+def save_signal(symbol, price, score, sqi, rr, lot):
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute(
-        "INSERT INTO signals (symbol, price, score, sqi, rr, date) VALUES (?,?,?,?,?,?)",
-        (symbol, price, score, sqi, rr, datetime.now().strftime("%Y-%m-%d"))
+        "INSERT INTO signals (symbol, price, score, sqi, rr, lot, date) VALUES (?,?,?,?,?,?,?)",
+        (symbol, price, score, sqi, rr, lot, datetime.now().strftime("%Y-%m-%d"))
     )
     conn.commit()
     conn.close()
@@ -221,25 +241,18 @@ def scan_market():
             if score >= 65 and sqi >= 60 and rr >= 1.5 and not recently_sent(symbol):
 
                 latest = df.iloc[-1]
+                lot = calculate_position_size(latest["Close"], stop)
 
-                volatility = (calculate_atr(df).iloc[-1] / latest["Close"]) * 100
-                if volatility < 2:
-                    risk = "DÜŞÜK"
-                elif volatility < 4:
-                    risk = "ORTA"
-                else:
-                    risk = "YÜKSEK"
-
-                save_signal(symbol, float(latest["Close"]), score, sqi, rr)
+                save_signal(symbol, float(latest["Close"]), score, sqi, rr, lot)
 
                 breakout.append({
                     "symbol": symbol,
                     "score": score,
-                    "risk": risk,
                     "sqi": sqi,
                     "rr": rr,
                     "stop": stop,
-                    "target": target
+                    "target": target,
+                    "lot": lot
                 })
 
         except:
@@ -256,86 +269,19 @@ def morning_report():
     signals, pge = scan_market()
     regime = "DEFANSİF" if pge < 40 else "MOMENTUM"
 
-    message = f"📊 ALGORİTMA 5.3 RAPOR\n\nPGE: {round(pge,2)}\nRejim: {regime}\n\n"
+    message = f"📊 ALGORİTMA 6.0 RAPOR\n\nPGE: {round(pge,2)}\nRejim: {regime}\n\n"
 
     for i, s in enumerate(signals,1):
         message += (
-            f"{i}️⃣ {s['symbol']} | Skor:{s['score']} | Risk:{s['risk']}\n"
-            f"SQI:{s['sqi']} | RR:{s['rr']}\n"
-            f"Stop:{s['stop']} | Target:{s['target']}\n\n"
+            f"{i}️⃣ {s['symbol']}\n"
+            f"Skor:{s['score']} | SQI:{s['sqi']} | RR:{s['rr']}\n"
+            f"Stop:{s['stop']} | Target:{s['target']}\n"
+            f"Lot:{s['lot']} adet\n\n"
         )
 
     send_telegram(message)
     return {"status":"Sent"}
 
-# ------------------------------------------------
-# PERFORMANCE PANEL
-# ------------------------------------------------
-@app.get("/performance")
-def performance_panel():
-
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT symbol, price, date FROM signals")
-    rows = cursor.fetchall()
-    conn.close()
-
-    if not rows:
-        return {"message": "Henüz sinyal yok"}
-
-    total = 0
-    success = 0
-    returns = []
-
-    for symbol, entry_price, entry_date in rows:
-        try:
-            df = yf.download(symbol, start=entry_date, progress=False)
-            if len(df) < 6:
-                continue
-
-            t3 = df["Close"].iloc[3]
-            t5 = df["Close"].iloc[5]
-
-            r3 = ((t3-entry_price)/entry_price)*100
-            r5 = ((t5-entry_price)/entry_price)*100
-            avg = (r3+r5)/2
-
-            returns.append(avg)
-            total += 1
-
-            if avg > 0:
-                success += 1
-
-        except:
-            continue
-
-    if total == 0:
-        return {"message":"Yeterli veri yok"}
-
-    success_rate = round((success/total)*100,2)
-    avg_return = round(sum(returns)/len(returns),2)
-    best = round(max(returns),2)
-    worst = round(min(returns),2)
-
-    message = (
-        f"📊 PERFORMANS PANELİ\n\n"
-        f"Toplam Sinyal: {total}\n"
-        f"Başarı Oranı: %{success_rate}\n"
-        f"Ortalama Getiri: %{avg_return}\n"
-        f"En Yüksek: %{best}\n"
-        f"En Kötü: %{worst}"
-    )
-
-    send_telegram(message)
-
-    return {
-        "total": total,
-        "success_rate": success_rate,
-        "average_return": avg_return,
-        "best": best,
-        "worst": worst
-    }
-
 @app.get("/")
 def root():
-    return {"status":"ALGORİTMA 5.3 FULL RISK YÖNETİMLİ AKTİF"}
+    return {"status":"ALGORİTMA 6.0 FULL AKTİF"}
