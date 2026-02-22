@@ -9,6 +9,8 @@ import numpy as np
 
 app = FastAPI()
 
+# ================= CONFIG =================
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -27,7 +29,7 @@ BIST_SYMBOLS = [
 "TUPRS.IS","VAKBN.IS","YKBNK.IS","ALARK.IS","BRISA.IS"
 ]
 
-# ================= DB =================
+# ================= DATABASE =================
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -63,7 +65,7 @@ init_db()
 # ================= TELEGRAM =================
 
 def send_telegram(msg):
-    if not TELEGRAM_TOKEN:
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -107,7 +109,7 @@ def update_equity(new_value):
     conn.commit()
     conn.close()
 
-# ================= MORNING =================
+# ================= MORNING SIGNAL =================
 
 @app.get("/morning_report")
 def morning():
@@ -124,7 +126,7 @@ def morning():
     if open_positions>=MAX_OPEN_POSITIONS:
         return {"message":"Max open positions reached"}
 
-    message="🚀 ALGORİTMA 12.0 FON MODU\n\n"
+    message="🚀 ALGORİTMA 12.1 AKTİF FON\n\n"
 
     for symbol in BIST_SYMBOLS:
 
@@ -138,7 +140,6 @@ def morning():
 
             df["rsi"]=rsi(df["Close"])
             df["atr"]=atr(df)
-
             df["vol_avg"]=df["Volume"].rolling(20).mean()
 
             last=df.iloc[-1]
@@ -146,20 +147,26 @@ def morning():
             momentum = (df["Close"].iloc[-1] / df["Close"].iloc[-20]) -1
 
             score=0
-            if last["rsi"]>55: score+=1
-            if momentum>0.05: score+=1
+            if last["rsi"]>50: score+=1
+            if momentum>0.03: score+=1
             if last["Volume"]>last["vol_avg"]: score+=1
 
-            if score<3:
+            if score<2:
                 continue
 
             entry=float(last["Close"])
-            stop=entry-(last["atr"]*1.5)
-            target=entry+(last["atr"]*3)
+            stop=entry-(last["atr"]*1.3)
+            target=entry+(last["atr"]*2.5)
 
             risk_per_share=entry-stop
+            if risk_per_share<=0:
+                continue
+
             risk_amount=equity*0.02
             lot=int(risk_amount/risk_per_share)
+
+            if lot<=0:
+                continue
 
             c.execute("""
             INSERT INTO trades(symbol,entry,stop,target,lot,active,pnl,date)
@@ -180,7 +187,7 @@ def morning():
 
     return {"status":"Morning Signals Sent"}
 
-# ================= CHECK =================
+# ================= CHECK POSITIONS =================
 
 @app.get("/check_positions")
 def check():
@@ -243,3 +250,9 @@ Trades: {total}
     send_telegram(report)
 
     return {"status":"Positions Checked"}
+
+# ================= ROOT =================
+
+@app.get("/")
+def root():
+    return {"status":"ALGORİTMA 12.1 KONTROLLÜ AKTİF FON MODU AKTİF"}
