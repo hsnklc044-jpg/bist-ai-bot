@@ -15,7 +15,6 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 DB_FILE = "signals.db"
 
 ACCOUNT_SIZE = 100000
-RISK_PERCENT = 0.02
 MAX_WORKERS = 6
 
 BIST_SYMBOLS = [
@@ -54,6 +53,7 @@ def init_db():
         stop REAL,
         target REAL,
         lot INTEGER,
+        regime TEXT,
         active INTEGER,
         date TEXT
     )
@@ -85,6 +85,29 @@ def calculate_atr(df, period=14):
     df["L-C"] = abs(df["Low"] - df["Close"].shift())
     tr = df[["H-L","H-C","L-C"]].max(axis=1)
     return tr.rolling(period).mean()
+
+# ------------------------------------------------
+# PGE (XU100 RSI)
+# ------------------------------------------------
+def calculate_pge():
+    try:
+        df = yf.download("^XU100", period="3mo", progress=False)
+        df["rsi"] = calculate_rsi(df["Close"])
+        return float(df["rsi"].iloc[-1])
+    except:
+        return 50
+
+# ------------------------------------------------
+# RISK MODEL
+# ------------------------------------------------
+def get_risk_model(pge):
+
+    if pge < 35:
+        return 0.01, 2.0, "DEFANSİF"
+    elif pge > 70:
+        return 0.03, 1.3, "AGRESİF"
+    else:
+        return 0.02, 1.5, "NORMAL"
 
 # ------------------------------------------------
 # TELEGRAM
@@ -121,7 +144,6 @@ def fetch_symbol(symbol):
             float(latest["atr"]),
             datetime.now().strftime("%Y-%m-%d")
         )
-
     except:
         return None
 
@@ -130,13 +152,11 @@ def update_data():
 
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-
     cursor.execute("DELETE FROM market_data")
     conn.commit()
 
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [executor.submit(fetch_symbol, s) for s in BIST_SYMBOLS]
-
         for future in as_completed(futures):
             result = future.result()
             if result:
@@ -148,28 +168,20 @@ def update_data():
     return {"status": "DATA UPDATED"}
 
 # ------------------------------------------------
-# POZİSYON BOYUTU
-# ------------------------------------------------
-def calculate_position_size(entry, stop):
-    risk_amount = ACCOUNT_SIZE * RISK_PERCENT
-    risk_per_share = entry - stop
-    if risk_per_share <= 0:
-        return 0
-    return int(risk_amount / risk_per_share)
-
-# ------------------------------------------------
-# SABAH RAPORU (SİNYAL ÜRETİR)
+# SABAH RAPORU
 # ------------------------------------------------
 @app.get("/morning_report")
 def morning_report():
 
+    pge = calculate_pge()
+    risk_percent, min_rr, regime = get_risk_model(pge)
+
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
-
     cursor.execute("SELECT * FROM market_data")
     rows = cursor.fetchall()
 
-    message = "🚀 ALGORİTMA 9.0 RAPOR\n\n"
+    message = f"🚀 ALGORİTMA 10.0\nPGE:{round(pge,2)} | Rejim:{regime}\n\n"
 
     for row in rows:
         symbol, close, rsi, ma20, ma50, atr, _ = row
@@ -183,73 +195,38 @@ def morning_report():
         target = close + (2 * atr)
         rr = (target - close) / (close - stop)
 
-        if score >= 60 and rr >= 1.5:
+        if score >= 60 and rr >= min_rr:
 
-            lot = calculate_position_size(close, stop)
+            risk_amount = ACCOUNT_SIZE * risk_percent
+            lot = int(risk_amount / (close - stop))
 
             cursor.execute("""
-            INSERT INTO signals (symbol, entry, stop, target, lot, active, date)
-            VALUES (?,?,?,?,?,?,?)
+            INSERT INTO signals (symbol, entry, stop, target, lot, regime, active, date)
+            VALUES (?,?,?,?,?,?,?,?)
             """, (
                 symbol,
                 close,
                 stop,
                 target,
                 lot,
+                regime,
                 1,
                 datetime.now().strftime("%Y-%m-%d")
             ))
 
-            message += f"{symbol}\nEntry:{round(close,2)}\nStop:{round(stop,2)}\nTarget:{round(target,2)}\nLot:{lot}\n\n"
+            message += (
+                f"{symbol}\n"
+                f"Entry:{round(close,2)} Stop:{round(stop,2)}\n"
+                f"RR:{round(rr,2)} Lot:{lot}\n\n"
+            )
 
     conn.commit()
     conn.close()
 
     send_telegram(message)
+
     return {"status":"Sent"}
-
-# ------------------------------------------------
-# TRAILING STOP & YÖNETİM
-# ------------------------------------------------
-@app.get("/manage_positions")
-def manage_positions():
-
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT id, symbol, entry, stop, target, lot FROM signals WHERE active=1")
-    positions = cursor.fetchall()
-
-    message = "📊 POZİSYON YÖNETİMİ\n\n"
-
-    for pos in positions:
-        pid, symbol, entry, stop, target, lot = pos
-
-        df = yf.download(symbol, period="5d", progress=False)
-        current_price = float(df["Close"].iloc[-1])
-
-        # 1️⃣ Kâr kilidi
-        if current_price > entry * 1.03:
-            stop = entry
-
-        # 2️⃣ Trailing
-        if current_price > target:
-            stop = current_price - (0.5 * (target - entry))
-
-        # 3️⃣ Stop kırıldıysa kapat
-        if current_price <= stop:
-            cursor.execute("UPDATE signals SET active=0 WHERE id=?", (pid,))
-            message += f"{symbol} STOP ÇALIŞTI\n\n"
-        else:
-            cursor.execute("UPDATE signals SET stop=? WHERE id=?", (stop, pid))
-            message += f"{symbol} Güncel Stop:{round(stop,2)}\n\n"
-
-    conn.commit()
-    conn.close()
-
-    send_telegram(message)
-    return {"status":"Managed"}
 
 @app.get("/")
 def root():
-    return {"status":"ALGORİTMA 9.0 TRAILING STOP AKTİF"}
+    return {"status":"ALGORİTMA 10.0 ADAPTİF RİSK AKTİF"}
