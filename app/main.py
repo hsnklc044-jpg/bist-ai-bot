@@ -5,6 +5,7 @@ from datetime import datetime
 from fastapi import FastAPI
 import yfinance as yf
 import pandas as pd
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 app = FastAPI()
 
@@ -15,7 +16,7 @@ DB_FILE = "signals.db"
 
 ACCOUNT_SIZE = 100000
 RISK_PERCENT = 0.02
-MAX_POSITIONS = 3
+MAX_WORKERS = 6  # Paralel thread sayısı
 
 BIST_SYMBOLS = [
     "AKBNK.IS","ARCLK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
@@ -26,45 +27,33 @@ BIST_SYMBOLS = [
     "TUPRS.IS","VAKBN.IS","YKBNK.IS","ALARK.IS","BRISA.IS"
 ]
 
+# ------------------------------------------------
+# DB INIT
+# ------------------------------------------------
 def init_db():
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
+
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS signals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            symbol TEXT,
-            price REAL,
-            score REAL,
-            sqi REAL,
-            rr REAL,
-            lot INTEGER,
-            active INTEGER,
-            date TEXT
-        )
+    CREATE TABLE IF NOT EXISTS market_data (
+        symbol TEXT,
+        close REAL,
+        rsi REAL,
+        ma20 REAL,
+        ma50 REAL,
+        atr REAL,
+        date TEXT
+    )
     """)
+
     conn.commit()
     conn.close()
 
 init_db()
 
-def active_positions():
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute("SELECT COUNT(*) FROM signals WHERE active=1")
-    count = cursor.fetchone()[0]
-    conn.close()
-    return count
-
-def save_signal(symbol, price, score, sqi, rr, lot):
-    conn = sqlite3.connect(DB_FILE)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO signals (symbol, price, score, sqi, rr, lot, active, date) VALUES (?,?,?,?,?,?,?,?)",
-        (symbol, price, score, sqi, rr, lot, 1, datetime.now().strftime("%Y-%m-%d"))
-    )
-    conn.commit()
-    conn.close()
-
+# ------------------------------------------------
+# RSI
+# ------------------------------------------------
 def calculate_rsi(data, period=14):
     delta = data.diff()
     gain = delta.clip(lower=0)
@@ -74,6 +63,9 @@ def calculate_rsi(data, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
+# ------------------------------------------------
+# ATR
+# ------------------------------------------------
 def calculate_atr(df, period=14):
     df["H-L"] = df["High"] - df["Low"]
     df["H-C"] = abs(df["High"] - df["Close"].shift())
@@ -81,13 +73,9 @@ def calculate_atr(df, period=14):
     tr = df[["H-L","H-C","L-C"]].max(axis=1)
     return tr.rolling(period).mean()
 
-def calculate_position_size(entry, stop):
-    risk_amount = ACCOUNT_SIZE * RISK_PERCENT
-    risk_per_share = entry - stop
-    if risk_per_share <= 0:
-        return 0
-    return int(risk_amount / risk_per_share)
-
+# ------------------------------------------------
+# TELEGRAM
+# ------------------------------------------------
 def send_telegram(message):
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return
@@ -95,71 +83,121 @@ def send_telegram(message):
     payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message}
     requests.post(url, json=payload)
 
-def scan_market():
+# ------------------------------------------------
+# HİSSE VERİ ÇEKME (THREAD)
+# ------------------------------------------------
+def fetch_symbol(symbol):
+    try:
+        df = yf.download(symbol, period="3mo", progress=False)
+        if df.empty:
+            return None
 
-    if active_positions() >= MAX_POSITIONS:
-        return [], "PORTFÖY DOLU"
+        df["rsi"] = calculate_rsi(df["Close"])
+        df["ma20"] = df["Close"].rolling(20).mean()
+        df["ma50"] = df["Close"].rolling(50).mean()
+        df["atr"] = calculate_atr(df)
 
-    breakout = []
+        latest = df.iloc[-1]
 
-    for symbol in BIST_SYMBOLS:
-        try:
-            df = yf.download(symbol, period="6mo", progress=False)
-            if df.empty:
-                continue
+        return (
+            symbol,
+            float(latest["Close"]),
+            float(latest["rsi"]),
+            float(latest["ma20"]),
+            float(latest["ma50"]),
+            float(latest["atr"]),
+            datetime.now().strftime("%Y-%m-%d")
+        )
 
-            df["rsi"] = calculate_rsi(df["Close"])
-            df["atr"] = calculate_atr(df)
+    except:
+        return None
 
-            latest = df.iloc[-1]
-            ma20 = df["Close"].rolling(20).mean().iloc[-1]
-            ma50 = df["Close"].rolling(50).mean().iloc[-1]
+# ------------------------------------------------
+# PARALEL UPDATE
+# ------------------------------------------------
+@app.get("/update_data")
+def update_data():
 
-            score = 0
-            if latest["rsi"] > 55: score += 20
-            if latest["Close"] > ma20: score += 20
-            if ma20 > ma50: score += 20
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
 
-            stop = latest["Close"] - (1.5 * latest["atr"])
-            target = latest["Close"] + (2 * latest["atr"])
-            rr = (target - latest["Close"]) / (latest["Close"] - stop)
+    cursor.execute("DELETE FROM market_data")
+    conn.commit()
 
-            if score >= 60 and rr >= 1.5:
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        futures = [executor.submit(fetch_symbol, symbol) for symbol in BIST_SYMBOLS]
 
-                lot = calculate_position_size(latest["Close"], stop)
-                save_signal(symbol, float(latest["Close"]), score, 60, rr, lot)
+        for future in as_completed(futures):
+            result = future.result()
+            if result:
+                cursor.execute("INSERT INTO market_data VALUES (?,?,?,?,?,?,?)", result)
 
-                breakout.append({
-                    "symbol": symbol,
-                    "score": score,
-                    "rr": round(rr,2),
-                    "lot": lot
-                })
+    conn.commit()
+    conn.close()
 
-                if len(breakout) >= MAX_POSITIONS:
-                    break
+    return {"status": "PARALEL DATA UPDATED"}
 
-        except:
-            continue
+# ------------------------------------------------
+# POZİSYON HESABI
+# ------------------------------------------------
+def calculate_position_size(entry, stop):
+    risk_amount = ACCOUNT_SIZE * RISK_PERCENT
+    risk_per_share = entry - stop
+    if risk_per_share <= 0:
+        return 0
+    return int(risk_amount / risk_per_share)
 
-    return breakout, "AKTİF"
-
+# ------------------------------------------------
+# SABAH RAPORU (CACHE'DEN)
+# ------------------------------------------------
 @app.get("/morning_report")
 def morning_report():
 
-    signals, status = scan_market()
+    conn = sqlite3.connect(DB_FILE)
+    cursor = conn.cursor()
 
-    message = f"📊 ALGORİTMA 7.0\nDurum: {status}\n\n"
+    cursor.execute("SELECT * FROM market_data")
+    rows = cursor.fetchall()
 
-    for s in signals:
+    breakout = []
+
+    for row in rows:
+        symbol, close, rsi, ma20, ma50, atr, _ = row
+
+        score = 0
+        if rsi > 55: score += 20
+        if close > ma20: score += 20
+        if ma20 > ma50: score += 20
+
+        stop = close - (1.5 * atr)
+        target = close + (2 * atr)
+        rr = (target - close) / (close - stop)
+
+        if score >= 60 and rr >= 1.5:
+
+            lot = calculate_position_size(close, stop)
+
+            breakout.append({
+                "symbol": symbol,
+                "score": score,
+                "rr": round(rr,2),
+                "lot": lot
+            })
+
+    conn.close()
+
+    message = "🚀 ALGORİTMA 8.1 PARALEL RAPOR\n\n"
+
+    for s in breakout:
         message += (
             f"{s['symbol']} | Skor:{s['score']} | RR:{s['rr']}\n"
             f"Lot:{s['lot']}\n\n"
         )
 
     send_telegram(message)
-    return {"status":"Sent"}
+
+    return {"status": "Sent"}
 
 @app.get("/")
 def root():
-    return {"status":"ALGORİTMA 7.0 PORTFÖY LİMİTLİ AKTİF"}
+    return {"status": "ALGORİTMA 8.1 PARALEL MOD AKTİF"}
