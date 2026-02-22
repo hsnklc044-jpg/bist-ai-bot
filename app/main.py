@@ -9,15 +9,11 @@ import numpy as np
 
 app = FastAPI()
 
-# ================= CONFIG =================
-
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 DB_FILE = "fund.db"
-
 START_EQUITY = 100000
-MAX_DAILY_LOSS_PERCENT = 0.02
 MAX_OPEN_POSITIONS = 5
 RISK_PER_TRADE = 0.02
 
@@ -30,7 +26,7 @@ BIST_SYMBOLS = [
 "TUPRS.IS","VAKBN.IS","YKBNK.IS","ALARK.IS","BRISA.IS"
 ]
 
-# ================= DATABASE =================
+# ================= DB =================
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -70,114 +66,135 @@ def send_telegram(msg):
         return
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(url, json={"chat_id": TELEGRAM_CHAT_ID, "text": msg}, timeout=10)
+        requests.post(url,json={"chat_id":TELEGRAM_CHAT_ID,"text":msg},timeout=10)
     except:
         pass
 
 # ================= INDICATORS =================
 
-def rsi(series, period=14):
+def rsi(series,period=14):
     delta = series.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+    rs = avg_gain/avg_loss
+    return 100-(100/(1+rs))
 
-def atr(df, period=14):
-    high_low = df["High"] - df["Low"]
-    high_close = np.abs(df["High"] - df["Close"].shift())
-    low_close = np.abs(df["Low"] - df["Close"].shift())
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+def atr(df,period=14):
+    high_low = df["High"]-df["Low"]
+    high_close = np.abs(df["High"]-df["Close"].shift())
+    low_close = np.abs(df["Low"]-df["Close"].shift())
+    tr = pd.concat([high_low,high_close,low_close],axis=1).max(axis=1)
     return tr.rolling(period).mean()
+
+def calculate_pge():
+    try:
+        df=yf.download("^XU100",period="3mo",progress=False)
+        df["rsi"]=rsi(df["Close"])
+        return float(df["rsi"].iloc[-1])
+    except:
+        return 50
 
 # ================= EQUITY =================
 
 def get_equity():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
+    conn=sqlite3.connect(DB_FILE)
+    c=conn.cursor()
     c.execute("SELECT value FROM equity ORDER BY id DESC LIMIT 1")
-    row = c.fetchone()
+    row=c.fetchone()
     conn.close()
     return row[0] if row else START_EQUITY
 
 def update_equity(value):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
+    conn=sqlite3.connect(DB_FILE)
+    c=conn.cursor()
     c.execute("INSERT INTO equity(value,date) VALUES(?,?)",
-              (value, datetime.now().strftime("%Y-%m-%d")))
+              (value,datetime.now().strftime("%Y-%m-%d")))
     conn.commit()
     conn.close()
 
-# ================= MORNING SIGNAL =================
+# ================= MORNING =================
 
 @app.get("/morning_report")
 def morning():
 
-    equity = get_equity()
+    equity=get_equity()
+    pge=calculate_pge()
 
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
+    if pge<40:
+        rsi_limit=45
+        mom_limit=0.01
+        atr_stop=1.1
+        atr_target=2.0
+        regime="AGRESİF"
+    elif pge>65:
+        rsi_limit=55
+        mom_limit=0.03
+        atr_stop=1.4
+        atr_target=2.8
+        regime="DİSİPLİNLİ"
+    else:
+        rsi_limit=50
+        mom_limit=0.02
+        atr_stop=1.2
+        atr_target=2.2
+        regime="NORMAL"
+
+    conn=sqlite3.connect(DB_FILE)
+    c=conn.cursor()
 
     c.execute("SELECT COUNT(*) FROM trades WHERE active=1")
-    open_positions = c.fetchone()[0]
+    open_positions=c.fetchone()[0]
 
-    if open_positions >= MAX_OPEN_POSITIONS:
-        return {"message": "Max open positions reached"}
-
-    message = "🚀 ALGORİTMA 12.2 AKILLI AKTİF\n\n"
+    message=f"🚀 ALGORİTMA 13.0 REJİM ADAPTİF\nPGE:{round(pge,2)} | {regime}\n\n"
 
     for symbol in BIST_SYMBOLS:
 
-        if open_positions >= MAX_OPEN_POSITIONS:
+        if open_positions>=MAX_OPEN_POSITIONS:
             break
 
         try:
-            df = yf.download(symbol, period="3mo", progress=False)
+            df=yf.download(symbol,period="3mo",progress=False)
             if df.empty:
                 continue
 
-            df["rsi"] = rsi(df["Close"])
-            df["atr"] = atr(df)
-            df["vol_avg"] = df["Volume"].rolling(20).mean()
+            df["rsi"]=rsi(df["Close"])
+            df["atr"]=atr(df)
+            df["vol_avg"]=df["Volume"].rolling(20).mean()
 
-            last = df.iloc[-1]
-            momentum = (df["Close"].iloc[-1] / df["Close"].iloc[-20]) - 1
+            last=df.iloc[-1]
+            momentum=(df["Close"].iloc[-1]/df["Close"].iloc[-20])-1
 
-            score = 0
-            if last["rsi"] > 48:
-                score += 1
-            if momentum > 0.02:
-                score += 1
-            if last["Volume"] > (last["vol_avg"] * 0.9):
-                score += 1
+            score=0
+            if last["rsi"]>rsi_limit: score+=1
+            if momentum>mom_limit: score+=1
+            if last["Volume"]>last["vol_avg"]: score+=1
 
-            if score < 2:
+            if score<2:
                 continue
 
-            entry = float(last["Close"])
-            stop = entry - (last["atr"] * 1.2)
-            target = entry + (last["atr"] * 2.2)
+            entry=float(last["Close"])
+            stop=entry-(last["atr"]*atr_stop)
+            target=entry+(last["atr"]*atr_target)
 
-            risk_per_share = entry - stop
-            if risk_per_share <= 0:
+            risk_per_share=entry-stop
+            if risk_per_share<=0:
                 continue
 
-            risk_amount = equity * RISK_PER_TRADE
-            lot = int(risk_amount / risk_per_share)
+            risk_amount=equity*RISK_PER_TRADE
+            lot=int(risk_amount/risk_per_share)
 
-            if lot <= 0:
+            if lot<=0:
                 continue
 
             c.execute("""
             INSERT INTO trades(symbol,entry,stop,target,lot,active,pnl,date)
             VALUES(?,?,?,?,?,?,0,?)
-            """, (symbol, entry, stop, target, lot, 1, datetime.now().strftime("%Y-%m-%d")))
+            """,(symbol,entry,stop,target,lot,1,datetime.now().strftime("%Y-%m-%d")))
 
-            open_positions += 1
-
-            message += f"{symbol} | Entry:{round(entry,2)} Lot:{lot}\n"
+            open_positions+=1
+            message+=f"{symbol} | Entry:{round(entry,2)} Lot:{lot}\n"
 
         except:
             continue
@@ -186,75 +203,8 @@ def morning():
     conn.close()
 
     send_telegram(message)
-
-    return {"status": "Morning Signals Sent"}
-
-# ================= CHECK POSITIONS =================
-
-@app.get("/check_positions")
-def check():
-
-    equity = get_equity()
-
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-
-    c.execute("SELECT id,symbol,entry,stop,target,lot FROM trades WHERE active=1")
-    trades = c.fetchall()
-
-    total_pnl = 0
-    wins = 0
-    losses = 0
-
-    for t in trades:
-        id_, symbol, entry, stop, target, lot = t
-
-        try:
-            df = yf.download(symbol, period="5d", progress=False)
-            if df.empty:
-                continue
-
-            price = float(df["Close"].iloc[-1])
-
-            if price >= target:
-                pnl = (target - entry) * lot
-                wins += 1
-            elif price <= stop:
-                pnl = (stop - entry) * lot
-                losses += 1
-            else:
-                continue
-
-            total_pnl += pnl
-            equity += pnl
-
-            c.execute("UPDATE trades SET active=0,pnl=? WHERE id=?", (pnl, id_))
-
-        except:
-            continue
-
-    conn.commit()
-    conn.close()
-
-    update_equity(equity)
-
-    total = wins + losses
-    win_rate = (wins / total * 100) if total > 0 else 0
-
-    report = f"""
-📊 FON RAPORU
-Equity: {round(equity,2)}
-PnL: {round(total_pnl,2)}
-Win Rate: {round(win_rate,2)}%
-Trades: {total}
-"""
-
-    send_telegram(report)
-
-    return {"status": "Positions Checked"}
-
-# ================= ROOT =================
+    return {"status":"Morning Signals Sent"}
 
 @app.get("/")
 def root():
-    return {"status": "ALGORİTMA 12.2 AKILLI AKTİF FON AKTİF"}
+    return {"status":"ALGORİTMA 13.0 REJİM ADAPTİF AKTİF"}
