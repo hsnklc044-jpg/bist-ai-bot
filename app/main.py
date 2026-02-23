@@ -1,5 +1,4 @@
 import os
-import sqlite3
 import requests
 from datetime import datetime
 from fastapi import FastAPI
@@ -12,54 +11,10 @@ app = FastAPI()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-DB_FILE = "fund.db"
-START_EQUITY = 100000
-BASE_RISK = 0.02
-MAX_OPEN_POSITIONS = 5
-MAX_DRAWDOWN_LIMIT = 0.10
-DAILY_LOSS_LIMIT = 0.03
-
 BIST_SYMBOLS = [
 "AKBNK.IS","ARCLK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
-"ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS","GUBRF.IS",
-"HEKTS.IS","ISCTR.IS","KCHOL.IS","KOZAL.IS","KOZAA.IS",
-"ODAS.IS","PETKM.IS","PGSUS.IS","SAHOL.IS","SASA.IS",
-"SISE.IS","TAVHL.IS","TCELL.IS","THYAO.IS","TOASO.IS",
-"TUPRS.IS","VAKBN.IS","YKBNK.IS","ALARK.IS","BRISA.IS"
+"ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS","GUBRF.IS"
 ]
-
-# ================= DB =================
-
-def init_db():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS trades(
-        id INTEGER PRIMARY KEY,
-        symbol TEXT,
-        entry REAL,
-        stop REAL,
-        target REAL,
-        lot INTEGER,
-        active INTEGER,
-        pnl REAL,
-        date TEXT
-    )
-    """)
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS equity(
-        id INTEGER PRIMARY KEY,
-        value REAL,
-        date TEXT
-    )
-    """)
-
-    conn.commit()
-    conn.close()
-
-init_db()
 
 # ================= TELEGRAM =================
 
@@ -77,26 +32,13 @@ def send_telegram(msg):
 # ================= INDICATORS =================
 
 def rsi(series, period=14):
-    try:
-        delta = series.diff()
-        gain = delta.clip(lower=0)
-        loss = -delta.clip(upper=0)
-        avg_gain = gain.rolling(period).mean()
-        avg_loss = loss.rolling(period).mean()
-        rs = avg_gain / avg_loss
-        return 100 - (100 / (1 + rs))
-    except:
-        return pd.Series()
-
-def atr(df, period=14):
-    try:
-        high_low = df["High"] - df["Low"]
-        high_close = abs(df["High"] - df["Close"].shift())
-        low_close = abs(df["Low"] - df["Close"].shift())
-        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-        return tr.rolling(period).mean()
-    except:
-        return pd.Series()
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
 
 # ================= SAFE DOWNLOAD =================
 
@@ -113,7 +55,7 @@ def safe_download(symbol, period):
 
 @app.get("/")
 def root():
-    return {"status": "16.2 STABLE BUILD AKTİF"}
+    return {"status": "16.3 FIX BUILD AKTİF"}
 
 # ================= MORNING =================
 
@@ -121,20 +63,26 @@ def root():
 def morning():
 
     try:
-        message = "🚀 16.2 STABLE BUILD\n"
+        message = "🚀 16.3 FIX BUILD\n"
 
-        for symbol in BIST_SYMBOLS[:5]:  # yük azaltıldı
+        for symbol in BIST_SYMBOLS:
+
             df = safe_download(symbol, "3mo")
             if df is None or len(df) < 50:
                 continue
 
             df["rsi"] = rsi(df["Close"])
-            df["atr"] = atr(df)
 
             last = df.iloc[-1]
 
-            if last["rsi"] > 55:
-                message += f"{symbol} | Close:{round(last['Close'],2)}\n"
+            rsi_value = float(last["rsi"]) if not pd.isna(last["rsi"]) else None
+
+            if rsi_value is None:
+                continue
+
+            if rsi_value > 55:
+                close_price = float(last["Close"])
+                message += f"{symbol} | Close:{round(close_price,2)} RSI:{round(rsi_value,2)}\n"
 
         send_telegram(message)
         return {"status": "Morning Signals Sent"}
@@ -148,42 +96,31 @@ def morning():
 def backtest():
 
     try:
-        equity = START_EQUITY
+        equity = 100000
         trades = []
 
-        for symbol in BIST_SYMBOLS[:5]:  # stabilite için azaltıldı
+        for symbol in BIST_SYMBOLS:
 
             df = safe_download(symbol, "2y")
             if df is None or len(df) < 100:
                 continue
 
             df["rsi"] = rsi(df["Close"])
-            df["atr"] = atr(df)
 
             for i in range(50, len(df)-5):
 
-                row = df.iloc[i]
+                rsi_val = df["rsi"].iloc[i]
 
-                if row["rsi"] < 55:
+                if pd.isna(rsi_val):
                     continue
 
-                entry = float(row["Close"])
-                stop = entry - row["atr"]
-                target = entry + row["atr"]*1.5
+                rsi_val = float(rsi_val)
 
-                future = df.iloc[i+1:i+6]
-                if future.empty:
+                if rsi_val < 55:
                     continue
 
-                exit_price = float(future.iloc[-1]["Close"])
-
-                for _, f in future.iterrows():
-                    if f["Low"] <= stop:
-                        exit_price = stop
-                        break
-                    if f["High"] >= target:
-                        exit_price = target
-                        break
+                entry = float(df["Close"].iloc[i])
+                exit_price = float(df["Close"].iloc[i+5])
 
                 pnl = exit_price - entry
                 equity += pnl
