@@ -160,23 +160,20 @@ def morning():
     equity = get_current_equity()
     drawdown = calculate_drawdown()
 
-    # KILL SWITCH
     today = datetime.now().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
+
     c.execute("SELECT pnl FROM trades WHERE date=? AND active=0", (today,))
     rows = c.fetchall()
-
     today_loss = sum([r[0] for r in rows if r[0] < 0]) if rows else 0
 
     if abs(today_loss) >= equity * DAILY_LOSS_LIMIT:
         send_telegram("🛑 GÜNLÜK KILL SWITCH AKTİF")
         return {"status": "Kill Switch Active"}
 
-    # DD Koruma
     risk = BASE_RISK / 2 if drawdown > MAX_DRAWDOWN_LIMIT else BASE_RISK
 
-    # Trailing Güncelle
     update_trailing_stops()
 
     c.execute("SELECT COUNT(*) FROM trades WHERE active=1")
@@ -247,8 +244,101 @@ Risk:{round(risk*100,2)}%
     send_telegram(message)
     return {"status": "Morning Complete"}
 
+# ================= BACKTEST =================
+
+@app.get("/backtest")
+def backtest():
+
+    equity = 100000
+    risk = 0.02
+    trades = []
+    equity_curve = [equity]
+
+    for symbol in BIST_SYMBOLS:
+
+        df = yf.download(symbol, period="5y", progress=False)
+        if df.empty:
+            continue
+
+        df["rsi"] = rsi(df["Close"])
+        df["atr"] = atr(df)
+        df["vol_avg"] = df["Volume"].rolling(20).mean()
+
+        for i in range(50, len(df)):
+
+            row = df.iloc[i]
+            momentum = (df["Close"].iloc[i] / df["Close"].iloc[i-20]) - 1
+
+            score = 0
+            if row["rsi"] > 50:
+                score += 1
+            if momentum > 0.02:
+                score += 1
+            if row["Volume"] > row["vol_avg"]:
+                score += 1
+
+            if score < 1:
+                continue
+
+            entry = float(row["Close"])
+            stop = entry - (row["atr"] * 0.9)
+            target = entry + (row["atr"] * 1.5)
+
+            risk_per_share = entry - stop
+            if risk_per_share <= 0:
+                continue
+
+            lot = int((equity * risk) / risk_per_share)
+            if lot <= 0:
+                continue
+
+            future = df.iloc[i+1:i+10]
+            exit_price = float(future.iloc[-1]["Close"])
+
+            for _, frow in future.iterrows():
+                if frow["Low"] <= stop:
+                    exit_price = stop
+                    break
+                if frow["High"] >= target:
+                    exit_price = target
+                    break
+
+            pnl = (exit_price - entry) * lot
+            equity += pnl
+
+            trades.append(pnl)
+            equity_curve.append(equity)
+
+    if not trades:
+        return {"error": "Trade oluşmadı"}
+
+    wins = [t for t in trades if t > 0]
+    losses = [t for t in trades if t <= 0]
+
+    win_rate = len(wins) / len(trades) * 100
+    avg_win = np.mean(wins) if wins else 0
+    avg_loss = np.mean(losses) if losses else 0
+    rr_ratio = abs(avg_win / avg_loss) if avg_loss != 0 else 0
+
+    peak = equity_curve[0]
+    max_dd = 0
+    for val in equity_curve:
+        if val > peak:
+            peak = val
+        dd = (peak - val) / peak
+        if dd > max_dd:
+            max_dd = dd
+
+    return {
+        "final_equity": round(equity,2),
+        "total_trades": len(trades),
+        "win_rate_percent": round(win_rate,2),
+        "rr_ratio": round(rr_ratio,2),
+        "max_drawdown_percent": round(max_dd*100,2)
+    }
+
 # ================= ROOT =================
 
 @app.get("/")
 def root():
-    return {"status": "ALGORİTMA 16.1 FULL AKTİF"}
+    return {"status": "ALGORİTMA 16.1 + BACKTEST 17.0 AKTİF"}
