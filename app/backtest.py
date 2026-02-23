@@ -1,18 +1,42 @@
-from strategy import generate_signal
+from fastapi import FastAPI
+from app.data_utils import get_data
+from app.strategy import generate_signal
+from app.backtest import run_backtest
+from app.telegram_utils import send_telegram
+
+app = FastAPI()
 
 
-def run_backtest(data):
+@app.get("/")
+def root():
+    return {"status": "16.4 STABLE CORE AKTİF"}
 
-    if data is None or data.empty:
-        return {"message": "Veri yok"}
 
-    signal = generate_signal(data)
+@app.get("/backtest")
+def backtest():
+
+    df = get_data()
+    result = run_backtest(df)
+
+    return result
+
+
+@app.get("/morning_report")
+def morning_report():
+
+    df = get_data()
+    signal = generate_signal(df)
 
     if signal is None:
         return {"message": "Henüz sinyal yok"}
 
-    return {
-        "side": signal["side"],
-        "price": float(signal["price"]),
-        "rsi": float(signal["rsi"])
-    }
+    message = (
+        f"🚀 SABAH SİNYALİ\n"
+        f"Yön: {signal['side']}\n"
+        f"Fiyat: {signal['price']}\n"
+        f"RSI: {round(signal['rsi'],2)}"
+    )
+
+    send_telegram(message)
+
+    return {"status": "Morning Signals Sent"}
