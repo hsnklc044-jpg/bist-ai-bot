@@ -9,7 +9,7 @@ app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"status": "16.4 STABLE CORE AKTİF"}
+    return {"status": "16.4 FULL STABLE AKTİF"}
 
 
 @app.get("/backtest")
@@ -27,6 +27,9 @@ def morning_report():
 
     df = get_data()
 
+    if df is None or df.empty:
+        return {"message": "Veri yok"}
+
     signal = generate_signal(df)
 
     if signal is None:
@@ -36,7 +39,7 @@ def morning_report():
         f"🚀 SABAH SİNYALİ\n"
         f"Yön: {signal['side']}\n"
         f"Fiyat: {signal['price']}\n"
-        f"RSI: {round(signal['rsi'],2)}"
+        f"RSI: {round(float(signal['rsi']), 2)}"
     )
 
     send_telegram(message)
