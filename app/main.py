@@ -9,14 +9,13 @@ app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"status": "16.4 FULL STABLE AKTİF"}
+    return {"status": "16.5 CLEAN BUILD AKTİF"}
 
 
 @app.get("/backtest")
 def backtest():
 
     df = get_data()
-
     result = run_backtest(df)
 
     return result
