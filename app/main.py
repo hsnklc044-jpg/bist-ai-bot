@@ -19,9 +19,7 @@ START_EQUITY = 100000
 BASE_RISK = 0.02
 MAX_OPEN_POSITIONS = 5
 MAX_DRAWDOWN_LIMIT = 0.10
-DAILY_LOSS_LIMIT = 0.03   # %3 kill switch
-
-# ================= SYMBOLS =================
+DAILY_LOSS_LIMIT = 0.03
 
 BIST_SYMBOLS = [
 "AKBNK.IS","ARCLK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
@@ -80,7 +78,7 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= HELPERS =================
+# ================= INDICATORS =================
 
 def rsi(series, period=14):
     delta = series.diff()
@@ -131,27 +129,22 @@ def calculate_drawdown():
             max_dd = dd
     return max_dd
 
-# ================= TRAILING STOP =================
+# ================= TRAILING =================
 
 def update_trailing_stops():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT id,symbol,entry,stop,lot FROM trades WHERE active=1")
+    c.execute("SELECT id,symbol,stop FROM trades WHERE active=1")
     trades = c.fetchall()
 
-    for t in trades:
-        id_, symbol, entry, stop, lot = t
+    for id_, symbol, stop in trades:
         df = yf.download(symbol, period="1mo", progress=False)
         if df.empty:
             continue
-
         df["atr"] = atr(df)
         last = df.iloc[-1]
         price = float(last["Close"])
-
-        # Stop'u yukarı taşı
         new_stop = price - (last["atr"] * 0.8)
-
         if new_stop > stop:
             c.execute("UPDATE trades SET stop=? WHERE id=?",
                       (new_stop, id_))
@@ -167,29 +160,95 @@ def morning():
     equity = get_current_equity()
     drawdown = calculate_drawdown()
 
-    # Kill switch kontrol
-    today_loss = 0
+    # KILL SWITCH
+    today = datetime.now().strftime("%Y-%m-%d")
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    today = datetime.now().strftime("%Y-%m-%d")
     c.execute("SELECT pnl FROM trades WHERE date=? AND active=0", (today,))
     rows = c.fetchall()
-    conn.close()
 
-    if rows:
-        today_loss = sum([r[0] for r in rows if r[0] < 0])
+    today_loss = sum([r[0] for r in rows if r[0] < 0]) if rows else 0
 
     if abs(today_loss) >= equity * DAILY_LOSS_LIMIT:
-        send_telegram("🛑 GÜNLÜK KILL SWITCH AKTİF - Yeni işlem açılmayacak.")
+        send_telegram("🛑 GÜNLÜK KILL SWITCH AKTİF")
         return {"status": "Kill Switch Active"}
 
-    # Trailing güncelle
+    # DD Koruma
+    risk = BASE_RISK / 2 if drawdown > MAX_DRAWDOWN_LIMIT else BASE_RISK
+
+    # Trailing Güncelle
     update_trailing_stops()
 
-    return {"status": "System Running - Trailing Updated"}
+    c.execute("SELECT COUNT(*) FROM trades WHERE active=1")
+    open_positions = c.fetchone()[0]
+
+    message = f"""
+🚀 ALGORİTMA 16.1 FULL FON
+Drawdown:{round(drawdown*100,2)}%
+Risk:{round(risk*100,2)}%
+"""
+
+    signals = 0
+
+    for symbol in BIST_SYMBOLS:
+
+        if open_positions >= MAX_OPEN_POSITIONS:
+            break
+
+        df = yf.download(symbol, period="3mo", progress=False)
+        if df.empty:
+            continue
+
+        df["rsi"] = rsi(df["Close"])
+        df["atr"] = atr(df)
+        df["vol_avg"] = df["Volume"].rolling(20).mean()
+
+        last = df.iloc[-1]
+        momentum = (df["Close"].iloc[-1] / df["Close"].iloc[-20]) - 1
+
+        score = 0
+        if last["rsi"] > 50:
+            score += 1
+        if momentum > 0.02:
+            score += 1
+        if last["Volume"] > last["vol_avg"]:
+            score += 1
+
+        if score < 1:
+            continue
+
+        entry = float(last["Close"])
+        stop = entry - (last["atr"] * 0.9)
+        target = entry + (last["atr"] * 1.5)
+
+        risk_per_share = entry - stop
+        if risk_per_share <= 0:
+            continue
+
+        lot = int((equity * risk) / risk_per_share)
+        if lot <= 0:
+            continue
+
+        c.execute("""
+        INSERT INTO trades(symbol,entry,stop,target,lot,active,pnl,date)
+        VALUES(?,?,?,?,?,?,0,?)
+        """, (symbol, entry, stop, target, lot, 1, today))
+
+        message += f"{symbol} | Entry:{round(entry,2)} Lot:{lot}\n"
+        open_positions += 1
+        signals += 1
+
+    conn.commit()
+    conn.close()
+
+    if signals == 0:
+        message += "⚠️ Bugün uygun setup yok."
+
+    send_telegram(message)
+    return {"status": "Morning Complete"}
 
 # ================= ROOT =================
 
 @app.get("/")
 def root():
-    return {"status": "ALGORİTMA 16.0 TRAILING + KILL SWITCH AKTİF"}
+    return {"status": "ALGORİTMA 16.1 FULL AKTİF"}
