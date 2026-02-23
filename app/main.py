@@ -1,8 +1,8 @@
 from fastapi import FastAPI
-from data_utils import get_data
-from strategy import generate_signal
-from backtest import run_backtest
-from telegram_utils import send_telegram
+from app.data_utils import get_data
+from app.strategy import generate_signal
+from app.backtest import run_backtest
+from app.telegram_utils import send_telegram
 
 app = FastAPI()
 
