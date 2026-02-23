@@ -16,8 +16,12 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 DB_FILE = "fund.db"
 START_EQUITY = 100000
+BASE_RISK = 0.02
 MAX_OPEN_POSITIONS = 5
-RISK_PER_TRADE = 0.02
+MAX_DRAWDOWN_LIMIT = 0.10
+DAILY_LOSS_LIMIT = 0.03   # %3 kill switch
+
+# ================= SYMBOLS =================
 
 BIST_SYMBOLS = [
 "AKBNK.IS","ARCLK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS",
@@ -76,7 +80,7 @@ def send_telegram(msg):
     except:
         pass
 
-# ================= INDICATORS =================
+# ================= HELPERS =================
 
 def rsi(series, period=14):
     delta = series.diff()
@@ -94,140 +98,98 @@ def atr(df, period=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
-def calculate_pge():
-    try:
-        df = yf.download("^XU100", period="3mo", progress=False)
-        if df.empty:
-            return 50
-        df["rsi"] = rsi(df["Close"])
-        return float(df["rsi"].iloc[-1])
-    except:
-        return 50
-
 # ================= EQUITY =================
 
-def get_equity():
+def get_equity_curve():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT value FROM equity ORDER BY id DESC LIMIT 1")
-    row = c.fetchone()
+    c.execute("SELECT value FROM equity ORDER BY id ASC")
+    data = c.fetchall()
     conn.close()
-    return row[0] if row else START_EQUITY
+    return [d[0] for d in data] if data else [START_EQUITY]
+
+def get_current_equity():
+    return get_equity_curve()[-1]
 
 def update_equity(value):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute(
-        "INSERT INTO equity(value,date) VALUES(?,?)",
-        (value, datetime.now().strftime("%Y-%m-%d"))
-    )
+    c.execute("INSERT INTO equity(value,date) VALUES(?,?)",
+              (value, datetime.now().strftime("%Y-%m-%d")))
     conn.commit()
     conn.close()
 
-# ================= MORNING REPORT =================
+def calculate_drawdown():
+    curve = get_equity_curve()
+    peak = curve[0]
+    max_dd = 0
+    for val in curve:
+        if val > peak:
+            peak = val
+        dd = (peak - val) / peak
+        if dd > max_dd:
+            max_dd = dd
+    return max_dd
+
+# ================= TRAILING STOP =================
+
+def update_trailing_stops():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT id,symbol,entry,stop,lot FROM trades WHERE active=1")
+    trades = c.fetchall()
+
+    for t in trades:
+        id_, symbol, entry, stop, lot = t
+        df = yf.download(symbol, period="1mo", progress=False)
+        if df.empty:
+            continue
+
+        df["atr"] = atr(df)
+        last = df.iloc[-1]
+        price = float(last["Close"])
+
+        # Stop'u yukarı taşı
+        new_stop = price - (last["atr"] * 0.8)
+
+        if new_stop > stop:
+            c.execute("UPDATE trades SET stop=? WHERE id=?",
+                      (new_stop, id_))
+
+    conn.commit()
+    conn.close()
+
+# ================= MORNING =================
 
 @app.get("/morning_report")
 def morning():
 
-    equity = get_equity()
-    pge = calculate_pge()
+    equity = get_current_equity()
+    drawdown = calculate_drawdown()
 
-    if pge < 40:
-        rsi_limit = 45
-        mom_limit = 0.01
-        regime = "AGRESİF"
-        atr_stop = 0.8
-        atr_target = 1.4
-    elif pge > 65:
-        rsi_limit = 55
-        mom_limit = 0.03
-        regime = "DİSİPLİNLİ"
-        atr_stop = 1.0
-        atr_target = 1.6
-    else:
-        rsi_limit = 50
-        mom_limit = 0.02
-        regime = "NORMAL"
-        atr_stop = 0.9
-        atr_target = 1.5
-
+    # Kill switch kontrol
+    today_loss = 0
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
-    c.execute("SELECT COUNT(*) FROM trades WHERE active=1")
-    open_positions = c.fetchone()[0]
-
-    message = f"🚀 ALGORİTMA 14.3 ŞEFFAF MOD\nPGE:{round(pge,2)} | {regime}\n\n"
-
-    signals_found = 0
-
-    for symbol in BIST_SYMBOLS:
-
-        if open_positions >= MAX_OPEN_POSITIONS:
-            break
-
-        try:
-            df = yf.download(symbol, period="3mo", progress=False)
-            if df.empty:
-                continue
-
-            df["rsi"] = rsi(df["Close"])
-            df["atr"] = atr(df)
-            df["vol_avg"] = df["Volume"].rolling(20).mean()
-
-            last = df.iloc[-1]
-            momentum = (df["Close"].iloc[-1] / df["Close"].iloc[-20]) - 1
-
-            score = 0
-            if last["rsi"] > rsi_limit:
-                score += 1
-            if momentum > mom_limit:
-                score += 1
-            if last["Volume"] > last["vol_avg"]:
-                score += 1
-
-            if score < 1:
-                continue
-
-            entry = float(last["Close"])
-            stop = entry - (last["atr"] * atr_stop)
-            target = entry + (last["atr"] * atr_target)
-
-            risk_per_share = entry - stop
-            if risk_per_share <= 0:
-                continue
-
-            risk_amount = equity * RISK_PER_TRADE
-            lot = int(risk_amount / risk_per_share)
-
-            if lot <= 0:
-                continue
-
-            c.execute("""
-            INSERT INTO trades(symbol,entry,stop,target,lot,active,pnl,date)
-            VALUES(?,?,?,?,?,?,0,?)
-            """, (
-                symbol, entry, stop, target, lot, 1,
-                datetime.now().strftime("%Y-%m-%d")
-            ))
-
-            message += f"{symbol} | Entry:{round(entry,2)} Lot:{lot}\n"
-            open_positions += 1
-            signals_found += 1
-
-        except:
-            continue
-
-    conn.commit()
+    today = datetime.now().strftime("%Y-%m-%d")
+    c.execute("SELECT pnl FROM trades WHERE date=? AND active=0", (today,))
+    rows = c.fetchall()
     conn.close()
 
-    if signals_found == 0:
-        message += "⚠️ Bugün uygun teknik setup bulunamadı."
+    if rows:
+        today_loss = sum([r[0] for r in rows if r[0] < 0])
 
-    send_telegram(message)
-    return {"status": "Morning Signals Sent"}
+    if abs(today_loss) >= equity * DAILY_LOSS_LIMIT:
+        send_telegram("🛑 GÜNLÜK KILL SWITCH AKTİF - Yeni işlem açılmayacak.")
+        return {"status": "Kill Switch Active"}
+
+    # Trailing güncelle
+    update_trailing_stops()
+
+    return {"status": "System Running - Trailing Updated"}
 
 # ================= ROOT =================
 
 @app.get("/")
 def root():
-    return {"status": "ALGORİTMA 14.3 ŞEFFAF MOD AKTİF"}
+    return {"status": "ALGORİTMA 16.0 TRAILING + KILL SWITCH AKTİF"}
