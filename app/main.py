@@ -9,8 +9,6 @@ import numpy as np
 
 app = FastAPI()
 
-# ================= CONFIG =================
-
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
@@ -30,7 +28,7 @@ BIST_SYMBOLS = [
 "TUPRS.IS","VAKBN.IS","YKBNK.IS","ALARK.IS","BRISA.IS"
 ]
 
-# ================= DATABASE =================
+# ================= DB =================
 
 def init_db():
     conn = sqlite3.connect(DB_FILE)
@@ -66,279 +64,142 @@ init_db()
 # ================= TELEGRAM =================
 
 def send_telegram(msg):
-    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        return
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-        requests.post(
-            url,
-            json={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
-            timeout=10
-        )
+        if TELEGRAM_TOKEN and TELEGRAM_CHAT_ID:
+            requests.post(
+                f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+                json={"chat_id": TELEGRAM_CHAT_ID, "text": msg},
+                timeout=10
+            )
     except:
         pass
 
 # ================= INDICATORS =================
 
 def rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+    try:
+        delta = series.diff()
+        gain = delta.clip(lower=0)
+        loss = -delta.clip(upper=0)
+        avg_gain = gain.rolling(period).mean()
+        avg_loss = loss.rolling(period).mean()
+        rs = avg_gain / avg_loss
+        return 100 - (100 / (1 + rs))
+    except:
+        return pd.Series()
 
 def atr(df, period=14):
-    high_low = df["High"] - df["Low"]
-    high_close = np.abs(df["High"] - df["Close"].shift())
-    low_close = np.abs(df["Low"] - df["Close"].shift())
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    return tr.rolling(period).mean()
+    try:
+        high_low = df["High"] - df["Low"]
+        high_close = abs(df["High"] - df["Close"].shift())
+        low_close = abs(df["Low"] - df["Close"].shift())
+        tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+        return tr.rolling(period).mean()
+    except:
+        return pd.Series()
 
-# ================= EQUITY =================
+# ================= SAFE DOWNLOAD =================
 
-def get_equity_curve():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT value FROM equity ORDER BY id ASC")
-    data = c.fetchall()
-    conn.close()
-    return [d[0] for d in data] if data else [START_EQUITY]
+def safe_download(symbol, period):
+    try:
+        df = yf.download(symbol, period=period, progress=False)
+        if df is None or df.empty:
+            return None
+        return df
+    except:
+        return None
 
-def get_current_equity():
-    return get_equity_curve()[-1]
+# ================= ROOT =================
 
-def update_equity(value):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("INSERT INTO equity(value,date) VALUES(?,?)",
-              (value, datetime.now().strftime("%Y-%m-%d")))
-    conn.commit()
-    conn.close()
-
-def calculate_drawdown():
-    curve = get_equity_curve()
-    peak = curve[0]
-    max_dd = 0
-    for val in curve:
-        if val > peak:
-            peak = val
-        dd = (peak - val) / peak
-        if dd > max_dd:
-            max_dd = dd
-    return max_dd
-
-# ================= TRAILING =================
-
-def update_trailing_stops():
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("SELECT id,symbol,stop FROM trades WHERE active=1")
-    trades = c.fetchall()
-
-    for id_, symbol, stop in trades:
-        df = yf.download(symbol, period="1mo", progress=False)
-        if df.empty:
-            continue
-        df["atr"] = atr(df)
-        last = df.iloc[-1]
-        price = float(last["Close"])
-        new_stop = price - (last["atr"] * 0.8)
-        if new_stop > stop:
-            c.execute("UPDATE trades SET stop=? WHERE id=?",
-                      (new_stop, id_))
-
-    conn.commit()
-    conn.close()
+@app.get("/")
+def root():
+    return {"status": "16.2 STABLE BUILD AKTİF"}
 
 # ================= MORNING =================
 
 @app.get("/morning_report")
 def morning():
 
-    equity = get_current_equity()
-    drawdown = calculate_drawdown()
+    try:
+        message = "🚀 16.2 STABLE BUILD\n"
 
-    today = datetime.now().strftime("%Y-%m-%d")
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
+        for symbol in BIST_SYMBOLS[:5]:  # yük azaltıldı
+            df = safe_download(symbol, "3mo")
+            if df is None or len(df) < 50:
+                continue
 
-    c.execute("SELECT pnl FROM trades WHERE date=? AND active=0", (today,))
-    rows = c.fetchall()
-    today_loss = sum([r[0] for r in rows if r[0] < 0]) if rows else 0
+            df["rsi"] = rsi(df["Close"])
+            df["atr"] = atr(df)
 
-    if abs(today_loss) >= equity * DAILY_LOSS_LIMIT:
-        send_telegram("🛑 GÜNLÜK KILL SWITCH AKTİF")
-        return {"status": "Kill Switch Active"}
+            last = df.iloc[-1]
 
-    risk = BASE_RISK / 2 if drawdown > MAX_DRAWDOWN_LIMIT else BASE_RISK
+            if last["rsi"] > 55:
+                message += f"{symbol} | Close:{round(last['Close'],2)}\n"
 
-    update_trailing_stops()
+        send_telegram(message)
+        return {"status": "Morning Signals Sent"}
 
-    c.execute("SELECT COUNT(*) FROM trades WHERE active=1")
-    open_positions = c.fetchone()[0]
-
-    message = f"""
-🚀 ALGORİTMA 16.1 FULL FON
-Drawdown:{round(drawdown*100,2)}%
-Risk:{round(risk*100,2)}%
-"""
-
-    signals = 0
-
-    for symbol in BIST_SYMBOLS:
-
-        if open_positions >= MAX_OPEN_POSITIONS:
-            break
-
-        df = yf.download(symbol, period="3mo", progress=False)
-        if df.empty:
-            continue
-
-        df["rsi"] = rsi(df["Close"])
-        df["atr"] = atr(df)
-        df["vol_avg"] = df["Volume"].rolling(20).mean()
-
-        last = df.iloc[-1]
-        momentum = (df["Close"].iloc[-1] / df["Close"].iloc[-20]) - 1
-
-        score = 0
-        if last["rsi"] > 50:
-            score += 1
-        if momentum > 0.02:
-            score += 1
-        if last["Volume"] > last["vol_avg"]:
-            score += 1
-
-        if score < 1:
-            continue
-
-        entry = float(last["Close"])
-        stop = entry - (last["atr"] * 0.9)
-        target = entry + (last["atr"] * 1.5)
-
-        risk_per_share = entry - stop
-        if risk_per_share <= 0:
-            continue
-
-        lot = int((equity * risk) / risk_per_share)
-        if lot <= 0:
-            continue
-
-        c.execute("""
-        INSERT INTO trades(symbol,entry,stop,target,lot,active,pnl,date)
-        VALUES(?,?,?,?,?,?,0,?)
-        """, (symbol, entry, stop, target, lot, 1, today))
-
-        message += f"{symbol} | Entry:{round(entry,2)} Lot:{lot}\n"
-        open_positions += 1
-        signals += 1
-
-    conn.commit()
-    conn.close()
-
-    if signals == 0:
-        message += "⚠️ Bugün uygun setup yok."
-
-    send_telegram(message)
-    return {"status": "Morning Complete"}
+    except Exception as e:
+        return {"error": str(e)}
 
 # ================= BACKTEST =================
 
 @app.get("/backtest")
 def backtest():
 
-    equity = 100000
-    risk = 0.02
-    trades = []
-    equity_curve = [equity]
+    try:
+        equity = START_EQUITY
+        trades = []
 
-    for symbol in BIST_SYMBOLS:
+        for symbol in BIST_SYMBOLS[:5]:  # stabilite için azaltıldı
 
-        df = yf.download(symbol, period="5y", progress=False)
-        if df.empty:
-            continue
-
-        df["rsi"] = rsi(df["Close"])
-        df["atr"] = atr(df)
-        df["vol_avg"] = df["Volume"].rolling(20).mean()
-
-        for i in range(50, len(df)):
-
-            row = df.iloc[i]
-            momentum = (df["Close"].iloc[i] / df["Close"].iloc[i-20]) - 1
-
-            score = 0
-            if row["rsi"] > 50:
-                score += 1
-            if momentum > 0.02:
-                score += 1
-            if row["Volume"] > row["vol_avg"]:
-                score += 1
-
-            if score < 1:
+            df = safe_download(symbol, "2y")
+            if df is None or len(df) < 100:
                 continue
 
-            entry = float(row["Close"])
-            stop = entry - (row["atr"] * 0.9)
-            target = entry + (row["atr"] * 1.5)
+            df["rsi"] = rsi(df["Close"])
+            df["atr"] = atr(df)
 
-            risk_per_share = entry - stop
-            if risk_per_share <= 0:
-                continue
+            for i in range(50, len(df)-5):
 
-            lot = int((equity * risk) / risk_per_share)
-            if lot <= 0:
-                continue
+                row = df.iloc[i]
 
-            future = df.iloc[i+1:i+10]
-            exit_price = float(future.iloc[-1]["Close"])
+                if row["rsi"] < 55:
+                    continue
 
-            for _, frow in future.iterrows():
-                if frow["Low"] <= stop:
-                    exit_price = stop
-                    break
-                if frow["High"] >= target:
-                    exit_price = target
-                    break
+                entry = float(row["Close"])
+                stop = entry - row["atr"]
+                target = entry + row["atr"]*1.5
 
-            pnl = (exit_price - entry) * lot
-            equity += pnl
+                future = df.iloc[i+1:i+6]
+                if future.empty:
+                    continue
 
-            trades.append(pnl)
-            equity_curve.append(equity)
+                exit_price = float(future.iloc[-1]["Close"])
 
-    if not trades:
-        return {"error": "Trade oluşmadı"}
+                for _, f in future.iterrows():
+                    if f["Low"] <= stop:
+                        exit_price = stop
+                        break
+                    if f["High"] >= target:
+                        exit_price = target
+                        break
 
-    wins = [t for t in trades if t > 0]
-    losses = [t for t in trades if t <= 0]
+                pnl = exit_price - entry
+                equity += pnl
+                trades.append(pnl)
 
-    win_rate = len(wins) / len(trades) * 100
-    avg_win = np.mean(wins) if wins else 0
-    avg_loss = np.mean(losses) if losses else 0
-    rr_ratio = abs(avg_win / avg_loss) if avg_loss != 0 else 0
+        if not trades:
+            return {"result": "Trade oluşmadı"}
 
-    peak = equity_curve[0]
-    max_dd = 0
-    for val in equity_curve:
-        if val > peak:
-            peak = val
-        dd = (peak - val) / peak
-        if dd > max_dd:
-            max_dd = dd
+        wins = [t for t in trades if t > 0]
+        win_rate = len(wins)/len(trades)*100
 
-    return {
-        "final_equity": round(equity,2),
-        "total_trades": len(trades),
-        "win_rate_percent": round(win_rate,2),
-        "rr_ratio": round(rr_ratio,2),
-        "max_drawdown_percent": round(max_dd*100,2)
-    }
+        return {
+            "final_equity": round(equity,2),
+            "trades": len(trades),
+            "win_rate": round(win_rate,2)
+        }
 
-# ================= ROOT =================
-
-@app.get("/")
-def root():
-    return {"status": "ALGORİTMA 16.1 + BACKTEST 17.0 AKTİF"}
+    except Exception as e:
+        return {"error": str(e)}
