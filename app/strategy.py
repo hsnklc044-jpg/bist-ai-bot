@@ -3,6 +3,7 @@ import numpy as np
 
 
 def calculate_rsi(series, period=14):
+
     delta = series.diff()
 
     gain = delta.clip(lower=0)
@@ -19,20 +20,16 @@ def calculate_rsi(series, period=14):
 
 def generate_signal(df):
 
-    if df is None:
+    if df is None or df.empty:
         return None
-
-    if df.empty:
-        return None
-
-    df = df.copy()
 
     if "close" not in df.columns:
         return None
 
+    df = df.copy()
+
     df["rsi"] = calculate_rsi(df["close"])
 
-    # Son değerleri scalar'a çevir
     last_close = df["close"].iloc[-1]
     last_rsi = df["rsi"].iloc[-1]
 
