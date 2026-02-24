@@ -3,6 +3,7 @@ from app.data_utils import get_data
 from app.strategy import generate_signal
 from app.backtest import run_backtest
 from app.telegram_utils import send_telegram
+from app.scanner import scan_market
 
 app = FastAPI()
 
@@ -11,7 +12,7 @@ app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"status": "16.7 STABLE DEBUG BUILD AKTİF"}
+    return {"status": "16.8 PRO SCAN BUILD AKTİF"}
 
 
 # ================= DATA TEST =================
@@ -50,10 +51,7 @@ def backtest():
             return {"error": "Veri boş"}
 
         if "close" not in df.columns:
-            return {
-                "error": "close kolonu yok",
-                "columns": df.columns.tolist()
-            }
+            return {"error": "close kolonu yok"}
 
         result = run_backtest(df)
 
@@ -63,7 +61,7 @@ def backtest():
         return {"error": str(e)}
 
 
-# ================= MORNING REPORT =================
+# ================= MORNING SIGNAL =================
 
 @app.get("/morning_report")
 def morning_report():
@@ -72,12 +70,6 @@ def morning_report():
 
         if df is None or df.empty:
             return {"error": "Veri yok"}
-
-        if "close" not in df.columns:
-            return {
-                "error": "close kolonu yok",
-                "columns": df.columns.tolist()
-            }
 
         signal = generate_signal(df)
 
@@ -93,7 +85,31 @@ def morning_report():
 
         send_telegram(message)
 
-        return {"status": "Morning Signals Sent"}
+        return {"status": "Morning Signal Sent"}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ================= BIST30 SABAH TARAMA =================
+
+@app.get("/morning_scan")
+def morning_scan():
+
+    try:
+        top3 = scan_market()
+
+        if not top3:
+            return {"message": "Veri bulunamadı"}
+
+        message = "🚀 BIST30 SABAH TARAMA\n\n"
+
+        for i, stock in enumerate(top3, 1):
+            message += f"{i}️⃣ {stock['symbol']} | RSI: {stock['rsi']} | Skor: {stock['score']}\n"
+
+        send_telegram(message)
+
+        return {"status": "Sabah Tarama Gönderildi"}
 
     except Exception as e:
         return {"error": str(e)}
