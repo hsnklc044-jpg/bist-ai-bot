@@ -5,17 +5,14 @@ import pandas as pd
 def get_data(symbol="SISE.IS", period="6mo", interval="1d"):
 
     try:
-        df = yf.download(
-            symbol,
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(
             period=period,
             interval=interval,
-            progress=False
+            auto_adjust=True
         )
 
-        if df is None:
-            return None
-
-        if df.empty:
+        if df is None or df.empty:
             return None
 
         df = df.dropna()
