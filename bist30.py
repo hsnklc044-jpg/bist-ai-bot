@@ -28,59 +28,66 @@ def scan_bist30():
             ema200 = calculate_ema(close, 200)
             atr_series = calculate_atr(df)
 
-            current_price = close.iloc[-1]
-            current_rsi = rsi_series.iloc[-1]
-            current_ema50 = ema50.iloc[-1]
-            current_ema200 = ema200.iloc[-1]
-            current_atr = atr_series.iloc[-1]
+            entry = close.iloc[-1]
+            ema50_now = ema50.iloc[-1]
+            ema200_now = ema200.iloc[-1]
+            rsi_now = rsi_series.iloc[-1]
+            rsi_prev = rsi_series.iloc[-2]
+            atr_now = atr_series.iloc[-1]
 
-            trend_up = (
-                current_price > current_ema50 and
-                current_ema50 > current_ema200
-            )
-
-            rsi_cross = (
-                rsi_series.iloc[-2] < 30 and
-                current_rsi > 30
-            )
-
-            volume_increase = (
+            trend_ok = entry > ema50_now and ema50_now > ema200_now
+            rsi_cross = rsi_prev < 30 and rsi_now > 30
+            volume_ok = (
                 volume.iloc[-1] > volume.iloc[-2] and
                 volume.iloc[-2] > volume.iloc[-3]
             )
 
-            if trend_up and rsi_cross and volume_increase:
+            stop = ema50_now
+            target = entry + (2.5 * atr_now)
 
-                if is_new_signal(symbol):
+            risk = entry - stop
+            reward = target - entry
 
-                    entry = current_price
-                    stop = current_ema50
-                    target = entry + (2 * current_atr)
+            if risk <= 0:
+                continue
 
-                    risk = entry - stop
-                    reward = target - entry
+            rr_ratio = reward / risk
 
-                    if risk <= 0:
-                        continue
+            if (
+                trend_ok and
+                rsi_cross and
+                volume_ok and
+                rr_ratio >= 1.8 and
+                is_new_signal(symbol)
+            ):
 
-                    rr_ratio = round(reward / risk, 2)
+                # Skor Hesaplama
+                score = (
+                    rr_ratio * 40 +
+                    (50 - abs(50 - rsi_now)) * 0.6 +
+                    (volume.iloc[-1] / volume.iloc[-2]) * 10
+                )
 
-                    message = (
-                        f"🚀 GÜÇLÜ AL Sinyali\n\n"
-                        f"{symbol}\n"
-                        f"Giriş: {round(entry,2)}\n"
-                        f"Stop: {round(stop,2)}\n"
-                        f"Hedef: {round(target,2)}\n"
-                        f"R/R: {rr_ratio}\n"
-                        f"RSI: {round(current_rsi,2)}\n"
-                        f"Trend: EMA50 > EMA200"
-                    )
+                message = (
+                    f"🚀 ELİT AL Sinyali\n\n"
+                    f"{symbol}\n"
+                    f"Giriş: {round(entry,2)}\n"
+                    f"Stop: {round(stop,2)}\n"
+                    f"Hedef: {round(target,2)}\n"
+                    f"R/R: {round(rr_ratio,2)}\n"
+                    f"RSI: {round(rsi_now,2)}\n"
+                    f"Skor: {round(score,2)}"
+                )
 
-                    signals.append(message)
-                    store_signal(symbol)
+                signals.append((score, message))
+                store_signal(symbol)
 
         except Exception as e:
             print(f"Hata {symbol}: {e}")
             continue
 
-    return signals
+    # Skora göre sırala
+    signals = sorted(signals, key=lambda x: x[0], reverse=True)
+
+    # Sadece en iyi 3
+    return [s[1] for s in signals[:3]]
