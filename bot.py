@@ -8,6 +8,9 @@ app = Flask(__name__)
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+ACCOUNT_SIZE = 100000
+RISK_PERCENT = 0.02
+
 
 def send_message(text):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
@@ -20,12 +23,12 @@ def send_message(text):
 
 @app.route("/")
 def home():
-    return "BIST AI PRO aktif."
+    return "BIST AI ELİT aktif."
 
 
 @app.route("/morning_scan")
 def morning_scan():
-    results = scan_bist30()
+    results = scan_bist30(ACCOUNT_SIZE, RISK_PERCENT)
 
     if not results:
         return "Sinyal bulunamadı."
