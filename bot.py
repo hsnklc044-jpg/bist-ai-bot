@@ -14,7 +14,7 @@ def send_message():
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
     payload = {
         "chat_id": CHAT_ID,
-        "text": "🚀 FREE PLAN TEST MESAJI"
+        "text": "🚀 ZAMANLANMIŞ TEST MESAJI"
     }
 
     requests.post(url, json=payload)
@@ -23,6 +23,11 @@ def send_message():
 
 @app.route("/")
 def home():
+    return "Bot aktif."
+
+
+@app.route("/send")
+def trigger():
     return send_message()
 
 
