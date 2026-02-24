@@ -10,22 +10,17 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 
 def send_message(text):
-    if not TOKEN or not CHAT_ID:
-        return "Environment variables missing"
-
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-
     payload = {
         "chat_id": CHAT_ID,
         "text": text
     }
-
     requests.post(url, json=payload)
 
 
 @app.route("/")
 def home():
-    return "BIST AI PRO Bot aktif."
+    return "BIST AI PRO aktif."
 
 
 @app.route("/morning_scan")
