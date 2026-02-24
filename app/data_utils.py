@@ -2,18 +2,28 @@ import yfinance as yf
 import pandas as pd
 
 
-def get_data(symbol="SISE.IS"):
+def get_data(symbol="SISE.IS", period="6mo", interval="1d"):
 
-    df = yf.download(symbol, period="6mo", interval="1d")
+    try:
+        df = yf.download(
+            symbol,
+            period=period,
+            interval=interval,
+            progress=False
+        )
 
-    if df is None or df.empty:
+        if df is None:
+            return None
+
+        if df.empty:
+            return None
+
+        df = df.dropna()
+
+        df.columns = [col.lower() for col in df.columns]
+
+        return df
+
+    except Exception as e:
+        print("DATA ERROR:", e)
         return None
-
-    df = df.reset_index()
-
-    if "Close" not in df.columns:
-        return None
-
-    df.rename(columns={"Close": "close"}, inplace=True)
-
-    return df
