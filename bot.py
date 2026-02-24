@@ -14,6 +14,7 @@ TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 HISTORY_FILE = "history.json"
+RISK_PERCENT = 0.02  # %2 risk
 
 BIST30 = [
     "AKBNK.IS","ASELS.IS","BIMAS.IS","EREGL.IS",
@@ -23,13 +24,14 @@ BIST30 = [
 ]
 
 # ================================
-# HISTORY & PERFORMANCE
+# HISTORY
 # ================================
 
 def load_history():
     if not os.path.exists(HISTORY_FILE):
         return {
             "equity": 100000,
+            "peak_equity": 100000,
             "trades": [],
             "wins": 0,
             "losses": 0
@@ -41,41 +43,11 @@ def save_history(data):
     with open(HISTORY_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
-def record_trade(symbol, entry, exit_price):
-    data = load_history()
-
-    pnl = exit_price - entry
-    data["equity"] += pnl
-
-    trade = {
-        "symbol": symbol,
-        "entry": round(entry,2),
-        "exit": round(exit_price,2),
-        "pnl": round(pnl,2),
-        "date": str(datetime.now())
-    }
-
-    data["trades"].append(trade)
-
-    if pnl > 0:
-        data["wins"] += 1
-    else:
-        data["losses"] += 1
-
-    save_history(data)
-
-def get_stats():
-    data = load_history()
-    total = data["wins"] + data["losses"]
-    winrate = (data["wins"] / total * 100) if total > 0 else 0
-
-    return {
-        "equity": round(data["equity"],2),
-        "wins": data["wins"],
-        "losses": data["losses"],
-        "winrate": round(winrate,2),
-        "total_trades": total
-    }
+def update_drawdown(data):
+    if data["equity"] > data["peak_equity"]:
+        data["peak_equity"] = data["equity"]
+    drawdown = (data["peak_equity"] - data["equity"]) / data["peak_equity"] * 100
+    return round(drawdown,2)
 
 # ================================
 # TELEGRAM
@@ -83,50 +55,82 @@ def get_stats():
 
 def send_telegram(message):
     if not TOKEN or not CHAT_ID:
-        print("Telegram bilgileri eksik.")
         return
-    
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message
-    }
-    try:
-        requests.post(url, json=payload)
-    except Exception as e:
-        print("Telegram hata:", e)
+    requests.post(url, json={"chat_id": CHAT_ID, "text": message})
 
 # ================================
-# STRATEJİ ENGINE
+# ENGINE
+# ================================
+
+def process_trade(symbol, entry, stop, target, today):
+
+    data = load_history()
+
+    risk_amount = data["equity"] * RISK_PERCENT
+    stop_distance = entry - stop
+
+    if stop_distance <= 0:
+        return None
+
+    lot = risk_amount / stop_distance
+
+    pnl = 0
+    result = None
+
+    if today["High"] >= target:
+        pnl = lot * (target - entry)
+        data["wins"] += 1
+        result = "WIN ✅"
+
+    elif today["Low"] <= stop:
+        pnl = lot * (stop - entry)
+        data["losses"] += 1
+        result = "LOSS ❌"
+
+    else:
+        return None
+
+    data["equity"] += pnl
+
+    trade = {
+        "symbol": symbol,
+        "entry": round(entry,2),
+        "lot": round(lot,2),
+        "pnl": round(pnl,2),
+        "result": result,
+        "date": str(datetime.now())
+    }
+
+    data["trades"].append(trade)
+    drawdown = update_drawdown(data)
+    save_history(data)
+
+    return trade, drawdown
+
+# ================================
+# STRATEGY
 # ================================
 
 def check_signal(symbol):
-    df = yf.download(symbol, period="3mo", interval="1d", progress=False)
 
+    df = yf.download(symbol, period="3mo", interval="1d", progress=False)
     if df.empty or len(df) < 60:
         return None
 
     df["EMA20"] = df["Close"].ewm(span=20).mean()
     df["EMA50"] = df["Close"].ewm(span=50).mean()
 
-    last = df.iloc[-2]      # kapanmış mum
-    today = df.iloc[-1]     # son mum
+    last = df.iloc[-2]
+    today = df.iloc[-1]
 
     if last["EMA20"] > last["EMA50"]:
 
         entry = today["Open"]
-        tp = entry * 1.06
-        sl = entry * 0.97
+        stop = entry * 0.97
+        target = entry * 1.06
 
-        # TP kontrol
-        if today["High"] >= tp:
-            record_trade(symbol, entry, tp)
-            return f"{symbol} → WIN ✅"
-
-        # SL kontrol
-        elif today["Low"] <= sl:
-            record_trade(symbol, entry, sl)
-            return f"{symbol} → LOSS ❌"
+        return process_trade(symbol, entry, stop, target, today)
 
     return None
 
@@ -135,30 +139,38 @@ def check_signal(symbol):
 # ================================
 
 def run_scan():
-    print("Scan başladı:", datetime.now())
-
     signals = []
+    data = load_history()
 
     for symbol in BIST30:
         try:
             result = check_signal(symbol)
             if result:
-                signals.append(result)
+                trade, drawdown = result
+                signals.append(
+                    f"{trade['symbol']} | {trade['result']} | "
+                    f"PnL: {trade['pnl']} | DD: {drawdown}%"
+                )
         except Exception as e:
-            print("Hata:", symbol, e)
+            print("Error:", e)
 
-    stats = get_stats()
+    total = data["wins"] + data["losses"]
+    winrate = (data["wins"]/total*100) if total>0 else 0
+    drawdown = update_drawdown(data)
 
-    message = "🚀 ULTRA STABLE PRO BIST BOT\n\n"
+    message = "🏦 HEDGE FUND MOD 2.0\n\n"
 
     if signals:
         message += "\n".join(signals) + "\n\n"
     else:
         message += "Sinyal yok.\n\n"
 
-    message += f"💰 Equity: {stats['equity']}\n"
-    message += f"📊 Winrate: {stats['winrate']}%\n"
-    message += f"📈 Trades: {stats['total_trades']}"
+    message += (
+        f"💰 Equity: {round(data['equity'],2)}\n"
+        f"📊 Winrate: {round(winrate,2)}%\n"
+        f"📉 Drawdown: {drawdown}%\n"
+        f"📈 Trades: {total}"
+    )
 
     send_telegram(message)
 
@@ -168,7 +180,7 @@ def run_scan():
 
 @app.route("/")
 def home():
-    return "ULTRA STABLE PRO BIST BOT aktif."
+    return "HEDGE FUND MOD 2.0 aktif."
 
 @app.route("/scan")
 def manual_scan():
@@ -177,11 +189,20 @@ def manual_scan():
 
 @app.route("/equity")
 def equity():
-    stats = get_stats()
-    return f"Equity: {stats['equity']} | Winrate: {stats['winrate']}% | Trades: {stats['total_trades']}"
+    data = load_history()
+    drawdown = update_drawdown(data)
+    total = data["wins"] + data["losses"]
+    winrate = (data["wins"]/total*100) if total>0 else 0
+
+    return (
+        f"Equity: {round(data['equity'],2)} | "
+        f"Winrate: {round(winrate,2)}% | "
+        f"Drawdown: {drawdown}% | "
+        f"Trades: {total}"
+    )
 
 # ================================
-# OTOMATİK SCHEDULER
+# AUTO SCHEDULER
 # ================================
 
 def auto_runner():
@@ -189,14 +210,10 @@ def auto_runner():
         try:
             run_scan()
         except Exception as e:
-            print("Auto scan error:", e)
+            print("Auto error:", e)
         time.sleep(3600)
 
 threading.Thread(target=auto_runner, daemon=True).start()
-
-# ================================
-# RAILWAY START
-# ================================
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
