@@ -7,16 +7,17 @@ from app.telegram_utils import send_telegram
 app = FastAPI()
 
 
+# ================= ROOT =================
+
 @app.get("/")
 def root():
-    return {"status": "16.6 DEBUG BUILD AKTİF"}
+    return {"status": "16.7 STABLE DEBUG BUILD AKTİF"}
 
 
-# ---------------- BACKTEST ----------------
+# ================= DATA TEST =================
 
-@app.get("/backtest")
-def backtest():
-
+@app.get("/data_test")
+def data_test():
     try:
         df = get_data()
 
@@ -24,11 +25,33 @@ def backtest():
             return {"error": "Veri None geldi"}
 
         if df.empty:
-            return {"error": "Veri boş geldi"}
+            return {"error": "Veri boş"}
+
+        return {
+            "rows": len(df),
+            "columns": df.columns.tolist()
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ================= BACKTEST =================
+
+@app.get("/backtest")
+def backtest():
+    try:
+        df = get_data()
+
+        if df is None:
+            return {"error": "Veri None geldi"}
+
+        if df.empty:
+            return {"error": "Veri boş"}
 
         if "close" not in df.columns:
             return {
-                "error": "Close kolonu yok",
+                "error": "close kolonu yok",
                 "columns": df.columns.tolist()
             }
 
@@ -40,11 +63,10 @@ def backtest():
         return {"error": str(e)}
 
 
-# ---------------- MORNING REPORT ----------------
+# ================= MORNING REPORT =================
 
 @app.get("/morning_report")
 def morning_report():
-
     try:
         df = get_data()
 
@@ -53,7 +75,7 @@ def morning_report():
 
         if "close" not in df.columns:
             return {
-                "error": "Close kolonu yok",
+                "error": "close kolonu yok",
                 "columns": df.columns.tolist()
             }
 
@@ -65,8 +87,8 @@ def morning_report():
         message = (
             f"🚀 SABAH SİNYALİ\n"
             f"Yön: {signal['side']}\n"
-            f"Fiyat: {signal['price']}\n"
-            f"RSI: {round(float(signal['rsi']), 2)}"
+            f"Fiyat: {round(float(signal['price']),2)}\n"
+            f"RSI: {round(float(signal['rsi']),2)}"
         )
 
         send_telegram(message)
@@ -77,11 +99,10 @@ def morning_report():
         return {"error": str(e)}
 
 
-# ---------------- TELEGRAM TEST ----------------
+# ================= TELEGRAM TEST =================
 
 @app.get("/telegram_test")
 def telegram_test():
-
     try:
         send_telegram("TEST MESAJI 🚀")
         return {"status": "Gönderildi"}
