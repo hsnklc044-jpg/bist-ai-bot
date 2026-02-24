@@ -25,7 +25,7 @@ def send_message(text):
 
 @app.route("/")
 def home():
-    return "BIST AI Bot aktif."
+    return "BIST AI PRO Bot aktif."
 
 
 @app.route("/morning_scan")
