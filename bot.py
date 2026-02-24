@@ -3,7 +3,11 @@ import requests
 from flask import Flask
 from bist30 import scan_bist30
 from account_config import load_config, update_account_size, update_risk_percent
-from performance_tracker import check_performance, generate_statistics
+from performance_tracker import (
+    check_performance,
+    generate_statistics,
+    generate_equity_curve
+)
 
 app = Flask(__name__)
 
@@ -34,6 +38,7 @@ def home():
     return "BIST AI ELİT PRO aktif."
 
 
+# 🚀 Sabah Tarama
 @app.route("/morning_scan")
 def morning_scan():
 
@@ -53,6 +58,7 @@ def morning_scan():
     return "Tarama tamamlandı."
 
 
+# 💰 Sermaye Güncelle
 @app.route("/sermaye/<int:yeni>")
 def set_account(yeni):
     update_account_size(yeni)
@@ -60,6 +66,7 @@ def set_account(yeni):
     return "OK"
 
 
+# ⚖️ Risk Güncelle
 @app.route("/risk/<float:yeni>")
 def set_risk(yeni):
     update_risk_percent(yeni / 100)
@@ -67,6 +74,7 @@ def set_risk(yeni):
     return "OK"
 
 
+# 📊 Performans Kontrol
 @app.route("/performance_check")
 def performance_check():
     history = check_performance()
@@ -85,6 +93,7 @@ def performance_check():
     return "Rapor gönderildi."
 
 
+# 📈 Sistem İstatistikleri
 @app.route("/stats")
 def stats():
 
@@ -102,6 +111,29 @@ def stats():
     send_message(message)
 
     return "İstatistik gönderildi."
+
+
+# 📈 Equity Raporu
+@app.route("/equity")
+def equity():
+
+    config = load_config()
+
+    equity_data = generate_equity_curve(
+        initial_capital=config["account_size"]
+    )
+
+    message = (
+        f"📈 EQUITY RAPORU\n\n"
+        f"Başlangıç: {config['account_size']} TL\n"
+        f"Final: {equity_data['final_equity']} TL\n"
+        f"Toplam Getiri: %{equity_data['total_return']}\n"
+        f"Max Drawdown: %{equity_data['max_drawdown']}"
+    )
+
+    send_message(message)
+
+    return "Equity raporu gönderildi."
 
 
 if __name__ == "__main__":
