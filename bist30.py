@@ -1,32 +1,17 @@
 import yfinance as yf
 import pandas as pd
+from ai_signal_engine import calculate_rsi
 
 BIST30 = [
-    "ASELS.IS", "THYAO.IS", "TUPRS.IS", "KCHOL.IS", "SISE.IS",
-    "EREGL.IS", "FROTO.IS", "GARAN.IS", "AKBNK.IS", "ISCTR.IS",
-    "YKBNK.IS", "SAHOL.IS", "TOASO.IS", "BIMAS.IS", "PETKM.IS",
-    "SASA.IS", "HEKTS.IS", "ENKAI.IS", "TCELL.IS", "KOZAL.IS",
-    "ALARK.IS", "ARCLK.IS", "DOHOL.IS", "GUBRF.IS", "KRDMD.IS",
-    "MGROS.IS", "ODAS.IS", "OYAKC.IS", "PGSUS.IS", "VESTL.IS"
+    "AKBNK.IS", "ASELS.IS", "BIMAS.IS", "EREGL.IS",
+    "FROTO.IS", "GARAN.IS", "KCHOL.IS", "KOZAL.IS",
+    "PETKM.IS", "SAHOL.IS", "SASA.IS", "SISE.IS",
+    "TCELL.IS", "THYAO.IS", "TUPRS.IS"
 ]
 
 
-def calculate_rsi(data, period=14):
-    delta = data["Close"].diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
-
-    avg_gain = gain.rolling(window=period).mean()
-    avg_loss = loss.rolling(window=period).mean()
-
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-
-    return rsi.iloc[-1]
-
-
 def scan_bist30():
-    results = []
+    signals = []
 
     for symbol in BIST30:
         try:
@@ -35,19 +20,19 @@ def scan_bist30():
             if df.empty:
                 continue
 
-            rsi = calculate_rsi(df)
+            rsi = calculate_rsi(df["Close"])
 
-            score = round(100 - abs(50 - rsi), 2)
+            if rsi is None:
+                continue
 
-            results.append({
-                "symbol": symbol.replace(".IS", ""),
-                "rsi": round(rsi, 2),
-                "score": score
-            })
+            if rsi < 30:
+                signals.append(f"📈 {symbol} RSI: {round(rsi,2)} → AŞIRI SATIM")
 
-        except Exception:
+            elif rsi > 70:
+                signals.append(f"📉 {symbol} RSI: {round(rsi,2)} → AŞIRI ALIM")
+
+        except Exception as e:
+            print(f"Hata {symbol}: {e}")
             continue
 
-    results = sorted(results, key=lambda x: x["score"], reverse=True)
-
-    return results[:3]
+    return signals
