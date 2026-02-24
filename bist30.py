@@ -1,6 +1,7 @@
 import yfinance as yf
 from ai_signal_engine import calculate_rsi, calculate_ema, calculate_atr
 from signal_memory import is_new_signal, store_signal
+from performance_tracker import add_signal
 
 
 BIST30 = [
@@ -63,11 +64,14 @@ def scan_bist30(account_size, risk_percent):
                 is_new_signal(symbol)
             ):
 
-                # 💰 Risk Yönetimi
                 total_risk_amount = account_size * risk_percent
-                lot = total_risk_amount / risk_per_share
+                lot = int(total_risk_amount / risk_per_share)
 
-                lot = int(lot)
+                score = (
+                    rr_ratio * 40 +
+                    (50 - abs(50 - rsi_now)) * 0.6 +
+                    (volume.iloc[-1] / volume.iloc[-2]) * 10
+                )
 
                 message = (
                     f"🚀 ELİT AL Sinyali\n\n"
@@ -82,8 +86,10 @@ def scan_bist30(account_size, risk_percent):
                     f"Maks Zarar: {round(total_risk_amount,2)} TL"
                 )
 
-                signals.append((rr_ratio, message))
+                signals.append((score, message))
+
                 store_signal(symbol)
+                add_signal(symbol, entry, stop, target)
 
         except Exception as e:
             print(f"Hata {symbol}: {e}")
