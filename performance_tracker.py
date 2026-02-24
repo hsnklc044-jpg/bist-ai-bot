@@ -27,6 +27,7 @@ def add_signal(symbol, entry, stop, target):
         "stop": stop,
         "target": target,
         "status": "OPEN",
+        "rr": round((target - entry) / (entry - stop), 2),
         "date": datetime.now().strftime("%Y-%m-%d")
     })
 
@@ -61,3 +62,26 @@ def check_performance():
         save_history(history)
 
     return history
+
+
+def generate_statistics():
+    history = load_history()
+
+    total = len(history)
+    wins = sum(1 for t in history if t["status"] == "TARGET")
+    losses = sum(1 for t in history if t["status"] == "STOP")
+
+    win_rate = round((wins / total) * 100, 2) if total > 0 else 0
+
+    avg_rr = round(
+        sum(t["rr"] for t in history if t["status"] == "TARGET") / wins,
+        2
+    ) if wins > 0 else 0
+
+    return {
+        "total": total,
+        "wins": wins,
+        "losses": losses,
+        "win_rate": win_rate,
+        "avg_rr": avg_rr
+    }
