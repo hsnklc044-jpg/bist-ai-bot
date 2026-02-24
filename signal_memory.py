@@ -1,7 +1,9 @@
 import json
 import os
+from datetime import datetime, timedelta
 
 MEMORY_FILE = "signal_memory.json"
+COOLDOWN_DAYS = 7
 
 
 def load_memory():
@@ -19,10 +21,18 @@ def save_memory(data):
 
 def is_new_signal(symbol):
     memory = load_memory()
-    return symbol not in memory
+
+    if symbol not in memory:
+        return True
+
+    last_date = datetime.strptime(memory[symbol], "%Y-%m-%d")
+    if datetime.now() - last_date > timedelta(days=COOLDOWN_DAYS):
+        return True
+
+    return False
 
 
 def store_signal(symbol):
     memory = load_memory()
-    memory[symbol] = True
+    memory[symbol] = datetime.now().strftime("%Y-%m-%d")
     save_memory(memory)
