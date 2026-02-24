@@ -1,259 +1,158 @@
 import os
-import json
 import requests
-import yfinance as yf
 import pandas as pd
+import yfinance as yf
 import numpy as np
 from flask import Flask
-import threading
+from threading import Thread
 import time
-from datetime import datetime
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 
 app = Flask(__name__)
 
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-HISTORY_FILE = "history.json"
-
-RISK_PERCENT = 0.02
-DAILY_RISK_LIMIT = 0.04
-MAX_DRAWDOWN_LIMIT = 20
-
-BIST30 = [
-    "AKBNK.IS","ASELS.IS","BIMAS.IS","EREGL.IS",
-    "FROTO.IS","GARAN.IS","KCHOL.IS","KOZAL.IS",
-    "PETKM.IS","SAHOL.IS","SASA.IS","SISE.IS",
-    "TCELL.IS","THYAO.IS","TUPRS.IS"
-]
-
-# =============================
-# HISTORY
-# =============================
-
-def load_history():
-    if not os.path.exists(HISTORY_FILE):
-        return {
-            "equity": 100000,
-            "peak": 100000,
-            "wins": 0,
-            "losses": 0,
-            "daily_loss": 0,
-            "last_day": str(datetime.now().date()),
-            "trades": []
-        }
-    with open(HISTORY_FILE, "r") as f:
-        return json.load(f)
-
-def save_history(data):
-    with open(HISTORY_FILE, "w") as f:
-        json.dump(data, f, indent=4)
-
-def update_drawdown(data):
-    if data["equity"] > data["peak"]:
-        data["peak"] = data["equity"]
-    dd = (data["peak"] - data["equity"]) / data["peak"] * 100
-    return round(dd,2)
-
-# =============================
+# ==============================
 # TELEGRAM
-# =============================
+# ==============================
 
-def send_telegram(msg):
-    if not TOKEN or not CHAT_ID:
-        return
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    requests.post(url, json={"chat_id": CHAT_ID, "text": msg})
+def send_telegram(message):
+    try:
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": CHAT_ID,
+            "text": message,
+            "parse_mode": "HTML"
+        }
+        requests.post(url, data=payload, timeout=10)
+    except Exception as e:
+        print("Telegram error:", e)
 
-# =============================
+# ==============================
+# DATA ENGINE (CRASH PROOF)
+# ==============================
+
+def get_data(symbol):
+    try:
+        df = yf.download(symbol, period="6mo", interval="1d", progress=False)
+        if df is None or df.empty:
+            print(f"{symbol} veri yok.")
+            return None
+        return df
+    except Exception as e:
+        print(f"{symbol} hata:", e)
+        return None
+
+# ==============================
 # INDICATORS
-# =============================
+# ==============================
 
-def rsi(series, period=14):
-    delta = series.diff()
+def calculate_indicators(df):
+    df["EMA20"] = df["Close"].ewm(span=20).mean()
+    df["EMA50"] = df["Close"].ewm(span=50).mean()
+
+    delta = df["Close"].diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
+
+    avg_gain = gain.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean()
+
     rs = avg_gain / avg_loss
-    return 100 - (100/(1+rs))
+    df["RSI"] = 100 - (100 / (1 + rs))
 
-def atr(df, period=14):
-    high_low = df["High"] - df["Low"]
-    high_close = np.abs(df["High"] - df["Close"].shift())
-    low_close = np.abs(df["Low"] - df["Close"].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = np.max(ranges, axis=1)
-    return true_range.rolling(period).mean()
+    df["VOL"] = df["Close"].rolling(20).std()
 
-# =============================
-# ENGINE
-# =============================
+    return df
 
-def process_trade(symbol, entry, stop, target, today):
-    data = load_history()
+# ==============================
+# SIGNAL LOGIC (INSTITUTIONAL)
+# ==============================
 
-    # Günlük reset
-    if data["last_day"] != str(datetime.now().date()):
-        data["daily_loss"] = 0
-        data["last_day"] = str(datetime.now().date())
-
-    # Günlük risk limiti
-    if data["daily_loss"] >= data["equity"] * DAILY_RISK_LIMIT:
+def generate_signal(df):
+    if len(df) < 60:
         return None
 
-    drawdown = update_drawdown(data)
-    if drawdown >= MAX_DRAWDOWN_LIMIT:
-        return None
+    last = df.iloc[-1]
 
-    risk_amount = data["equity"] * RISK_PERCENT
-    stop_distance = entry - stop
+    trend = last["EMA20"] > last["EMA50"]
+    rsi_ok = 40 < last["RSI"] < 65
+    volatility_ok = last["VOL"] < df["VOL"].mean() * 1.5
+    momentum = df["Close"].iloc[-1] > df["Close"].iloc[-5]
 
-    if stop_distance <= 0:
-        return None
+    score = sum([trend, rsi_ok, volatility_ok, momentum])
 
-    lot = risk_amount / stop_distance
-
-    pnl = 0
-    result = None
-
-    if today["High"] >= target:
-        pnl = lot * (target - entry)
-        data["wins"] += 1
-        result = "WIN ✅"
-
-    elif today["Low"] <= stop:
-        pnl = lot * (stop - entry)
-        data["losses"] += 1
-        data["daily_loss"] += abs(pnl)
-        result = "LOSS ❌"
-    else:
-        return None
-
-    data["equity"] += pnl
-
-    trade = {
-        "symbol": symbol,
-        "entry": round(entry,2),
-        "lot": round(lot,2),
-        "pnl": round(pnl,2),
-        "result": result,
-        "date": str(datetime.now())
-    }
-
-    data["trades"].append(trade)
-    save_history(data)
-
-    return trade
-
-# =============================
-# STRATEGY
-# =============================
-
-def check_signal(symbol):
-    df = yf.download(symbol, period="3mo", interval="1d", progress=False)
-    if df.empty or len(df) < 60:
-        return None
-
-    df["EMA50"] = df["Close"].ewm(span=50).mean()
-    df["EMA200"] = df["Close"].ewm(span=200).mean()
-    df["RSI"] = rsi(df["Close"])
-    df["ATR"] = atr(df)
-
-    last = df.iloc[-2]
-    today = df.iloc[-1]
-
-    trend_ok = last["EMA50"] > last["EMA200"]
-    rsi_ok = last["RSI"] < 40 and today["RSI"] > 40
-
-    if trend_ok and rsi_ok:
-        entry = today["Open"]
-        stop = entry - today["ATR"]
-        target = entry + (2 * (entry - stop))
-
-        return process_trade(symbol, entry, stop, target, today)
+    if score >= 3:
+        return {
+            "price": last["Close"],
+            "score": score
+        }
 
     return None
 
-# =============================
-# SCAN
-# =============================
+# ==============================
+# BIST UNIVERSE
+# ==============================
+
+BIST30 = [
+    "AKBNK.IS","ARCLK.IS","ASELS.IS","BIMAS.IS","EREGL.IS",
+    "FROTO.IS","GARAN.IS","HEKTS.IS","ISCTR.IS","KCHOL.IS",
+    "KOZAL.IS","KOZAA.IS","PETKM.IS","PGSUS.IS","SAHOL.IS",
+    "SISE.IS","TAVHL.IS","TCELL.IS","THYAO.IS","TOASO.IS",
+    "TUPRS.IS","YKBNK.IS"
+]
+
+# ==============================
+# SCAN ENGINE
+# ==============================
 
 def run_scan():
+    print("Scan started")
     signals = []
-    data = load_history()
 
     for symbol in BIST30:
-        try:
-            trade = check_signal(symbol)
-            if trade:
-                signals.append(
-                    f"{trade['symbol']} | {trade['result']} | PnL: {trade['pnl']}"
-                )
-        except:
+        df = get_data(symbol)
+        if df is None:
             continue
 
-    total = data["wins"] + data["losses"]
-    winrate = (data["wins"]/total*100) if total>0 else 0
-    drawdown = update_drawdown(data)
+        df = calculate_indicators(df)
+        signal = generate_signal(df)
 
-    msg = "🏦 INSTITUTIONAL MODE 5.0\n\n"
+        if signal:
+            signals.append((symbol, signal))
 
     if signals:
-        msg += "\n".join(signals) + "\n\n"
+        message = "<b>🔥 HEDGE FUND MODE 3.0 SIGNAL</b>\n\n"
+        for s in signals:
+            message += f"<b>{s[0]}</b>\n"
+            message += f"Fiyat: {round(s[1]['price'],2)}\n"
+            message += f"Score: {s[1]['score']}/4\n\n"
+
+        send_telegram(message)
     else:
-        msg += "Sinyal yok.\n\n"
+        send_telegram("ULTRA STABLE BIST BOT aktif\nSinyal yok.\nEquity korunuyor.")
 
-    msg += (
-        f"💰 Equity: {round(data['equity'],2)}\n"
-        f"📊 Winrate: {round(winrate,2)}%\n"
-        f"📉 Drawdown: {drawdown}%\n"
-        f"📈 Trades: {total}"
-    )
+# ==============================
+# BACKGROUND LOOP
+# ==============================
 
-    send_telegram(msg)
-
-# =============================
-# ROUTES
-# =============================
-
-@app.route("/")
-def home():
-    return "INSTITUTIONAL MODE 5.0 aktif."
-
-@app.route("/scan")
-def manual_scan():
-    run_scan()
-    return "Scan tamamlandı."
-
-@app.route("/equity")
-def equity():
-    data = load_history()
-    drawdown = update_drawdown(data)
-    total = data["wins"] + data["losses"]
-    winrate = (data["wins"]/total*100) if total>0 else 0
-
-    return (
-        f"Equity: {round(data['equity'],2)} | "
-        f"Winrate: {round(winrate,2)}% | "
-        f"Drawdown: {drawdown}% | "
-        f"Trades: {total}"
-    )
-
-# =============================
-# AUTO RUN
-# =============================
-
-def auto_runner():
+def scheduler():
     while True:
         try:
             run_scan()
-        except:
-            pass
-        time.sleep(3600)
+        except Exception as e:
+            print("Scan crash prevented:", e)
+        time.sleep(3600)  # 1 saat
 
-threading.Thread(target=auto_runner, daemon=True).start()
+# ==============================
+# FLASK KEEP ALIVE
+# ==============================
+
+@app.route("/")
+def home():
+    return "BIST AI BOT ACTIVE"
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port)
+    send_telegram("🚀 HEDGE FUND MODE 3.0 AKTIF")
+    Thread(target=scheduler).start()
+    app.run(host="0.0.0.0", port=8080)
