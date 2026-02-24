@@ -1,26 +1,31 @@
 import os
 import requests
+from flask import Flask
+
+app = Flask(__name__)
 
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-def run():
-
+def send_message():
     if not TOKEN or not CHAT_ID:
-        print("Environment değişkenleri eksik.")
-        return
+        return "Env eksik"
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-
     payload = {
         "chat_id": CHAT_ID,
-        "text": "🚀 BOT TEMİZ KURULUM TEST MESAJI"
+        "text": "🚀 FREE PLAN TEST MESAJI"
     }
 
-    response = requests.post(url, json=payload)
+    requests.post(url, json=payload)
+    return "Mesaj gönderildi"
 
-    print(response.text)
+
+@app.route("/")
+def home():
+    return send_message()
 
 
 if __name__ == "__main__":
-    run()
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
