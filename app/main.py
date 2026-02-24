@@ -9,38 +9,81 @@ app = FastAPI()
 
 @app.get("/")
 def root():
-    return {"status": "16.5 CLEAN BUILD AKTİF"}
+    return {"status": "16.6 DEBUG BUILD AKTİF"}
 
+
+# ---------------- BACKTEST ----------------
 
 @app.get("/backtest")
 def backtest():
 
-    df = get_data()
-    result = run_backtest(df)
+    try:
+        df = get_data()
 
-    return result
+        if df is None:
+            return {"error": "Veri None geldi"}
 
+        if df.empty:
+            return {"error": "Veri boş geldi"}
+
+        if "close" not in df.columns:
+            return {
+                "error": "Close kolonu yok",
+                "columns": df.columns.tolist()
+            }
+
+        result = run_backtest(df)
+
+        return result
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ---------------- MORNING REPORT ----------------
 
 @app.get("/morning_report")
 def morning_report():
 
-    df = get_data()
+    try:
+        df = get_data()
 
-    if df is None or df.empty:
-        return {"message": "Veri yok"}
+        if df is None or df.empty:
+            return {"error": "Veri yok"}
 
-    signal = generate_signal(df)
+        if "close" not in df.columns:
+            return {
+                "error": "Close kolonu yok",
+                "columns": df.columns.tolist()
+            }
 
-    if signal is None:
-        return {"message": "Henüz sinyal yok"}
+        signal = generate_signal(df)
 
-    message = (
-        f"🚀 SABAH SİNYALİ\n"
-        f"Yön: {signal['side']}\n"
-        f"Fiyat: {signal['price']}\n"
-        f"RSI: {round(float(signal['rsi']), 2)}"
-    )
+        if signal is None:
+            return {"message": "Henüz sinyal yok"}
 
-    send_telegram(message)
+        message = (
+            f"🚀 SABAH SİNYALİ\n"
+            f"Yön: {signal['side']}\n"
+            f"Fiyat: {signal['price']}\n"
+            f"RSI: {round(float(signal['rsi']), 2)}"
+        )
 
-    return {"status": "Morning Signals Sent"}
+        send_telegram(message)
+
+        return {"status": "Morning Signals Sent"}
+
+    except Exception as e:
+        return {"error": str(e)}
+
+
+# ---------------- TELEGRAM TEST ----------------
+
+@app.get("/telegram_test")
+def telegram_test():
+
+    try:
+        send_telegram("TEST MESAJI 🚀")
+        return {"status": "Gönderildi"}
+    except Exception as e:
+        return {"error": str(e)}
