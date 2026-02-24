@@ -22,3 +22,11 @@ def calculate_rsi(series, period=14):
         return None
 
     return last_rsi
+
+
+def calculate_ema(series, period=50):
+    if len(series) < period:
+        return None
+
+    ema = series.ewm(span=period, adjust=False).mean()
+    return ema.iloc[-1]
