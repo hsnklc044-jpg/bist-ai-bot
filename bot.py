@@ -16,21 +16,15 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 
 def send_message(text):
-    if not TOKEN or not CHAT_ID:
-        print("Environment variables eksik")
-        return
-
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": text}
+    requests.post(url, json=payload)
 
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": text
-    }
 
-    try:
-        requests.post(url, json=payload)
-    except Exception as e:
-        print("Telegram hata:", e)
+def send_photo(photo_path):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendPhoto"
+    with open(photo_path, "rb") as photo:
+        requests.post(url, data={"chat_id": CHAT_ID}, files={"photo": photo})
 
 
 @app.route("/")
@@ -38,7 +32,6 @@ def home():
     return "BIST AI ELİT PRO aktif."
 
 
-# 🚀 Sabah Tarama
 @app.route("/morning_scan")
 def morning_scan():
 
@@ -58,7 +51,6 @@ def morning_scan():
     return "Tarama tamamlandı."
 
 
-# 💰 Sermaye Güncelle
 @app.route("/sermaye/<int:yeni>")
 def set_account(yeni):
     update_account_size(yeni)
@@ -66,7 +58,6 @@ def set_account(yeni):
     return "OK"
 
 
-# ⚖️ Risk Güncelle
 @app.route("/risk/<float:yeni>")
 def set_risk(yeni):
     update_risk_percent(yeni / 100)
@@ -74,26 +65,18 @@ def set_risk(yeni):
     return "OK"
 
 
-# 📊 Performans Kontrol
 @app.route("/performance_check")
 def performance_check():
     history = check_performance()
 
     report = "📊 PERFORMANS RAPORU\n\n"
-
     for trade in history:
-        report += (
-            f"{trade['symbol']} | "
-            f"Durum: {trade['status']} | "
-            f"Giriş: {trade['entry']}\n"
-        )
+        report += f"{trade['symbol']} | {trade['status']}\n"
 
     send_message(report)
-
     return "Rapor gönderildi."
 
 
-# 📈 Sistem İstatistikleri
 @app.route("/stats")
 def stats():
 
@@ -113,7 +96,6 @@ def stats():
     return "İstatistik gönderildi."
 
 
-# 📈 Equity Raporu
 @app.route("/equity")
 def equity():
 
@@ -125,13 +107,13 @@ def equity():
 
     message = (
         f"📈 EQUITY RAPORU\n\n"
-        f"Başlangıç: {config['account_size']} TL\n"
         f"Final: {equity_data['final_equity']} TL\n"
         f"Toplam Getiri: %{equity_data['total_return']}\n"
         f"Max Drawdown: %{equity_data['max_drawdown']}"
     )
 
     send_message(message)
+    send_photo("equity_curve.png")
 
     return "Equity raporu gönderildi."
 
