@@ -11,9 +11,10 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 def send_message(text):
     if not TOKEN or not CHAT_ID:
-        return "Env eksik"
+        return "Environment variables missing"
 
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
     payload = {
         "chat_id": CHAT_ID,
         "text": text
@@ -24,31 +25,20 @@ def send_message(text):
 
 @app.route("/")
 def home():
-    return "Bot aktif."
-
-
-@app.route("/send")
-def trigger():
-    send_message("🚀 ZAMANLANMIŞ TEST MESAJI")
-    return "Mesaj gönderildi"
+    return "BIST AI Bot aktif."
 
 
 @app.route("/morning_scan")
 def morning_scan():
+    results = scan_bist30()
 
-    top3 = scan_bist30()
+    if not results:
+        return "Sinyal bulunamadı."
 
-    if not top3:
-        return "Veri bulunamadı"
+    for message in results:
+        send_message(message)
 
-    message = "🚀 BIST30 SABAH TARAMA\n\n"
-
-    for i, stock in enumerate(top3, 1):
-        message += f"{i}️⃣ {stock['symbol']} | RSI: {stock['rsi']} | Skor: {stock['score']}\n"
-
-    send_message(message)
-
-    return "Sabah tarama gönderildi"
+    return "Tarama tamamlandı."
 
 
 if __name__ == "__main__":
