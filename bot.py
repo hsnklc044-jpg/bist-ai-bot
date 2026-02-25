@@ -1,5 +1,5 @@
 import os
-import asyncio
+import logging
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -9,65 +9,61 @@ from telegram.ext import (
 
 from institutional_engine import generate_weekly_report
 
+
+# =========================
+# CONFIG
+# =========================
+
 TOKEN = os.getenv("BOT_TOKEN")
 
-equity = 100000
-wins = 0
-losses = 0
-trades = 0
-peak_equity = equity
+logging.basicConfig(level=logging.INFO)
 
 
 # =========================
-# STATUS
+# COMMANDS
 # =========================
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global equity, wins, losses, trades, peak_equity
 
-    winrate = (wins / trades * 100) if trades > 0 else 0
-    drawdown = ((peak_equity - equity) / peak_equity * 100) if peak_equity > 0 else 0
-
-    text = (
-        f"💰 Bakiye: {equity:.2f}\n"
-        f"📊 Kazanma Oranı: {winrate:.2f}%\n"
-        f"📉 Drawdown: {drawdown:.2f}%\n"
-        f"🔁 İşlem Sayısı: {trades}"
-    )
-
-    await update.message.reply_text(text)
-
-
-# =========================
-# START
-# =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚀 HEDGE FUND MODE 7.0 AKTİF\n"
-        "Gerçek SL/TP Takibi\n"
-        "Günlük Risk Limiti %3"
+        "🏦 BIST INSTITUTIONAL MODEL AKTİF\n\n"
+        "Komutlar:\n"
+        "/status\n"
+        "/weekly"
     )
 
 
-# =========================
-# WEEKLY REPORT
-# =========================
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "✅ Sistem aktif.\n"
+        "📊 Haftalık Excel rapor hazır."
+    )
+
+
 async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📊 Haftalık Kurumsal Rapor hazırlanıyor...")
+
+    await update.message.reply_text("📊 Haftalık rapor hazırlanıyor...")
 
     try:
         filename = generate_weekly_report()
 
-        with open(filename, "rb") as file:
-            await update.message.reply_document(document=file)
+        with open(filename, "rb") as f:
+            await context.bot.send_document(
+                chat_id=update.effective_chat.id,
+                document=f
+            )
+
+        await update.message.reply_text("✅ Rapor gönderildi.")
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Hata oluştu:\n{e}")
+        await update.message.reply_text(f"❌ Hata:\n{e}")
 
 
 # =========================
 # MAIN
 # =========================
-async def main():
+
+def main():
+
     application = ApplicationBuilder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
@@ -75,8 +71,9 @@ async def main():
     application.add_handler(CommandHandler("weekly", weekly))
 
     print("BOT BAŞLADI")
-    await application.run_polling()
+
+    application.run_polling()
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
