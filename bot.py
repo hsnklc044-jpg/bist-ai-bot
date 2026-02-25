@@ -1,137 +1,82 @@
 import os
-import logging
-from datetime import datetime, time
-
-from telegram import Update, InputFile
+import asyncio
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
 )
 
-from institutional_engine import (
-    calculate_scores,
-    calculate_weights,
-    create_excel_report,
-    index_trend_ok
-)
+from institutional_engine import generate_weekly_report
 
-# =============================
-# ENV
-# =============================
+TOKEN = os.getenv("BOT_TOKEN")
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+equity = 100000
+wins = 0
+losses = 0
+trades = 0
+peak_equity = equity
 
-logging.basicConfig(level=logging.INFO)
 
-# =============================
-# TELEGRAM KOMUTLARI
-# =============================
+# =========================
+# STATUS
+# =========================
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global equity, wins, losses, trades, peak_equity
 
+    winrate = (wins / trades * 100) if trades > 0 else 0
+    drawdown = ((peak_equity - equity) / peak_equity * 100) if peak_equity > 0 else 0
+
+    text = (
+        f"💰 Bakiye: {equity:.2f}\n"
+        f"📊 Kazanma Oranı: {winrate:.2f}%\n"
+        f"📉 Drawdown: {drawdown:.2f}%\n"
+        f"🔁 İşlem Sayısı: {trades}"
+    )
+
+    await update.message.reply_text(text)
+
+
+# =========================
+# START
+# =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🏦 BIST INSTITUTIONAL MODEL 12.5 AKTİF\n\n"
-        "Komutlar:\n"
-        "/weekly → Haftalık Core Rapor\n"
-        "/status → Sistem Durumu"
+        "🚀 HEDGE FUND MODE 7.0 AKTİF\n"
+        "Gerçek SL/TP Takibi\n"
+        "Günlük Risk Limiti %3"
     )
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "✅ Sistem aktif.\n"
-        "📊 Haftalık hibrit model hazır.\n"
-        "🧠 Core + Tactical mimari çalışıyor."
-    )
 
-# =============================
-# HAFTALIK RAPOR
-# =============================
-
-async def weekly_report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    await update.message.reply_text("📊 Haftalık analiz başlatıldı...")
-
-    if not index_trend_ok():
-        await update.message.reply_text(
-            "⚠️ Endeks zayıf (EMA50 < EMA200).\n"
-            "Core risk azaltılması önerilir."
-        )
-        return
+# =========================
+# WEEKLY REPORT
+# =========================
+async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📊 Haftalık Kurumsal Rapor hazırlanıyor...")
 
     try:
-        df_top = calculate_scores()
+        filename = generate_weekly_report()
 
-        if df_top.empty:
-            await update.message.reply_text("Veri alınamadı.")
-            return
-
-        df_weighted = calculate_weights(df_top)
-
-        file_path = create_excel_report(df_weighted)
-
-        await update.message.reply_text("📈 Core 5 hesaplandı.\nExcel oluşturuluyor...")
-
-        await context.bot.send_document(
-            chat_id=update.effective_chat.id,
-            document=InputFile(file_path)
-        )
-
-        await update.message.reply_text("✅ Haftalık rapor gönderildi.")
+        with open(filename, "rb") as file:
+            await update.message.reply_document(document=file)
 
     except Exception as e:
-        logging.error(str(e))
-        await update.message.reply_text(f"Hata oluştu: {str(e)}")
+        await update.message.reply_text(f"❌ Hata oluştu:\n{e}")
 
-# =============================
-# OTOMATİK PAZARTESİ RAPORU
-# =============================
 
-async def scheduled_weekly(context: ContextTypes.DEFAULT_TYPE):
-
-    if not CHAT_ID:
-        return
-
-    if not index_trend_ok():
-        await context.bot.send_message(
-            chat_id=CHAT_ID,
-            text="⚠️ Endeks zayıf. Core risk azaltılmalı."
-        )
-        return
-
-    df_top = calculate_scores()
-    df_weighted = calculate_weights(df_top)
-    file_path = create_excel_report(df_weighted)
-
-    await context.bot.send_message(
-        chat_id=CHAT_ID,
-        text="📊 Otomatik Haftalık Core Rapor"
-    )
-
-    await context.bot.send_document(
-        chat_id=CHAT_ID,
-        document=InputFile(file_path)
-    )
-
-# =============================
+# =========================
 # MAIN
-# =============================
+# =========================
+async def main():
+    application = ApplicationBuilder().token(TOKEN).build()
 
-def main():
-    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("status", status))
+    application.add_handler(CommandHandler("weekly", weekly))
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("status", status))
-    app.add_handler(CommandHandler("weekly", weekly_report))
+    print("BOT BAŞLADI")
+    await application.run_polling()
 
-    # Her Pazartesi 09:00 otomatik rapor
-    app.job_queue.run_daily(
-        scheduled_weekly,
-        time=time(hour=9, minute=0),
-        days=(0,)  # Pazartesi
-    )
-
-    app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
