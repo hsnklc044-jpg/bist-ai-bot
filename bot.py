@@ -10,47 +10,73 @@ from telegram.ext import (
 from institutional_engine import generate_weekly_report
 
 
+# =============================
+# CONFIG
+# =============================
+
 TOKEN = os.getenv("BOT_TOKEN")
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
+
+# =============================
+# COMMANDS
+# =============================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🏦 BIST CORE MODEL AKTİF\n\n"
+        "🏦 BIST HEDGE FUND ENGINE 20.0 AKTİF\n\n"
         "Komutlar:\n"
-        "/status\n"
-        "/weekly"
+        "/status → Sistem durumu\n"
+        "/weekly → Haftalık Core + Performans Raporu"
     )
 
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "✅ Sistem aktif.\n"
-        "📊 Haftalık Core rapor hazır."
+        "✅ Sistem çalışıyor.\n"
+        "📊 Risk Engine aktif.\n"
+        "🛡 Kill Switch koruması hazır."
     )
 
 
 async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("📊 Haftalık Core rapor hazırlanıyor...")
+    await update.message.reply_text("📊 Haftalık rapor hazırlanıyor...")
 
     try:
-        filename = generate_weekly_report()
+        filename, summary = generate_weekly_report()
 
+        # Excel gönder
         with open(filename, "rb") as f:
             await context.bot.send_document(
                 chat_id=update.effective_chat.id,
-                document=f
+                document=f,
+                filename="bist_core_report.xlsx"
             )
 
-        await update.message.reply_text("✅ Rapor gönderildi.")
+        # Performans özeti gönder
+        if summary:
+            await update.message.reply_text(summary)
+
+        await update.message.reply_text("✅ Rapor tamamlandı.")
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Hata:\n{e}")
+        logging.error(str(e))
+        await update.message.reply_text(f"❌ Hata oluştu:\n{e}")
 
+
+# =============================
+# MAIN
+# =============================
 
 def main():
+
+    if not TOKEN:
+        raise ValueError("BOT_TOKEN environment variable eksik!")
 
     application = ApplicationBuilder().token(TOKEN).build()
 
@@ -58,7 +84,7 @@ def main():
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("weekly", weekly))
 
-    print("BOT BAŞLADI")
+    print("🚀 BOT BAŞLADI - HEDGE FUND MODE 20.0")
 
     application.run_polling()
 
