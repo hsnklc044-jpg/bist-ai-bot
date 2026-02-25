@@ -8,7 +8,8 @@ from openpyxl import Workbook
 # =========================
 
 ACCOUNT_SIZE = 100000
-RISK_PER_TRADE = 0.01   # %1 risk
+RISK_PER_TRADE = 0.01
+MAX_PORTFOLIO_RISK = 0.03
 
 SYMBOLS = [
     "THYAO.IS","ASELS.IS","SISE.IS","EREGL.IS","BIMAS.IS",
@@ -58,10 +59,8 @@ def index_risk_off():
                             progress=False, threads=False)
         if xu100.empty:
             return False
-
         xu100["EMA50"] = ema(xu100["Close"],50)
         xu100["EMA200"] = ema(xu100["Close"],200)
-
         return xu100["EMA50"].iloc[-1] < xu100["EMA200"].iloc[-1]
     except:
         return False
@@ -77,13 +76,8 @@ def calculate_core_portfolio():
 
     for symbol in SYMBOLS:
         try:
-            df = yf.download(
-                symbol,
-                period="6mo",
-                interval="1d",
-                progress=False,
-                threads=False
-            )
+            df = yf.download(symbol, period="6mo", interval="1d",
+                             progress=False, threads=False)
 
             if df.empty or len(df) < 60:
                 continue
@@ -99,10 +93,8 @@ def calculate_core_portfolio():
 
             if df["EMA50"].iloc[-1] > df["EMA200"].iloc[-1]:
                 score += 20
-
             if df["Close"].iloc[-1] > df["EMA50"].iloc[-1]:
                 score += 15
-
             if df["RSI"].iloc[-1] > 55:
                 score += 15
 
@@ -136,9 +128,9 @@ def calculate_core_portfolio():
     df_results = pd.DataFrame(results)
     df_results = df_results.sort_values(by="score", ascending=False)
 
-    # =========================
+    # -------------------------
     # SEKTÖR FİLTRESİ
-    # =========================
+    # -------------------------
 
     selected = []
     used_sectors = set()
@@ -155,9 +147,9 @@ def calculate_core_portfolio():
     if df_selected.empty:
         return pd.DataFrame()
 
-    # =========================
+    # -------------------------
     # KORELASYON FİLTRESİ
-    # =========================
+    # -------------------------
 
     if len(price_data) > 1:
         corr_matrix = pd.DataFrame(price_data).corr()
@@ -172,9 +164,9 @@ def calculate_core_portfolio():
     if df_selected.empty:
         return pd.DataFrame()
 
-    # =========================
+    # -------------------------
     # HİBRİT AĞIRLIK
-    # =========================
+    # -------------------------
 
     total_score = df_selected["score"].sum()
 
@@ -190,9 +182,9 @@ def calculate_core_portfolio():
             (df_selected["vol_norm"] * 0.4)
         )
 
-    # =========================
+    # -------------------------
     # ENDEKS RİSK MODU
-    # =========================
+    # -------------------------
 
     if index_risk_off():
         df_selected["weight"] = df_selected["weight"] * 0.5
@@ -213,6 +205,27 @@ def add_position_sizing(df):
     df["stop_distance"] = df["atr"] * 2
     df["position_size"] = risk_capital / df["stop_distance"]
     df["position_value"] = df["position_size"] * df["price"]
+    df["risk_tl"] = df["stop_distance"] * df["position_size"]
+
+    return df
+
+# =========================
+# PORTFÖY RİSK KONTROLÜ
+# =========================
+
+def apply_portfolio_risk_control(df):
+
+    if df.empty:
+        return df
+
+    total_risk = df["risk_tl"].sum()
+    max_allowed = ACCOUNT_SIZE * MAX_PORTFOLIO_RISK
+
+    if total_risk > max_allowed:
+        scale_factor = max_allowed / total_risk
+        df["position_size"] = df["position_size"] * scale_factor
+        df["position_value"] = df["position_size"] * df["price"]
+        df["risk_tl"] = df["stop_distance"] * df["position_size"]
 
     return df
 
@@ -226,7 +239,7 @@ def generate_weekly_report():
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "CORE 15.0"
+    ws.title = "CORE 16.0"
 
     if core_df.empty:
         ws.append(["Veri bulunamadı"])
@@ -235,6 +248,7 @@ def generate_weekly_report():
         return filename
 
     core_df = add_position_sizing(core_df)
+    core_df = apply_portfolio_risk_control(core_df)
 
     ws.append([
         "Hisse","Skor","Ağırlık %",
@@ -242,6 +256,7 @@ def generate_weekly_report():
         "Stop Mesafe",
         "Lot",
         "Pozisyon TL",
+        "Risk TL",
         "Sektör"
     ])
 
@@ -255,6 +270,7 @@ def generate_weekly_report():
             round(row["stop_distance"],2),
             int(row["position_size"]),
             round(row["position_value"],2),
+            round(row["risk_tl"],2),
             row["sector"]
         ])
 
