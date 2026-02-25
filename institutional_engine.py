@@ -1,4 +1,3 @@
-import os
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -19,10 +18,10 @@ def generate_weekly_report():
         try:
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
 
-            if df.empty:
+            if df.empty or len(df) < 60:
                 results.append({
                     "Hisse": symbol,
-                    "Durum": "Veri çekilemedi"
+                    "Durum": "Veri yetersiz"
                 })
                 continue
 
@@ -38,6 +37,8 @@ def generate_weekly_report():
             results.append({
                 "Hisse": symbol,
                 "Skor": round(score,2),
+                "Trend(0/1)": trend,
+                "Momentum(%)": round(momentum,2),
                 "Volatilite(%)": round(volatility,2)
             })
 
@@ -49,6 +50,10 @@ def generate_weekly_report():
 
 
     df_report = pd.DataFrame(results)
+
+    # Skora göre sırala
+    if "Skor" in df_report.columns:
+        df_report = df_report.sort_values("Skor", ascending=False)
 
     filename = "bist_core_report.xlsx"
     df_report.to_excel(filename, index=False)
