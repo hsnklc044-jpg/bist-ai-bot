@@ -10,22 +10,14 @@ from telegram.ext import (
 from institutional_engine import generate_weekly_report
 
 
-# =========================
-# CONFIG
-# =========================
-
 TOKEN = os.getenv("BOT_TOKEN")
 
 logging.basicConfig(level=logging.INFO)
 
 
-# =========================
-# COMMANDS
-# =========================
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🏦 BIST INSTITUTIONAL MODEL AKTİF\n\n"
+        "🏦 BIST CORE MODEL AKTİF\n\n"
         "Komutlar:\n"
         "/status\n"
         "/weekly"
@@ -35,13 +27,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "✅ Sistem aktif.\n"
-        "📊 Haftalık Excel rapor hazır."
+        "📊 Haftalık Core rapor hazır."
     )
 
 
 async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("📊 Haftalık rapor hazırlanıyor...")
+    await update.message.reply_text("📊 Haftalık Core rapor hazırlanıyor...")
 
     try:
         filename = generate_weekly_report()
@@ -57,10 +49,6 @@ async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Hata:\n{e}")
 
-
-# =========================
-# MAIN
-# =========================
 
 def main():
 
