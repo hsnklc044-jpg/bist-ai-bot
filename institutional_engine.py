@@ -2,12 +2,12 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from openpyxl import Workbook
+from openpyxl.chart import LineChart, Reference
 import os
 
 ACCOUNT_SIZE = 100000
 BASE_RISK = 0.01
 REDUCED_RISK = 0.005
-MAX_PORTFOLIO_RISK = 0.03
 
 EQUITY_FILE = "/tmp/equity_history.csv"
 
@@ -20,24 +20,12 @@ SYMBOLS = [
     "ALARK.IS","DOHOL.IS","EKGYO.IS","KRDMD.IS","VESTL.IS"
 ]
 
+# =============================
+# CORE MODEL
+# =============================
+
 def ema(data, period):
     return data.ewm(span=period, adjust=False).mean()
-
-def rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
-
-def atr(df, period=14):
-    high_low = df['High'] - df['Low']
-    high_close = abs(df['High'] - df['Close'].shift())
-    low_close = abs(df['Low'] - df['Close'].shift())
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    return tr.rolling(period).mean()
 
 def calculate_core_portfolio():
 
@@ -53,27 +41,19 @@ def calculate_core_portfolio():
 
             df["EMA50"] = ema(df["Close"],50)
             df["EMA200"] = ema(df["Close"],200)
-            df["RSI"] = rsi(df["Close"])
-            df["ATR"] = atr(df)
 
             score = 0
 
             if df["EMA50"].iloc[-1] > df["EMA200"].iloc[-1]:
-                score += 20
-            if df["Close"].iloc[-1] > df["EMA50"].iloc[-1]:
-                score += 15
-            if df["RSI"].iloc[-1] > 55:
-                score += 15
+                score += 50
 
             perf_3m = (df["Close"].iloc[-1] / df["Close"].iloc[-60] - 1)
             if perf_3m > 0:
-                score += 20
+                score += 50
 
             results.append({
                 "symbol": symbol,
-                "score": score,
-                "price": df["Close"].iloc[-1],
-                "atr": df["ATR"].iloc[-1]
+                "score": score
             })
 
         except:
@@ -90,12 +70,16 @@ def calculate_core_portfolio():
 
     return df_results
 
-def load_equity_history():
+# =============================
+# EQUITY ENGINE
+# =============================
+
+def load_equity():
     if os.path.exists(EQUITY_FILE):
         return pd.read_csv(EQUITY_FILE)
     return pd.DataFrame(columns=["date","equity"])
 
-def save_equity_history(df):
+def save_equity(df):
     df.to_csv(EQUITY_FILE, index=False)
 
 def calculate_real_weekly_return(core_df):
@@ -119,14 +103,26 @@ def calculate_real_weekly_return(core_df):
     return weighted_return
 
 def calculate_drawdown(history):
-
     peak = history["equity"].cummax()
     dd = (history["equity"] - peak) / peak
     return dd.iloc[-1]
 
+def calculate_sharpe(history):
+
+    if len(history) < 2:
+        return 0
+
+    returns = history["equity"].pct_change().dropna()
+
+    if returns.std() == 0:
+        return 0
+
+    sharpe = (returns.mean() / returns.std()) * np.sqrt(52)
+    return sharpe
+
 def update_equity(core_df):
 
-    history = load_equity_history()
+    history = load_equity()
 
     if history.empty:
         current_equity = ACCOUNT_SIZE
@@ -142,16 +138,21 @@ def update_equity(core_df):
     })
 
     history = pd.concat([history,new_row],ignore_index=True)
-    save_equity_history(history)
+    save_equity(history)
 
     dd = calculate_drawdown(history)
+    sharpe = calculate_sharpe(history)
 
     if dd < -0.10:
         risk = REDUCED_RISK
     else:
         risk = BASE_RISK
 
-    return history, dd, risk
+    return history, dd, sharpe, risk
+
+# =============================
+# EXCEL REPORT
+# =============================
 
 def generate_weekly_report():
 
@@ -159,7 +160,7 @@ def generate_weekly_report():
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "CORE 18.0"
+    ws.title = "CORE 19.0"
 
     if core_df.empty:
         ws.append(["Veri bulunamadı"])
@@ -167,7 +168,7 @@ def generate_weekly_report():
         wb.save(filename)
         return filename
 
-    history, dd, risk = update_equity(core_df)
+    history, dd, sharpe, risk = update_equity(core_df)
 
     ws.append(["Hisse","Skor","Ağırlık %"])
 
@@ -181,7 +182,27 @@ def generate_weekly_report():
     ws.append([])
     ws.append(["Equity", round(history["equity"].iloc[-1],2)])
     ws.append(["Drawdown %", round(dd*100,2)])
+    ws.append(["Sharpe", round(sharpe,2)])
     ws.append(["Aktif Risk %", round(risk*100,2)])
+
+    # ---- EQUITY GRAFİĞİ ----
+    ws2 = wb.create_sheet("Equity Curve")
+
+    ws2.append(["Date","Equity"])
+
+    for _, row in history.iterrows():
+        ws2.append([row["date"], row["equity"]])
+
+    chart = LineChart()
+    chart.title = "Equity Curve"
+    chart.y_axis.title = "Equity"
+    chart.x_axis.title = "Date"
+
+    data = Reference(ws2, min_col=2, min_row=1,
+                     max_row=len(history)+1)
+    chart.add_data(data, titles_from_data=True)
+
+    ws2.add_chart(chart, "E5")
 
     filename = "/tmp/bist_core_report.xlsx"
     wb.save(filename)
