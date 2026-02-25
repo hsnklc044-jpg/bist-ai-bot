@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
-
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -12,27 +11,37 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 SYMBOLS = ["THYAO.IS","ASELS.IS","SISE.IS","EREGL.IS","BIMAS.IS"]
+INDEX = "XU100.IS"
 
-RISK_ORANI = 0.01
-GUNLUK_ZARAR_LIMIT = 0.03
+RISK = 0.01
+DAILY_LIMIT = 0.03
 
-bakiye = 100000
-gunluk_baslangic = bakiye
-zirve = bakiye
+balance = 100000
+start_day_balance = balance
+peak = balance
 max_dd = 0
-toplam_islem = 0
-kazanan = 0
-kaybeden = 0
-acik_pozisyonlar = {}
+total_trades = 0
+wins = 0
+losses = 0
+open_positions = {}
 
 logging.basicConfig(level=logging.INFO)
 
-# =======================
-# GÖSTERGELER
-# =======================
+# =========================
+# INDICATORS
+# =========================
 
 def ema(data, p):
     return data.ewm(span=p, adjust=False).mean()
+
+def rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
 
 def atr(df, p=14):
     hl = df['High'] - df['Low']
@@ -41,156 +50,149 @@ def atr(df, p=14):
     tr = pd.concat([hl,hc,lc],axis=1).max(axis=1)
     return tr.rolling(p).mean()
 
-def trend(df):
-    df["EMA20"]=ema(df["Close"],20)
-    df["EMA50"]=ema(df["Close"],50)
-    df["EMA200"]=ema(df["Close"],200)
-    return df["EMA20"].iloc[-1] > df["EMA50"].iloc[-1] > df["EMA200"].iloc[-1]
+def index_trend_ok():
+    df = yf.download(INDEX, period="3mo", interval="1d", progress=False)
+    df["EMA50"] = ema(df["Close"],50)
+    return df["Close"].iloc[-1] > df["EMA50"].iloc[-1]
 
-def bakiye_guncelle(pnl):
-    global bakiye, zirve, max_dd
-    bakiye += pnl
-    zirve = max(zirve,bakiye)
-    max_dd = (zirve - bakiye)/zirve
+def update_balance(pnl):
+    global balance, peak, max_dd
+    balance += pnl
+    peak = max(peak,balance)
+    max_dd = (peak - balance)/peak
 
-# =======================
-# POZİSYON TAKİP
-# =======================
+# =========================
+# POSITION CONTROL
+# =========================
 
-async def pozisyon_kontrol(context):
-    global kazanan, kaybeden, toplam_islem
-    silinecekler = []
+async def check_positions(context):
+    global wins, losses, total_trades
+    to_remove = []
 
-    for hisse, poz in acik_pozisyonlar.items():
-        df = yf.download(hisse, period="1d", interval="5m", progress=False)
-        if len(df) == 0:
+    for symbol,pos in open_positions.items():
+        df = yf.download(symbol, period="1d", interval="5m", progress=False)
+        if len(df)==0:
             continue
 
-        fiyat = df["Close"].iloc[-1]
+        price = df["Close"].iloc[-1]
 
-        if fiyat <= poz["sl"]:
-            pnl = -bakiye * RISK_ORANI
-            bakiye_guncelle(pnl)
-            kaybeden += 1
-            toplam_islem += 1
+        if price <= pos["sl"]:
+            pnl = -balance * RISK
+            update_balance(pnl)
+            losses+=1
+            total_trades+=1
 
-            await context.bot.send_message(
-                chat_id=CHAT_ID,
-                text=f"❌ STOP ÇALIŞTI\n{hisse}\nZarar: %{RISK_ORANI*100}"
-            )
-            silinecekler.append(hisse)
+            await context.bot.send_message(chat_id=CHAT_ID,
+                text=f"❌ STOP ÇALIŞTI\n{symbol}")
 
-        elif fiyat >= poz["tp"]:
-            pnl = bakiye * RISK_ORANI * 2
-            bakiye_guncelle(pnl)
-            kazanan += 1
-            toplam_islem += 1
+            to_remove.append(symbol)
 
-            await context.bot.send_message(
-                chat_id=CHAT_ID,
-                text=f"✅ HEDEF GERÇEKLEŞTİ\n{hisse}\nKâr: %{RISK_ORANI*200}"
-            )
-            silinecekler.append(hisse)
+        elif price >= pos["tp"]:
+            pnl = balance * RISK * 2
+            update_balance(pnl)
+            wins+=1
+            total_trades+=1
 
-    for s in silinecekler:
-        del acik_pozisyonlar[s]
+            await context.bot.send_message(chat_id=CHAT_ID,
+                text=f"✅ HEDEF GERÇEKLEŞTİ\n{symbol}")
 
-# =======================
-# PİYASA TARAMA
-# =======================
+            to_remove.append(symbol)
 
-async def tarama(context):
-    global gunluk_baslangic
+    for s in to_remove:
+        del open_positions[s]
 
-    if (gunluk_baslangic - bakiye)/gunluk_baslangic >= GUNLUK_ZARAR_LIMIT:
-        await context.bot.send_message(
-            chat_id=CHAT_ID,
-            text="🛑 Günlük maksimum zarar limiti aşıldı. Sistem durduruldu."
-        )
+# =========================
+# SCAN
+# =========================
+
+async def scan(context):
+    global start_day_balance
+
+    if (start_day_balance - balance)/start_day_balance >= DAILY_LIMIT:
+        await context.bot.send_message(chat_id=CHAT_ID,
+            text="🛑 Günlük zarar limiti aşıldı.")
         return
 
-    for hisse in SYMBOLS:
+    if not index_trend_ok():
+        return
 
-        if hisse in acik_pozisyonlar:
+    for symbol in SYMBOLS:
+
+        if symbol in open_positions:
             continue
 
-        df = yf.download(hisse, period="3mo", interval="1h", progress=False)
-        if len(df) < 200:
+        df = yf.download(symbol, period="3mo", interval="1h", progress=False)
+        if len(df)<200:
             continue
 
-        if not trend(df):
-            continue
-
+        df["EMA50"]=ema(df["Close"],50)
+        df["EMA200"]=ema(df["Close"],200)
+        df["RSI"]=rsi(df["Close"])
         df["ATR"]=atr(df)
-        atr_val = df["ATR"].iloc[-1]
-        fiyat = df["Close"].iloc[-1]
+        df["VOLMA"]=df["Volume"].rolling(20).mean()
 
-        if np.isnan(atr_val):
-            continue
+        price = df["Close"].iloc[-1]
 
-        sl = fiyat - atr_val*1.5
-        tp = fiyat + atr_val*2.5
+        trend = df["EMA50"].iloc[-1] > df["EMA200"].iloc[-1]
+        rsi_ok = df["RSI"].iloc[-1] > 50
+        volume_spike = df["Volume"].iloc[-1] > df["VOLMA"].iloc[-1]*1.5
 
-        acik_pozisyonlar[hisse] = {
-            "entry":fiyat,
-            "sl":sl,
-            "tp":tp
-        }
+        if trend and rsi_ok and volume_spike:
 
-        await context.bot.send_message(
-            chat_id=CHAT_ID,
-            text=(
-                f"🚀 YENİ ALIŞ SİNYALİ\n\n"
-                f"Hisse: {hisse}\n"
-                f"Giriş: {round(fiyat,2)}\n"
-                f"Zarar Durdur: {round(sl,2)}\n"
-                f"Kâr Al: {round(tp,2)}"
-            )
-        )
+            atr_val = df["ATR"].iloc[-1]
+            sl = price - atr_val*1.5
+            tp = price + atr_val*2.5
 
-        break
+            open_positions[symbol] = {"sl":sl,"tp":tp}
 
-# =======================
-# RAPOR
-# =======================
+            await context.bot.send_message(chat_id=CHAT_ID,
+                text=(
+                    f"🚀 AKILLI PARA SİNYALİ\n\n"
+                    f"Hisse: {symbol}\n"
+                    f"Giriş: {round(price,2)}\n"
+                    f"SL: {round(sl,2)}\n"
+                    f"TP: {round(tp,2)}"
+                ))
+            break
 
-async def gunluk_rapor(context):
-    kazanma_orani = (kazanan/toplam_islem*100) if toplam_islem>0 else 0
+# =========================
+# REPORT
+# =========================
 
-    await context.bot.send_message(
-        chat_id=CHAT_ID,
+async def daily_report(context):
+    winrate = (wins/total_trades*100) if total_trades>0 else 0
+    await context.bot.send_message(chat_id=CHAT_ID,
         text=(
-            f"📊 GÜNLÜK PERFORMANS RAPORU\n\n"
-            f"💰 Bakiye: {round(bakiye,2)}\n"
-            f"📈 Kazanma Oranı: %{round(kazanma_orani,2)}\n"
-            f"📉 Max Drawdown: %{round(max_dd*100,2)}\n"
-            f"🔁 Toplam İşlem: {toplam_islem}"
-        )
-    )
+            f"📊 GÜNLÜK RAPOR\n\n"
+            f"Bakiye: {round(balance,2)}\n"
+            f"Winrate: %{round(winrate,2)}\n"
+            f"Max DD: %{round(max_dd*100,2)}\n"
+            f"İşlem: {total_trades}"
+        ))
 
-# =======================
+# =========================
 # TELEGRAM
-# =======================
+# =========================
 
 async def start(update:Update,context:ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚀 HEDGE FUND MODE 7.0 AKTİF\n"
-        "🛡 Gerçek SL/TP Takibi\n"
-        "📊 Günlük Risk Limiti %3"
+        "🚀 HEDGE FUND MODE 8.0 AKTİF\n"
+        "📈 Trend + RSI + Hacim Patlaması\n"
+        "🛡 Günlük Risk Kontrolü"
     )
 
 async def status(update:Update,context:ContextTypes.DEFAULT_TYPE):
-    kazanma_orani = (kazanan/toplam_islem*100) if toplam_islem>0 else 0
+    winrate = (wins/total_trades*100) if total_trades>0 else 0
     await update.message.reply_text(
-        f"💰 Bakiye: {round(bakiye,2)}\n"
-        f"📊 Winrate: %{round(kazanma_orani,2)}\n"
+        f"💰 Bakiye: {round(balance,2)}\n"
+        f"📊 Winrate: %{round(winrate,2)}\n"
         f"📉 Drawdown: %{round(max_dd*100,2)}\n"
-        f"🔁 İşlem: {toplam_islem}"
+        f"🔁 İşlem: {total_trades}"
     )
 
-# =======================
+# =========================
 # MAIN
-# =======================
+# =========================
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
@@ -198,9 +200,9 @@ def main():
     app.add_handler(CommandHandler("start",start))
     app.add_handler(CommandHandler("status",status))
 
-    app.job_queue.run_repeating(tarama, interval=900, first=10)
-    app.job_queue.run_repeating(pozisyon_kontrol, interval=300, first=20)
-    app.job_queue.run_daily(gunluk_rapor, time=datetime.strptime("18:30","%H:%M").time())
+    app.job_queue.run_repeating(scan, interval=900, first=10)
+    app.job_queue.run_repeating(check_positions, interval=300, first=20)
+    app.job_queue.run_daily(daily_report, time=datetime.strptime("18:30","%H:%M").time())
 
     app.run_polling()
 
