@@ -2,6 +2,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 from openpyxl import Workbook
+import os
 
 # =========================
 # CONFIG
@@ -10,6 +11,8 @@ from openpyxl import Workbook
 ACCOUNT_SIZE = 100000
 RISK_PER_TRADE = 0.01
 MAX_PORTFOLIO_RISK = 0.03
+
+EQUITY_FILE = "/tmp/equity_history.csv"
 
 SYMBOLS = [
     "THYAO.IS","ASELS.IS","SISE.IS","EREGL.IS","BIMAS.IS",
@@ -128,10 +131,7 @@ def calculate_core_portfolio():
     df_results = pd.DataFrame(results)
     df_results = df_results.sort_values(by="score", ascending=False)
 
-    # -------------------------
-    # SEKTÖR FİLTRESİ
-    # -------------------------
-
+    # --- SEKTÖR FİLTRESİ ---
     selected = []
     used_sectors = set()
 
@@ -147,27 +147,19 @@ def calculate_core_portfolio():
     if df_selected.empty:
         return pd.DataFrame()
 
-    # -------------------------
-    # KORELASYON FİLTRESİ
-    # -------------------------
-
+    # --- KORELASYON FİLTRESİ ---
     if len(price_data) > 1:
         corr_matrix = pd.DataFrame(price_data).corr()
         final = []
-
         for symbol in df_selected["symbol"]:
             if all(abs(corr_matrix.loc[symbol, s]) < 0.75 for s in final):
                 final.append(symbol)
-
         df_selected = df_selected[df_selected["symbol"].isin(final)]
 
     if df_selected.empty:
         return pd.DataFrame()
 
-    # -------------------------
-    # HİBRİT AĞIRLIK
-    # -------------------------
-
+    # --- HİBRİT AĞIRLIK ---
     total_score = df_selected["score"].sum()
 
     if total_score == 0:
@@ -181,10 +173,6 @@ def calculate_core_portfolio():
             (df_selected["score_norm"] * 0.6) +
             (df_selected["vol_norm"] * 0.4)
         )
-
-    # -------------------------
-    # ENDEKS RİSK MODU
-    # -------------------------
 
     if index_risk_off():
         df_selected["weight"] = df_selected["weight"] * 0.5
@@ -223,11 +211,57 @@ def apply_portfolio_risk_control(df):
 
     if total_risk > max_allowed:
         scale_factor = max_allowed / total_risk
-        df["position_size"] = df["position_size"] * scale_factor
+        df["position_size"] *= scale_factor
         df["position_value"] = df["position_size"] * df["price"]
         df["risk_tl"] = df["stop_distance"] * df["position_size"]
 
     return df
+
+# =========================
+# EQUITY & DRAWDOWN
+# =========================
+
+def load_equity_history():
+    if os.path.exists(EQUITY_FILE):
+        return pd.read_csv(EQUITY_FILE)
+    else:
+        return pd.DataFrame(columns=["date","equity"])
+
+def save_equity_history(df):
+    df.to_csv(EQUITY_FILE, index=False)
+
+def update_equity_simulation():
+
+    history = load_equity_history()
+
+    weekly_return = 0.01  # simülasyon
+
+    if history.empty:
+        current_equity = ACCOUNT_SIZE
+    else:
+        current_equity = history["equity"].iloc[-1]
+
+    new_equity = current_equity * (1 + weekly_return)
+
+    new_row = pd.DataFrame({
+        "date":[pd.Timestamp.today().strftime("%Y-%m-%d")],
+        "equity":[new_equity]
+    })
+
+    history = pd.concat([history,new_row],ignore_index=True)
+    save_equity_history(history)
+
+    return history
+
+def calculate_drawdown(history):
+
+    if history.empty:
+        return 0
+
+    peak = history["equity"].cummax()
+    drawdown = (history["equity"] - peak) / peak
+
+    return drawdown.iloc[-1]
 
 # =========================
 # EXCEL RAPOR
@@ -239,7 +273,7 @@ def generate_weekly_report():
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "CORE 16.0"
+    ws.title = "CORE 17.0"
 
     if core_df.empty:
         ws.append(["Veri bulunamadı"])
@@ -250,14 +284,13 @@ def generate_weekly_report():
     core_df = add_position_sizing(core_df)
     core_df = apply_portfolio_risk_control(core_df)
 
+    history = update_equity_simulation()
+    dd = calculate_drawdown(history)
+
     ws.append([
         "Hisse","Skor","Ağırlık %",
-        "Fiyat","ATR",
-        "Stop Mesafe",
-        "Lot",
-        "Pozisyon TL",
-        "Risk TL",
-        "Sektör"
+        "Fiyat","ATR","Stop Mesafe",
+        "Lot","Pozisyon TL","Risk TL","Sektör"
     ])
 
     for _, row in core_df.iterrows():
@@ -273,6 +306,10 @@ def generate_weekly_report():
             round(row["risk_tl"],2),
             row["sector"]
         ])
+
+    ws.append([])
+    ws.append(["Equity", history["equity"].iloc[-1]])
+    ws.append(["Drawdown %", round(dd*100,2)])
 
     filename = "/tmp/bist_core_report.xlsx"
     wb.save(filename)
