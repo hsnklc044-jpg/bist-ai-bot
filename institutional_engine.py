@@ -3,6 +3,13 @@ import pandas as pd
 import numpy as np
 from openpyxl import Workbook
 
+# =========================
+# CONFIG
+# =========================
+
+ACCOUNT_SIZE = 100000
+RISK_PER_TRADE = 0.01   # %1 risk
+
 SYMBOLS = [
     "THYAO.IS","ASELS.IS","SISE.IS","EREGL.IS","BIMAS.IS",
     "AKBNK.IS","YKBNK.IS","KCHOL.IS","TUPRS.IS","SAHOL.IS",
@@ -17,6 +24,10 @@ SECTOR_MAP = {
     "THYAO.IS":"ULAŞIM","PGSUS.IS":"ULAŞIM",
     "TUPRS.IS":"ENERJİ","PETKM.IS":"ENERJİ",
 }
+
+# =========================
+# GÖSTERGELER
+# =========================
 
 def ema(data, period):
     return data.ewm(span=period, adjust=False).mean()
@@ -37,14 +48,27 @@ def atr(df, period=14):
     tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
+# =========================
+# ENDEKS RİSK MODU
+# =========================
+
 def index_risk_off():
-    xu100 = yf.download("XU100.IS", period="6mo", interval="1d",
-                        progress=False, threads=False)
-    if xu100.empty:
+    try:
+        xu100 = yf.download("XU100.IS", period="6mo", interval="1d",
+                            progress=False, threads=False)
+        if xu100.empty:
+            return False
+
+        xu100["EMA50"] = ema(xu100["Close"],50)
+        xu100["EMA200"] = ema(xu100["Close"],200)
+
+        return xu100["EMA50"].iloc[-1] < xu100["EMA200"].iloc[-1]
+    except:
         return False
-    xu100["EMA50"] = ema(xu100["Close"],50)
-    xu100["EMA200"] = ema(xu100["Close"],200)
-    return xu100["EMA50"].iloc[-1] < xu100["EMA200"].iloc[-1]
+
+# =========================
+# CORE HESAPLAMA
+# =========================
 
 def calculate_core_portfolio():
 
@@ -53,8 +77,13 @@ def calculate_core_portfolio():
 
     for symbol in SYMBOLS:
         try:
-            df = yf.download(symbol, period="6mo", interval="1d",
-                             progress=False, threads=False)
+            df = yf.download(
+                symbol,
+                period="6mo",
+                interval="1d",
+                progress=False,
+                threads=False
+            )
 
             if df.empty or len(df) < 60:
                 continue
@@ -70,8 +99,10 @@ def calculate_core_portfolio():
 
             if df["EMA50"].iloc[-1] > df["EMA200"].iloc[-1]:
                 score += 20
+
             if df["Close"].iloc[-1] > df["EMA50"].iloc[-1]:
                 score += 15
+
             if df["RSI"].iloc[-1] > 55:
                 score += 15
 
@@ -105,7 +136,10 @@ def calculate_core_portfolio():
     df_results = pd.DataFrame(results)
     df_results = df_results.sort_values(by="score", ascending=False)
 
+    # =========================
     # SEKTÖR FİLTRESİ
+    # =========================
+
     selected = []
     used_sectors = set()
 
@@ -118,28 +152,73 @@ def calculate_core_portfolio():
 
     df_selected = pd.DataFrame(selected)
 
+    if df_selected.empty:
+        return pd.DataFrame()
+
+    # =========================
     # KORELASYON FİLTRESİ
+    # =========================
+
     if len(price_data) > 1:
         corr_matrix = pd.DataFrame(price_data).corr()
         final = []
+
         for symbol in df_selected["symbol"]:
             if all(abs(corr_matrix.loc[symbol, s]) < 0.75 for s in final):
                 final.append(symbol)
+
         df_selected = df_selected[df_selected["symbol"].isin(final)]
 
-    # HİBRİT AĞIRLIK
-    total_score = df_selected["score"].sum()
-    df_selected["score_norm"] = df_selected["score"] / total_score
-    df_selected["vol_factor"] = 1 / df_selected["atr"]
-    total_vol = df_selected["vol_factor"].sum()
-    df_selected["vol_norm"] = df_selected["vol_factor"] / total_vol
-    df_selected["weight"] = (df_selected["score_norm"] * 0.6) + (df_selected["vol_norm"] * 0.4)
+    if df_selected.empty:
+        return pd.DataFrame()
 
+    # =========================
+    # HİBRİT AĞIRLIK
+    # =========================
+
+    total_score = df_selected["score"].sum()
+
+    if total_score == 0:
+        df_selected["weight"] = 0
+    else:
+        df_selected["score_norm"] = df_selected["score"] / total_score
+        df_selected["vol_factor"] = 1 / df_selected["atr"]
+        total_vol = df_selected["vol_factor"].sum()
+        df_selected["vol_norm"] = df_selected["vol_factor"] / total_vol
+        df_selected["weight"] = (
+            (df_selected["score_norm"] * 0.6) +
+            (df_selected["vol_norm"] * 0.4)
+        )
+
+    # =========================
     # ENDEKS RİSK MODU
+    # =========================
+
     if index_risk_off():
         df_selected["weight"] = df_selected["weight"] * 0.5
 
     return df_selected
+
+# =========================
+# POZİSYON BÜYÜKLÜĞÜ
+# =========================
+
+def add_position_sizing(df):
+
+    if df.empty:
+        return df
+
+    risk_capital = ACCOUNT_SIZE * RISK_PER_TRADE
+
+    df["stop_distance"] = df["atr"] * 2
+    df["position_size"] = risk_capital / df["stop_distance"]
+    df["position_value"] = df["position_size"] * df["price"]
+
+    return df
+
+# =========================
+# EXCEL RAPOR
+# =========================
 
 def generate_weekly_report():
 
@@ -147,7 +226,7 @@ def generate_weekly_report():
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "CORE 14.0"
+    ws.title = "CORE 15.0"
 
     if core_df.empty:
         ws.append(["Veri bulunamadı"])
@@ -155,7 +234,16 @@ def generate_weekly_report():
         wb.save(filename)
         return filename
 
-    ws.append(["Hisse","Skor","Ağırlık %","Fiyat","ATR","RSI","Sektör"])
+    core_df = add_position_sizing(core_df)
+
+    ws.append([
+        "Hisse","Skor","Ağırlık %",
+        "Fiyat","ATR",
+        "Stop Mesafe",
+        "Lot",
+        "Pozisyon TL",
+        "Sektör"
+    ])
 
     for _, row in core_df.iterrows():
         ws.append([
@@ -164,7 +252,9 @@ def generate_weekly_report():
             round(row["weight"]*100,2),
             row["price"],
             row["atr"],
-            row["rsi"],
+            round(row["stop_distance"],2),
+            int(row["position_size"]),
+            round(row["position_value"],2),
             row["sector"]
         ])
 
