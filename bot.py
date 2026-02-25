@@ -17,7 +17,7 @@ from institutional_engine import generate_weekly_report
 TOKEN = os.getenv("BOT_TOKEN")
 
 logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    format="%(asctime)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 
@@ -28,7 +28,7 @@ logging.basicConfig(
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🏦 BIST HEDGE FUND ENGINE 20.0 AKTİF\n\n"
+        "🏦 BIST HEDGE Fund Engine 20.0 AKTİF\n\n"
         "Komutlar:\n"
         "/status → Sistem durumu\n"
         "/weekly → Haftalık Core + Performans Raporu"
@@ -37,26 +37,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "✅ Sistem çalışıyor.\n"
-        "📊 Risk Engine aktif.\n"
-        "🛡 Kill Switch koruması hazır."
+        "✅ Sistem Çalışıyor\n"
+        "📊 Core Engine Aktif\n"
+        "📈 Equity Tracking Aktif\n"
+        "🛡 Kill Switch Hazır"
     )
 
 
 async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("📊 Haftalık rapor hazırlanıyor...")
+    await update.message.reply_text("📊 Haftalık Core rapor hazırlanıyor...")
 
     try:
+        # ÖNEMLİ: tuple unpack
         filename, summary = generate_weekly_report()
 
-        # Excel gönder
-        with open(filename, "rb") as f:
-            await context.bot.send_document(
-                chat_id=update.effective_chat.id,
-                document=f,
-                filename="bist_core_report.xlsx"
-            )
+        # Excel dosyası gönder
+        if filename and os.path.exists(filename):
+
+            with open(filename, "rb") as f:
+                await context.bot.send_document(
+                    chat_id=update.effective_chat.id,
+                    document=f,
+                    filename="bist_core_report.xlsx"
+                )
 
         # Performans özeti gönder
         if summary:
@@ -66,7 +70,7 @@ async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logging.error(str(e))
-        await update.message.reply_text(f"❌ Hata oluştu:\n{e}")
+        await update.message.reply_text(f"❌ Hata:\n{str(e)}")
 
 
 # =============================
@@ -76,7 +80,7 @@ async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
 
     if not TOKEN:
-        raise ValueError("BOT_TOKEN environment variable eksik!")
+        raise ValueError("❌ BOT_TOKEN environment variable eksik!")
 
     application = ApplicationBuilder().token(TOKEN).build()
 
@@ -84,7 +88,7 @@ def main():
     application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("weekly", weekly))
 
-    print("🚀 BOT BAŞLADI - HEDGE FUND MODE 20.0")
+    print("🚀 HEDGE FUND ENGINE 20.0 BAŞLADI")
 
     application.run_polling()
 
