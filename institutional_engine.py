@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import yfinance as yf
 
 
@@ -20,27 +21,34 @@ def generate_weekly_report():
             if df.empty or len(df) < 60:
                 continue
 
-            df["MA20"] = df["Close"].rolling(20).mean()
-            df["MA50"] = df["Close"].rolling(50).mean()
+            close = df["Close"].values
 
-            trend = 1 if float(df["MA20"].iloc[-1]) > float(df["MA50"].iloc[-1]) else 0
+            ma20 = np.mean(close[-20:])
+            ma50 = np.mean(close[-50:])
 
-            momentum = float((df["Close"].iloc[-1] / df["Close"].iloc[-20] - 1) * 100)
-            volatility = float(df["Close"].pct_change().std() * 100)
+            trend = 1 if ma20 > ma50 else 0
 
-            score = float(trend * 40 + momentum * 0.8 - volatility * 0.5)
+            momentum = ((close[-1] / close[-20]) - 1) * 100
+            volatility = np.std(np.diff(close) / close[:-1]) * 100
+
+            score = trend * 40 + momentum * 0.8 - volatility * 0.5
 
             results.append({
                 "Hisse": symbol,
-                "Skor": round(score,2),
-                "Volatilite(%)": round(volatility,2)
+                "Skor": round(float(score), 2),
+                "Volatilite(%)": round(float(volatility), 2)
             })
 
         except Exception:
             continue
 
 
-    df_report = pd.DataFrame(results).sort_values("Skor", ascending=False)
+    if len(results) == 0:
+        df_report = pd.DataFrame([{"Durum": "Uygun veri yok"}])
+    else:
+        df_report = pd.DataFrame(results)
+        df_report = df_report.sort_values("Skor", ascending=False)
+
 
     filename = "bist_core_report.xlsx"
     df_report.to_excel(filename, index=False)
