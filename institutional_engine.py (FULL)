@@ -1,0 +1,135 @@
+import yfinance as yf
+import pandas as pd
+import numpy as np
+from datetime import datetime
+from openpyxl import Workbook
+
+SYMBOLS = ["THYAO.IS","ASELS.IS","SISE.IS","EREGL.IS","BIMAS.IS",
+           "AKBNK.IS","YKBNK.IS","KCHOL.IS","TUPRS.IS","SAHOL.IS"]
+
+INDEX = "XU100.IS"
+
+# =============================
+# GÖSTERGELER
+# =============================
+
+def ema(data, p):
+    return data.ewm(span=p, adjust=False).mean()
+
+def rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.where(delta > 0, 0)
+    loss = -delta.where(delta < 0, 0)
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+    rs = avg_gain / avg_loss
+    return 100 - (100 / (1 + rs))
+
+def atr(df, p=14):
+    hl = df['High'] - df['Low']
+    hc = abs(df['High'] - df['Close'].shift())
+    lc = abs(df['Low'] - df['Close'].shift())
+    tr = pd.concat([hl,hc,lc],axis=1).max(axis=1)
+    return tr.rolling(p).mean()
+
+# =============================
+# ENDEKS FİLTRESİ
+# =============================
+
+def index_trend_ok():
+    df = yf.download(INDEX, period="3mo", interval="1d", progress=False)
+    df["EMA50"] = ema(df["Close"],50)
+    df["EMA200"] = ema(df["Close"],200)
+
+    if df["EMA50"].iloc[-1] > df["EMA200"].iloc[-1]:
+        return True
+    return False
+
+# =============================
+# SKOR HESAPLAMA
+# =============================
+
+def calculate_scores():
+
+    results = []
+
+    for symbol in SYMBOLS:
+        df = yf.download(symbol, period="6mo", interval="1d", progress=False)
+        if len(df) < 200:
+            continue
+
+        df["EMA50"]=ema(df["Close"],50)
+        df["EMA200"]=ema(df["Close"],200)
+        df["RSI"]=rsi(df["Close"])
+        df["ATR"]=atr(df)
+
+        trend_score = 20 if df["EMA50"].iloc[-1] > df["EMA200"].iloc[-1] else 0
+        price_score = 15 if df["Close"].iloc[-1] > df["EMA50"].iloc[-1] else 0
+        rsi_score = 15 if df["RSI"].iloc[-1] > 55 else 0
+
+        volume_score = 15
+        vol = df["Volume"].iloc[-1]
+        vol_ma = df["Volume"].rolling(20).mean().iloc[-1]
+        if vol < vol_ma:
+            volume_score = 5
+
+        rs_score = 20  # basit placeholder (geliştirilebilir)
+        vol_score = 15 if df["ATR"].iloc[-1] < df["ATR"].mean() else 5
+
+        total_score = trend_score + price_score + rsi_score + volume_score + rs_score + vol_score
+
+        results.append({
+            "symbol":symbol,
+            "score":total_score,
+            "atr":df["ATR"].iloc[-1],
+            "price":df["Close"].iloc[-1]
+        })
+
+    df_results = pd.DataFrame(results)
+    df_results = df_results.sort_values(by="score", ascending=False)
+
+    return df_results.head(5)
+
+# =============================
+# HİBRİT AĞIRLIK
+# =============================
+
+def calculate_weights(df_top):
+
+    total_score = df_top["score"].sum()
+    df_top["score_norm"] = df_top["score"] / total_score
+
+    df_top["vol_factor"] = 1 / df_top["atr"]
+    total_vol = df_top["vol_factor"].sum()
+    df_top["vol_norm"] = df_top["vol_factor"] / total_vol
+
+    df_top["final_weight"] = (df_top["score_norm"] * 0.6) + (df_top["vol_norm"] * 0.4)
+
+    return df_top
+
+# =============================
+# EXCEL OLUŞTURMA
+# =============================
+
+def create_excel_report(core_df, filename="institutional_report.xlsx"):
+
+    wb = Workbook()
+
+    # CORE SAYFA
+    ws1 = wb.active
+    ws1.title = "CORE"
+
+    headers = ["Hisse","Skor","Ağırlık %","Fiyat","ATR"]
+    ws1.append(headers)
+
+    for _,row in core_df.iterrows():
+        ws1.append([
+            row["symbol"],
+            row["score"],
+            round(row["final_weight"]*100,2),
+            round(row["price"],2),
+            round(row["atr"],2)
+        ])
+
+    wb.save(filename)
+    return filename
