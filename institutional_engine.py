@@ -2,7 +2,6 @@ import os
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from datetime import datetime
 
 
 BIST30 = [
@@ -11,71 +10,49 @@ BIST30 = [
 ]
 
 
-def calculate_score(df):
-    """
-    Basit skor:
-    Trend + momentum + volatilite dengesi
-    """
-    df["MA20"] = df["Close"].rolling(20).mean()
-    df["MA50"] = df["Close"].rolling(50).mean()
-
-    trend = 1 if df["MA20"].iloc[-1] > df["MA50"].iloc[-1] else 0
-    momentum = (df["Close"].iloc[-1] / df["Close"].iloc[-20] - 1) * 100
-    volatility = df["Close"].pct_change().std() * 100
-
-    score = trend * 40 + momentum * 0.8 - volatility * 0.5
-
-    return round(score,2), round(volatility,2)
-
-
 def generate_weekly_report():
 
     results = []
-    total_scanned = 0
-    filtered_count = 0
 
     for symbol in BIST30:
 
         try:
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
 
-            if df.empty or len(df) < 60:
-                continue
-
-            total_scanned += 1
-
-            score, vol = calculate_score(df)
-
-            # Filtre
-            if score >= 60 and vol < 5:
-                filtered_count += 1
-
+            if df.empty:
                 results.append({
                     "Hisse": symbol,
-                    "Skor": score,
-                    "Volatilite(%)": vol
+                    "Durum": "Veri çekilemedi"
                 })
+                continue
 
-        except Exception:
-            continue
+            df["MA20"] = df["Close"].rolling(20).mean()
+            df["MA50"] = df["Close"].rolling(50).mean()
+
+            trend = 1 if df["MA20"].iloc[-1] > df["MA50"].iloc[-1] else 0
+            momentum = (df["Close"].iloc[-1] / df["Close"].iloc[-20] - 1) * 100
+            volatility = df["Close"].pct_change().std() * 100
+
+            score = trend * 40 + momentum * 0.8 - volatility * 0.5
+
+            results.append({
+                "Hisse": symbol,
+                "Skor": round(score,2),
+                "Volatilite(%)": round(volatility,2)
+            })
+
+        except Exception as e:
+            results.append({
+                "Hisse": symbol,
+                "Hata": str(e)
+            })
 
 
-    # Debug özeti
-    debug_text = (
-        f"📊 Tarama Özeti\n"
-        f"Toplam Taranan: {total_scanned}\n"
-        f"Filtre Geçen: {filtered_count}\n"
-        f"Filtrelenen: {total_scanned - filtered_count}"
-    )
-
-
-    if len(results) == 0:
-        df_report = pd.DataFrame([{"Durum": "Filtreye uygun hisse bulunamadı"}])
-    else:
-        df_report = pd.DataFrame(results).sort_values("Skor", ascending=False)
-
+    df_report = pd.DataFrame(results)
 
     filename = "bist_core_report.xlsx"
     df_report.to_excel(filename, index=False)
 
-    return filename, debug_text
+    summary = f"Toplam İncelenen: {len(results)}"
+
+    return filename, summary
