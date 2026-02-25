@@ -1,10 +1,8 @@
 import os
 import logging
-import asyncio
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from datetime import datetime
 
 from telegram import Update
 from telegram.ext import (
@@ -16,7 +14,7 @@ from telegram.ext import (
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-SYMBOLS = ["THYAO.IS","ASELS.IS","SISE.IS"]
+SYMBOLS = ["THYAO.IS", "ASELS.IS", "SISE.IS"]
 
 equity = 100000
 trades = 0
@@ -27,6 +25,8 @@ peak_equity = equity
 mode_sent = False
 
 logging.basicConfig(level=logging.INFO)
+
+# ---------------- INDICATORS ----------------
 
 def ema(series, period):
     return series.ewm(span=period, adjust=False).mean()
@@ -51,7 +51,9 @@ def update_equity(pnl):
     peak_equity = max(peak_equity, equity)
     drawdown = (peak_equity - equity) / peak_equity
 
-async def scan(bot):
+# ---------------- SCAN ----------------
+
+async def scan(context: ContextTypes.DEFAULT_TYPE):
     global trades, win, loss
 
     for symbol in SYMBOLS:
@@ -75,7 +77,7 @@ async def scan(bot):
 
             trades += 1
 
-            await bot.send_message(
+            await context.bot.send_message(
                 chat_id=CHAT_ID,
                 text=f"🚀 LONG SIGNAL\n{symbol}\nEntry:{round(price,2)}\nSL:{round(stop,2)}\nTP:{round(target,2)}"
             )
@@ -96,15 +98,12 @@ async def scan(bot):
         except Exception as e:
             logging.error(e)
 
-async def loop_scan(app):
-    while True:
-        await scan(app.bot)
-        await asyncio.sleep(900)
+# ---------------- COMMANDS ----------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global mode_sent
     if not mode_sent:
-        await update.message.reply_text("🚀 HEDGE FUND MODE STABLE AKTIF")
+        await update.message.reply_text("🚀 HEDGE FUND MODE 6.2 STABLE AKTIF")
         mode_sent = True
 
 async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,15 +115,18 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🔁 Trades:{trades}"
     )
 
-async def main():
+# ---------------- MAIN ----------------
+
+def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("status", status))
 
-    asyncio.create_task(loop_scan(app))
+    # Telegram JobQueue aktifse kullan
+    app.job_queue.run_repeating(scan, interval=900, first=10)
 
-    await app.run_polling()
+    app.run_polling()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
