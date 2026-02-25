@@ -3,168 +3,206 @@ import logging
 import numpy as np
 import pandas as pd
 import yfinance as yf
+from datetime import datetime
 
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes,
-)
-
-# =========================
-# AYARLAR
-# =========================
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-SYMBOLS = [
-    "THYAO.IS",
-    "ASELS.IS",
-    "SISE.IS",
-    "EREGL.IS",
-    "BIMAS.IS",
-]
+SYMBOLS = ["THYAO.IS","ASELS.IS","SISE.IS","EREGL.IS","BIMAS.IS"]
 
-RISK_ORANI = 0.01  # %1 risk
-
-# =========================
-# GLOBAL DURUM
-# =========================
+RISK_ORANI = 0.01
+GUNLUK_ZARAR_LIMIT = 0.03
 
 bakiye = 100000
-zirve_bakiye = bakiye
-max_dusus = 0
-islem_sayisi = 0
+gunluk_baslangic = bakiye
+zirve = bakiye
+max_dd = 0
+toplam_islem = 0
 kazanan = 0
 kaybeden = 0
-mod_mesaji_gonderildi = False
+acik_pozisyonlar = {}
 
 logging.basicConfig(level=logging.INFO)
 
-# =========================
+# =======================
 # GÖSTERGELER
-# =========================
+# =======================
 
-def ema(veri, periyot):
-    return veri.ewm(span=periyot, adjust=False).mean()
+def ema(data, p):
+    return data.ewm(span=p, adjust=False).mean()
 
-def atr(df, periyot=14):
-    high_low = df['High'] - df['Low']
-    high_close = abs(df['High'] - df['Close'].shift())
-    low_close = abs(df['Low'] - df['Close'].shift())
-    aralik = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = aralik.max(axis=1)
-    return true_range.rolling(periyot).mean()
+def atr(df, p=14):
+    hl = df['High'] - df['Low']
+    hc = abs(df['High'] - df['Close'].shift())
+    lc = abs(df['Low'] - df['Close'].shift())
+    tr = pd.concat([hl,hc,lc],axis=1).max(axis=1)
+    return tr.rolling(p).mean()
 
-def trend_uygun(df):
-    df["EMA20"] = ema(df["Close"], 20)
-    df["EMA50"] = ema(df["Close"], 50)
-    df["EMA200"] = ema(df["Close"], 200)
+def trend(df):
+    df["EMA20"]=ema(df["Close"],20)
+    df["EMA50"]=ema(df["Close"],50)
+    df["EMA200"]=ema(df["Close"],200)
     return df["EMA20"].iloc[-1] > df["EMA50"].iloc[-1] > df["EMA200"].iloc[-1]
 
 def bakiye_guncelle(pnl):
-    global bakiye, zirve_bakiye, max_dusus
+    global bakiye, zirve, max_dd
     bakiye += pnl
-    zirve_bakiye = max(zirve_bakiye, bakiye)
-    max_dusus = (zirve_bakiye - bakiye) / zirve_bakiye
+    zirve = max(zirve,bakiye)
+    max_dd = (zirve - bakiye)/zirve
 
-# =========================
-# PİYASA TARAMA
-# =========================
+# =======================
+# POZİSYON TAKİP
+# =======================
 
-async def piyasa_tara(context: ContextTypes.DEFAULT_TYPE):
-    global islem_sayisi, kazanan, kaybeden
+async def pozisyon_kontrol(context):
+    global kazanan, kaybeden, toplam_islem
+    silinecekler = []
 
-    for hisse in SYMBOLS:
-        try:
-            df = yf.download(hisse, period="3mo", interval="1h", progress=False)
+    for hisse, poz in acik_pozisyonlar.items():
+        df = yf.download(hisse, period="1d", interval="5m", progress=False)
+        if len(df) == 0:
+            continue
 
-            if len(df) < 200:
-                continue
+        fiyat = df["Close"].iloc[-1]
 
-            if not trend_uygun(df):
-                continue
-
-            df["ATR"] = atr(df)
-            atr_degeri = df["ATR"].iloc[-1]
-            fiyat = df["Close"].iloc[-1]
-
-            if np.isnan(atr_degeri):
-                continue
-
-            zarar_durdur = fiyat - atr_degeri * 1.5
-            kar_al = fiyat + atr_degeri * 2.5
-
-            islem_sayisi += 1
+        if fiyat <= poz["sl"]:
+            pnl = -bakiye * RISK_ORANI
+            bakiye_guncelle(pnl)
+            kaybeden += 1
+            toplam_islem += 1
 
             await context.bot.send_message(
                 chat_id=CHAT_ID,
-                text=(
-                    f"🚀 ALIŞ SİNYALİ\n\n"
-                    f"Hisse: {hisse}\n"
-                    f"Giriş: {round(fiyat,2)}\n"
-                    f"Zarar Durdur: {round(zarar_durdur,2)}\n"
-                    f"Kâr Al: {round(kar_al,2)}"
-                )
+                text=f"❌ STOP ÇALIŞTI\n{hisse}\nZarar: %{RISK_ORANI*100}"
             )
+            silinecekler.append(hisse)
 
-            # Simülasyon (demo amaçlı)
-            sonuc = np.random.choice(["kazanç","zarar"], p=[0.55,0.45])
+        elif fiyat >= poz["tp"]:
+            pnl = bakiye * RISK_ORANI * 2
+            bakiye_guncelle(pnl)
+            kazanan += 1
+            toplam_islem += 1
 
-            if sonuc == "kazanç":
-                pnl = bakiye * RISK_ORANI * 1.8
-                bakiye_guncelle(pnl)
-                kazanan += 1
-            else:
-                pnl = -bakiye * RISK_ORANI
-                bakiye_guncelle(pnl)
-                kaybeden += 1
+            await context.bot.send_message(
+                chat_id=CHAT_ID,
+                text=f"✅ HEDEF GERÇEKLEŞTİ\n{hisse}\nKâr: %{RISK_ORANI*200}"
+            )
+            silinecekler.append(hisse)
 
-            break
+    for s in silinecekler:
+        del acik_pozisyonlar[s]
 
-        except Exception as e:
-            logging.error(e)
+# =======================
+# PİYASA TARAMA
+# =======================
 
-# =========================
-# TELEGRAM KOMUTLARI
-# =========================
+async def tarama(context):
+    global gunluk_baslangic
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global mod_mesaji_gonderildi
-
-    if not mod_mesaji_gonderildi:
-        await update.message.reply_text(
-            "🚀 HEDGE FUND MODU 6.2 AKTİF\n"
-            "📊 Trend + Kurumsal Akış Takibi\n"
-            "🛡 Risk Yönetimi: %1"
+    if (gunluk_baslangic - bakiye)/gunluk_baslangic >= GUNLUK_ZARAR_LIMIT:
+        await context.bot.send_message(
+            chat_id=CHAT_ID,
+            text="🛑 Günlük maksimum zarar limiti aşıldı. Sistem durduruldu."
         )
-        mod_mesaji_gonderildi = True
+        return
 
-async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    kazanma_orani = round((kazanan / islem_sayisi) * 100, 2) if islem_sayisi > 0 else 0
+    for hisse in SYMBOLS:
 
-    await update.message.reply_text(
-        f"💰 Bakiye: {round(bakiye,2)}\n"
-        f"📊 Kazanma Oranı: {kazanma_orani}%\n"
-        f"📉 Maksimum Düşüş: {round(max_dusus*100,2)}%\n"
-        f"🔁 Toplam İşlem: {islem_sayisi}"
+        if hisse in acik_pozisyonlar:
+            continue
+
+        df = yf.download(hisse, period="3mo", interval="1h", progress=False)
+        if len(df) < 200:
+            continue
+
+        if not trend(df):
+            continue
+
+        df["ATR"]=atr(df)
+        atr_val = df["ATR"].iloc[-1]
+        fiyat = df["Close"].iloc[-1]
+
+        if np.isnan(atr_val):
+            continue
+
+        sl = fiyat - atr_val*1.5
+        tp = fiyat + atr_val*2.5
+
+        acik_pozisyonlar[hisse] = {
+            "entry":fiyat,
+            "sl":sl,
+            "tp":tp
+        }
+
+        await context.bot.send_message(
+            chat_id=CHAT_ID,
+            text=(
+                f"🚀 YENİ ALIŞ SİNYALİ\n\n"
+                f"Hisse: {hisse}\n"
+                f"Giriş: {round(fiyat,2)}\n"
+                f"Zarar Durdur: {round(sl,2)}\n"
+                f"Kâr Al: {round(tp,2)}"
+            )
+        )
+
+        break
+
+# =======================
+# RAPOR
+# =======================
+
+async def gunluk_rapor(context):
+    kazanma_orani = (kazanan/toplam_islem*100) if toplam_islem>0 else 0
+
+    await context.bot.send_message(
+        chat_id=CHAT_ID,
+        text=(
+            f"📊 GÜNLÜK PERFORMANS RAPORU\n\n"
+            f"💰 Bakiye: {round(bakiye,2)}\n"
+            f"📈 Kazanma Oranı: %{round(kazanma_orani,2)}\n"
+            f"📉 Max Drawdown: %{round(max_dd*100,2)}\n"
+            f"🔁 Toplam İşlem: {toplam_islem}"
+        )
     )
 
-# =========================
-# ANA ÇALIŞMA BLOĞU
-# =========================
+# =======================
+# TELEGRAM
+# =======================
+
+async def start(update:Update,context:ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🚀 HEDGE FUND MODE 7.0 AKTİF\n"
+        "🛡 Gerçek SL/TP Takibi\n"
+        "📊 Günlük Risk Limiti %3"
+    )
+
+async def status(update:Update,context:ContextTypes.DEFAULT_TYPE):
+    kazanma_orani = (kazanan/toplam_islem*100) if toplam_islem>0 else 0
+    await update.message.reply_text(
+        f"💰 Bakiye: {round(bakiye,2)}\n"
+        f"📊 Winrate: %{round(kazanma_orani,2)}\n"
+        f"📉 Drawdown: %{round(max_dd*100,2)}\n"
+        f"🔁 İşlem: {toplam_islem}"
+    )
+
+# =======================
+# MAIN
+# =======================
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("status", durum))
+    app.add_handler(CommandHandler("start",start))
+    app.add_handler(CommandHandler("status",status))
 
-    # 15 dakikada bir tarama
-    app.job_queue.run_repeating(piyasa_tara, interval=900, first=10)
+    app.job_queue.run_repeating(tarama, interval=900, first=10)
+    app.job_queue.run_repeating(pozisyon_kontrol, interval=300, first=20)
+    app.job_queue.run_daily(gunluk_rapor, time=datetime.strptime("18:30","%H:%M").time())
 
     app.run_polling()
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
