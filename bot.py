@@ -11,120 +11,158 @@ from telegram.ext import (
     ContextTypes,
 )
 
+# =========================
+# AYARLAR
+# =========================
+
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-SYMBOLS = ["THYAO.IS", "ASELS.IS", "SISE.IS"]
+SYMBOLS = [
+    "THYAO.IS",
+    "ASELS.IS",
+    "SISE.IS",
+    "EREGL.IS",
+    "BIMAS.IS",
+]
 
-equity = 100000
-trades = 0
-win = 0
-loss = 0
-drawdown = 0
-peak_equity = equity
-mode_sent = False
+RISK_ORANI = 0.01  # %1 risk
+
+# =========================
+# GLOBAL DURUM
+# =========================
+
+bakiye = 100000
+zirve_bakiye = bakiye
+max_dusus = 0
+islem_sayisi = 0
+kazanan = 0
+kaybeden = 0
+mod_mesaji_gonderildi = False
 
 logging.basicConfig(level=logging.INFO)
 
-# ---------------- INDICATORS ----------------
+# =========================
+# GÖSTERGELER
+# =========================
 
-def ema(series, period):
-    return series.ewm(span=period, adjust=False).mean()
+def ema(veri, periyot):
+    return veri.ewm(span=periyot, adjust=False).mean()
 
-def atr(df, period=14):
+def atr(df, periyot=14):
     high_low = df['High'] - df['Low']
     high_close = abs(df['High'] - df['Close'].shift())
     low_close = abs(df['Low'] - df['Close'].shift())
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
-    true_range = ranges.max(axis=1)
-    return true_range.rolling(period).mean()
+    aralik = pd.concat([high_low, high_close, low_close], axis=1)
+    true_range = aralik.max(axis=1)
+    return true_range.rolling(periyot).mean()
 
-def trend_ok(df):
-    df["EMA20"] = ema(df["Close"],20)
-    df["EMA50"] = ema(df["Close"],50)
-    df["EMA200"] = ema(df["Close"],200)
+def trend_uygun(df):
+    df["EMA20"] = ema(df["Close"], 20)
+    df["EMA50"] = ema(df["Close"], 50)
+    df["EMA200"] = ema(df["Close"], 200)
     return df["EMA20"].iloc[-1] > df["EMA50"].iloc[-1] > df["EMA200"].iloc[-1]
 
-def update_equity(pnl):
-    global equity, peak_equity, drawdown
-    equity += pnl
-    peak_equity = max(peak_equity, equity)
-    drawdown = (peak_equity - equity) / peak_equity
+def bakiye_guncelle(pnl):
+    global bakiye, zirve_bakiye, max_dusus
+    bakiye += pnl
+    zirve_bakiye = max(zirve_bakiye, bakiye)
+    max_dusus = (zirve_bakiye - bakiye) / zirve_bakiye
 
-# ---------------- SCAN ----------------
+# =========================
+# PİYASA TARAMA
+# =========================
 
-async def scan(context: ContextTypes.DEFAULT_TYPE):
-    global trades, win, loss
+async def piyasa_tara(context: ContextTypes.DEFAULT_TYPE):
+    global islem_sayisi, kazanan, kaybeden
 
-    for symbol in SYMBOLS:
+    for hisse in SYMBOLS:
         try:
-            df = yf.download(symbol, period="3mo", interval="1h", progress=False)
+            df = yf.download(hisse, period="3mo", interval="1h", progress=False)
+
             if len(df) < 200:
                 continue
 
-            if not trend_ok(df):
+            if not trend_uygun(df):
                 continue
 
             df["ATR"] = atr(df)
-            atr_val = df["ATR"].iloc[-1]
-            price = df["Close"].iloc[-1]
+            atr_degeri = df["ATR"].iloc[-1]
+            fiyat = df["Close"].iloc[-1]
 
-            if np.isnan(atr_val):
+            if np.isnan(atr_degeri):
                 continue
 
-            stop = price - atr_val * 1.5
-            target = price + atr_val * 2.5
+            zarar_durdur = fiyat - atr_degeri * 1.5
+            kar_al = fiyat + atr_degeri * 2.5
 
-            trades += 1
+            islem_sayisi += 1
 
             await context.bot.send_message(
                 chat_id=CHAT_ID,
-                text=f"🚀 LONG SIGNAL\n{symbol}\nEntry:{round(price,2)}\nSL:{round(stop,2)}\nTP:{round(target,2)}"
+                text=(
+                    f"🚀 ALIŞ SİNYALİ\n\n"
+                    f"Hisse: {hisse}\n"
+                    f"Giriş: {round(fiyat,2)}\n"
+                    f"Zarar Durdur: {round(zarar_durdur,2)}\n"
+                    f"Kâr Al: {round(kar_al,2)}"
+                )
             )
 
-            result = np.random.choice(["win","loss"], p=[0.55,0.45])
+            # Simülasyon (demo amaçlı)
+            sonuc = np.random.choice(["kazanç","zarar"], p=[0.55,0.45])
 
-            if result == "win":
-                pnl = equity * 0.01 * 1.8
-                update_equity(pnl)
-                win += 1
+            if sonuc == "kazanç":
+                pnl = bakiye * RISK_ORANI * 1.8
+                bakiye_guncelle(pnl)
+                kazanan += 1
             else:
-                pnl = -equity * 0.01
-                update_equity(pnl)
-                loss += 1
+                pnl = -bakiye * RISK_ORANI
+                bakiye_guncelle(pnl)
+                kaybeden += 1
 
             break
 
         except Exception as e:
             logging.error(e)
 
-# ---------------- COMMANDS ----------------
+# =========================
+# TELEGRAM KOMUTLARI
+# =========================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global mode_sent
-    if not mode_sent:
-        await update.message.reply_text("🚀 HEDGE FUND MODE 6.2 STABLE AKTIF")
-        mode_sent = True
+    global mod_mesaji_gonderildi
 
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    winrate = round((win/trades)*100,2) if trades>0 else 0
+    if not mod_mesaji_gonderildi:
+        await update.message.reply_text(
+            "🚀 HEDGE FUND MODU 6.2 AKTİF\n"
+            "📊 Trend + Kurumsal Akış Takibi\n"
+            "🛡 Risk Yönetimi: %1"
+        )
+        mod_mesaji_gonderildi = True
+
+async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    kazanma_orani = round((kazanan / islem_sayisi) * 100, 2) if islem_sayisi > 0 else 0
+
     await update.message.reply_text(
-        f"💰 Equity:{round(equity,2)}\n"
-        f"📊 Winrate:{winrate}%\n"
-        f"📉 Drawdown:{round(drawdown*100,2)}%\n"
-        f"🔁 Trades:{trades}"
+        f"💰 Bakiye: {round(bakiye,2)}\n"
+        f"📊 Kazanma Oranı: {kazanma_orani}%\n"
+        f"📉 Maksimum Düşüş: {round(max_dusus*100,2)}%\n"
+        f"🔁 Toplam İşlem: {islem_sayisi}"
     )
 
-# ---------------- MAIN ----------------
+# =========================
+# ANA ÇALIŞMA BLOĞU
+# =========================
 
 def main():
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("status", status))
+    app.add_handler(CommandHandler("status", durum))
 
-    # Telegram JobQueue aktifse kullan
-    app.job_queue.run_repeating(scan, interval=900, first=10)
+    # 15 dakikada bir tarama
+    app.job_queue.run_repeating(piyasa_tara, interval=900, first=10)
 
     app.run_polling()
 
