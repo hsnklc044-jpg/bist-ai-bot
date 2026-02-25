@@ -8,6 +8,7 @@ import os
 ACCOUNT_SIZE = 100000
 BASE_RISK = 0.01
 REDUCED_RISK = 0.005
+KILL_SWITCH_DD = -0.20
 
 EQUITY_FILE = "/tmp/equity_history.csv"
 
@@ -143,15 +144,20 @@ def update_equity(core_df):
     dd = calculate_drawdown(history)
     sharpe = calculate_sharpe(history)
 
-    if dd < -0.10:
+    if dd <= KILL_SWITCH_DD:
+        risk = 0
+        mode = "KILL SWITCH"
+    elif dd < -0.10:
         risk = REDUCED_RISK
+        mode = "RISK REDUCED"
     else:
         risk = BASE_RISK
+        mode = "NORMAL"
 
-    return history, dd, sharpe, risk
+    return history, dd, sharpe, risk, mode, weekly_return
 
 # =============================
-# EXCEL REPORT
+# REPORT
 # =============================
 
 def generate_weekly_report():
@@ -160,15 +166,15 @@ def generate_weekly_report():
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "CORE 19.0"
+    ws.title = "CORE 20.0"
 
     if core_df.empty:
         ws.append(["Veri bulunamadı"])
         filename = "/tmp/bist_core_report.xlsx"
         wb.save(filename)
-        return filename
+        return filename, None
 
-    history, dd, sharpe, risk = update_equity(core_df)
+    history, dd, sharpe, risk, mode, weekly_return = update_equity(core_df)
 
     ws.append(["Hisse","Skor","Ağırlık %"])
 
@@ -181,30 +187,21 @@ def generate_weekly_report():
 
     ws.append([])
     ws.append(["Equity", round(history["equity"].iloc[-1],2)])
+    ws.append(["Haftalık Getiri %", round(weekly_return*100,2)])
     ws.append(["Drawdown %", round(dd*100,2)])
     ws.append(["Sharpe", round(sharpe,2)])
-    ws.append(["Aktif Risk %", round(risk*100,2)])
-
-    # ---- EQUITY GRAFİĞİ ----
-    ws2 = wb.create_sheet("Equity Curve")
-
-    ws2.append(["Date","Equity"])
-
-    for _, row in history.iterrows():
-        ws2.append([row["date"], row["equity"]])
-
-    chart = LineChart()
-    chart.title = "Equity Curve"
-    chart.y_axis.title = "Equity"
-    chart.x_axis.title = "Date"
-
-    data = Reference(ws2, min_col=2, min_row=1,
-                     max_row=len(history)+1)
-    chart.add_data(data, titles_from_data=True)
-
-    ws2.add_chart(chart, "E5")
+    ws.append(["Risk Modu", mode])
 
     filename = "/tmp/bist_core_report.xlsx"
     wb.save(filename)
 
-    return filename
+    performance_summary = (
+        f"📊 HAFTALIK PERFORMANS\n\n"
+        f"Equity: {round(history['equity'].iloc[-1],2)} TL\n"
+        f"Haftalık Getiri: {round(weekly_return*100,2)}%\n"
+        f"Drawdown: {round(dd*100,2)}%\n"
+        f"Sharpe: {round(sharpe,2)}\n"
+        f"Risk Modu: {mode}"
+    )
+
+    return filename, performance_summary
