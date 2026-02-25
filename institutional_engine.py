@@ -1,207 +1,81 @@
-import yfinance as yf
+import os
 import pandas as pd
 import numpy as np
-from openpyxl import Workbook
-from openpyxl.chart import LineChart, Reference
-import os
+import yfinance as yf
+from datetime import datetime
 
-ACCOUNT_SIZE = 100000
-BASE_RISK = 0.01
-REDUCED_RISK = 0.005
-KILL_SWITCH_DD = -0.20
 
-EQUITY_FILE = "/tmp/equity_history.csv"
-
-SYMBOLS = [
-    "THYAO.IS","ASELS.IS","SISE.IS","EREGL.IS","BIMAS.IS",
-    "AKBNK.IS","YKBNK.IS","KCHOL.IS","TUPRS.IS","SAHOL.IS",
-    "GARAN.IS","ISCTR.IS","KOZAL.IS","PETKM.IS","PGSUS.IS",
-    "TCELL.IS","TOASO.IS","FROTO.IS","ENKAI.IS","SASA.IS",
-    "HEKTS.IS","GUBRF.IS","ODAS.IS","ARCLK.IS","CCOLA.IS",
-    "ALARK.IS","DOHOL.IS","EKGYO.IS","KRDMD.IS","VESTL.IS"
+BIST30 = [
+    "ASELS.IS","THYAO.IS","KCHOL.IS","SISE.IS","EREGL.IS",
+    "GARAN.IS","AKBNK.IS","ISCTR.IS","BIMAS.IS","TUPRS.IS"
 ]
 
-# =============================
-# CORE MODEL
-# =============================
 
-def ema(data, period):
-    return data.ewm(span=period, adjust=False).mean()
+def calculate_score(df):
+    """
+    Basit skor:
+    Trend + momentum + volatilite dengesi
+    """
+    df["MA20"] = df["Close"].rolling(20).mean()
+    df["MA50"] = df["Close"].rolling(50).mean()
 
-def calculate_core_portfolio():
+    trend = 1 if df["MA20"].iloc[-1] > df["MA50"].iloc[-1] else 0
+    momentum = (df["Close"].iloc[-1] / df["Close"].iloc[-20] - 1) * 100
+    volatility = df["Close"].pct_change().std() * 100
+
+    score = trend * 40 + momentum * 0.8 - volatility * 0.5
+
+    return round(score,2), round(volatility,2)
+
+
+def generate_weekly_report():
 
     results = []
+    total_scanned = 0
+    filtered_count = 0
 
-    for symbol in SYMBOLS:
+    for symbol in BIST30:
+
         try:
-            df = yf.download(symbol, period="6mo", interval="1d",
-                             progress=False, threads=False)
+            df = yf.download(symbol, period="3mo", interval="1d", progress=False)
 
             if df.empty or len(df) < 60:
                 continue
 
-            df["EMA50"] = ema(df["Close"],50)
-            df["EMA200"] = ema(df["Close"],200)
+            total_scanned += 1
 
-            score = 0
+            score, vol = calculate_score(df)
 
-            if df["EMA50"].iloc[-1] > df["EMA200"].iloc[-1]:
-                score += 50
+            # Filtre
+            if score >= 60 and vol < 5:
+                filtered_count += 1
 
-            perf_3m = (df["Close"].iloc[-1] / df["Close"].iloc[-60] - 1)
-            if perf_3m > 0:
-                score += 50
+                results.append({
+                    "Hisse": symbol,
+                    "Skor": score,
+                    "Volatilite(%)": vol
+                })
 
-            results.append({
-                "symbol": symbol,
-                "score": score
-            })
-
-        except:
+        except Exception:
             continue
 
-    if len(results) == 0:
-        return pd.DataFrame()
 
-    df_results = pd.DataFrame(results)
-    df_results = df_results.sort_values(by="score", ascending=False).head(5)
-
-    total_score = df_results["score"].sum()
-    df_results["weight"] = df_results["score"] / total_score
-
-    return df_results
-
-# =============================
-# EQUITY ENGINE
-# =============================
-
-def load_equity():
-    if os.path.exists(EQUITY_FILE):
-        return pd.read_csv(EQUITY_FILE)
-    return pd.DataFrame(columns=["date","equity"])
-
-def save_equity(df):
-    df.to_csv(EQUITY_FILE, index=False)
-
-def calculate_real_weekly_return(core_df):
-
-    weighted_return = 0
-
-    for _, row in core_df.iterrows():
-        try:
-            df = yf.download(row["symbol"], period="7d", interval="1d",
-                             progress=False, threads=False)
-
-            if len(df) < 2:
-                continue
-
-            weekly_ret = (df["Close"].iloc[-1] / df["Close"].iloc[0]) - 1
-            weighted_return += weekly_ret * row["weight"]
-
-        except:
-            continue
-
-    return weighted_return
-
-def calculate_drawdown(history):
-    peak = history["equity"].cummax()
-    dd = (history["equity"] - peak) / peak
-    return dd.iloc[-1]
-
-def calculate_sharpe(history):
-
-    if len(history) < 2:
-        return 0
-
-    returns = history["equity"].pct_change().dropna()
-
-    if returns.std() == 0:
-        return 0
-
-    sharpe = (returns.mean() / returns.std()) * np.sqrt(52)
-    return sharpe
-
-def update_equity(core_df):
-
-    history = load_equity()
-
-    if history.empty:
-        current_equity = ACCOUNT_SIZE
-    else:
-        current_equity = history["equity"].iloc[-1]
-
-    weekly_return = calculate_real_weekly_return(core_df)
-    new_equity = current_equity * (1 + weekly_return)
-
-    new_row = pd.DataFrame({
-        "date":[pd.Timestamp.today().strftime("%Y-%m-%d")],
-        "equity":[new_equity]
-    })
-
-    history = pd.concat([history,new_row],ignore_index=True)
-    save_equity(history)
-
-    dd = calculate_drawdown(history)
-    sharpe = calculate_sharpe(history)
-
-    if dd <= KILL_SWITCH_DD:
-        risk = 0
-        mode = "KILL SWITCH"
-    elif dd < -0.10:
-        risk = REDUCED_RISK
-        mode = "RISK REDUCED"
-    else:
-        risk = BASE_RISK
-        mode = "NORMAL"
-
-    return history, dd, sharpe, risk, mode, weekly_return
-
-# =============================
-# REPORT
-# =============================
-
-def generate_weekly_report():
-
-    core_df = calculate_core_portfolio()
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "CORE 20.0"
-
-    if core_df.empty:
-        ws.append(["Veri bulunamadı"])
-        filename = "/tmp/bist_core_report.xlsx"
-        wb.save(filename)
-        return filename, None
-
-    history, dd, sharpe, risk, mode, weekly_return = update_equity(core_df)
-
-    ws.append(["Hisse","Skor","Ağırlık %"])
-
-    for _, row in core_df.iterrows():
-        ws.append([
-            row["symbol"].replace(".IS",""),
-            row["score"],
-            round(row["weight"]*100,2)
-        ])
-
-    ws.append([])
-    ws.append(["Equity", round(history["equity"].iloc[-1],2)])
-    ws.append(["Haftalık Getiri %", round(weekly_return*100,2)])
-    ws.append(["Drawdown %", round(dd*100,2)])
-    ws.append(["Sharpe", round(sharpe,2)])
-    ws.append(["Risk Modu", mode])
-
-    filename = "/tmp/bist_core_report.xlsx"
-    wb.save(filename)
-
-    performance_summary = (
-        f"📊 HAFTALIK PERFORMANS\n\n"
-        f"Equity: {round(history['equity'].iloc[-1],2)} TL\n"
-        f"Haftalık Getiri: {round(weekly_return*100,2)}%\n"
-        f"Drawdown: {round(dd*100,2)}%\n"
-        f"Sharpe: {round(sharpe,2)}\n"
-        f"Risk Modu: {mode}"
+    # Debug özeti
+    debug_text = (
+        f"📊 Tarama Özeti\n"
+        f"Toplam Taranan: {total_scanned}\n"
+        f"Filtre Geçen: {filtered_count}\n"
+        f"Filtrelenen: {total_scanned - filtered_count}"
     )
 
-    return filename, performance_summary
+
+    if len(results) == 0:
+        df_report = pd.DataFrame([{"Durum": "Filtreye uygun hisse bulunamadı"}])
+    else:
+        df_report = pd.DataFrame(results).sort_values("Skor", ascending=False)
+
+
+    filename = "bist_core_report.xlsx"
+    df_report.to_excel(filename, index=False)
+
+    return filename, debug_text
