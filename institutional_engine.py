@@ -25,6 +25,10 @@ def generate_weekly_report():
                 results.append({"Hisse": symbol, "Durum": "Veri çekilemedi"})
                 continue
 
+            # MultiIndex fix
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
             close = df["Close"].dropna()
 
             if len(close) < 20:
@@ -33,18 +37,18 @@ def generate_weekly_report():
 
             close = close.astype(float)
 
-            # MA hesaplama
-            ma20 = float(close.tail(20).mean())
-            ma50 = float(close.tail(50).mean()) if len(close) >= 50 else float(close.mean())
+            # --- GARANTİLİ SCALAR HESAPLAMA ---
+
+            ma20 = close.tail(20).mean().item()
+            ma50 = close.tail(50).mean().item() if len(close) >= 50 else close.mean().item()
 
             trend = 1 if ma20 > ma50 else 0
 
-            # Momentum
-            momentum = float((close.iloc[-1] / close.iloc[-20] - 1) * 100)
+            momentum = ((close.iloc[-1] / close.iloc[-20]) - 1) * 100
+            momentum = float(momentum)
 
-            # LOG RETURN volatilite (tam scalar)
             returns = np.log(close / close.shift(1)).dropna()
-            volatility = float(returns.std() * 100)
+            volatility = returns.std().item() * 100
 
             score = float(trend * 40 + momentum * 0.8 - volatility * 0.5)
 
@@ -52,7 +56,7 @@ def generate_weekly_report():
                 "Hisse": symbol,
                 "Skor": round(score, 2),
                 "Volatilite(%)": round(volatility, 2),
-                "Trend(0/1)": trend
+                "Trend": trend
             })
 
         except Exception as e:
