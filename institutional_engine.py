@@ -47,9 +47,9 @@ def market_regime():
     ema200 = close.ewm(span=200).mean()
     rsi_series = rsi(close)
 
-    current_price = float(close.iloc[-1])
-    current_ema200 = float(ema200.iloc[-1])
-    current_rsi = float(rsi_series.iloc[-1])
+    current_price = float(close.to_numpy()[-1])
+    current_ema200 = float(ema200.to_numpy()[-1])
+    current_rsi = float(rsi_series.to_numpy()[-1])
 
     if current_price > current_ema200 and current_rsi > 50:
         return "BULL", 0.01, 3
@@ -89,10 +89,10 @@ def scan_trades():
             rsi_series = rsi(close)
             atr_series = atr(df)
 
-            current_price = float(close.iloc[-1])
-            current_ema200 = float(ema200.iloc[-1])
-            current_rsi = float(rsi_series.iloc[-1])
-            current_atr = float(atr_series.iloc[-1])
+            current_price = float(close.to_numpy()[-1])
+            current_ema200 = float(ema200.to_numpy()[-1])
+            current_rsi = float(rsi_series.to_numpy()[-1])
+            current_atr = float(atr_series.to_numpy()[-1])
 
             if current_price < current_ema200:
                 continue
