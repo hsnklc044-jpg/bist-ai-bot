@@ -25,37 +25,46 @@ def generate_weekly_report():
                 results.append({"Hisse": symbol, "Durum": "Veri çekilemedi"})
                 continue
 
-            # MultiIndex fix
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
             close = df["Close"].dropna()
 
-            if len(close) < 20:
+            if len(close) < 50:
                 results.append({"Hisse": symbol, "Durum": "Yetersiz veri"})
                 continue
 
             close = close.astype(float)
 
-            # --- GARANTİLİ SCALAR HESAPLAMA ---
+            price = close.iloc[-1]
 
-            ma20 = close.tail(20).mean().item()
-            ma50 = close.tail(50).mean().item() if len(close) >= 50 else close.mean().item()
+            ma20 = close.tail(20).mean()
+            ma50 = close.tail(50).mean()
+
+            swing_low = close.tail(14).min()
 
             trend = 1 if ma20 > ma50 else 0
 
-            momentum = ((close.iloc[-1] / close.iloc[-20]) - 1) * 100
-            momentum = float(momentum)
+            momentum = (price / close.iloc[-20] - 1) * 100
 
             returns = np.log(close / close.shift(1)).dropna()
-            volatility = returns.std().item() * 100
+            volatility = returns.std() * 100
 
-            score = float(trend * 40 + momentum * 0.8 - volatility * 0.5)
+            score = trend * 40 + momentum * 0.8 - volatility * 0.5
+
+            # Destek = MA20 ile Swing Low arasında düşük olan
+            support = min(ma20, swing_low)
+
+            # Stop = destek altı %2
+            stop = support * 0.98
 
             results.append({
                 "Hisse": symbol,
+                "Fiyat": round(price, 2),
                 "Skor": round(score, 2),
                 "Volatilite(%)": round(volatility, 2),
+                "Destek": round(support, 2),
+                "Stop": round(stop, 2),
                 "Trend": trend
             })
 
