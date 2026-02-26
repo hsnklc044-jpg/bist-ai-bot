@@ -5,13 +5,16 @@ import json
 import os
 from datetime import datetime
 
+
+# ================= AYARLAR =================
+
 BIST30 = [
     "ASELS.IS","THYAO.IS","KCHOL.IS","SISE.IS","EREGL.IS",
     "GARAN.IS","AKBNK.IS","ISCTR.IS","BIMAS.IS","TUPRS.IS"
 ]
 
 BALANCE_FILE = "balance.json"
-ALERT_FILE = "alerts_log.json"
+TRADES_FILE = "trades_log.json"
 
 RISK_PER_TRADE = 0.01
 MAX_POSITIONS = 5
@@ -19,18 +22,37 @@ MAX_DAILY_RISK = 0.03
 
 
 # ================= BALANCE =================
+
 def load_balance():
     if os.path.exists(BALANCE_FILE):
         with open(BALANCE_FILE, "r") as f:
             return json.load(f)
     return {"balance": 100000}
 
+
 def save_balance(amount):
     with open(BALANCE_FILE, "w") as f:
         json.dump({"balance": amount}, f)
 
 
+# ================= TRADE LOG =================
+
+def load_trades():
+    if os.path.exists(TRADES_FILE):
+        with open(TRADES_FILE, "r") as f:
+            return json.load(f)
+    return []
+
+
+def save_trade(trade):
+    trades = load_trades()
+    trades.append(trade)
+    with open(TRADES_FILE, "w") as f:
+        json.dump(trades, f)
+
+
 # ================= RSI =================
+
 def calculate_rsi(close, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0)
@@ -41,7 +63,8 @@ def calculate_rsi(close, period=14):
     return 100 - (100 / (1 + rs))
 
 
-# ================= STRONG LEVELS =================
+# ================= DESTEK/DİRENÇ =================
+
 def find_strong_levels(close):
     prices = close.tail(90).values
     levels = []
@@ -61,7 +84,8 @@ def find_strong_levels(close):
     return sorted(list(set([round(x,2) for x in strong])))
 
 
-# ================= MAIN ENGINE =================
+# ================= ANA MOTOR =================
+
 def generate_weekly_report():
 
     balance_data = load_balance()
@@ -129,6 +153,13 @@ def generate_weekly_report():
                     "RiskTL": int(risk_amount)
                 })
 
+                save_trade({
+                    "symbol": symbol,
+                    "rr": rr_ratio,
+                    "risk": RISK_PER_TRADE,
+                    "date": datetime.now().strftime("%Y-%m-%d")
+                })
+
                 daily_risk_used += RISK_PER_TRADE
                 position_count += 1
 
@@ -144,12 +175,14 @@ def generate_weekly_report():
     return filename, telegram_text
 
 
+# ================= TELEGRAM FORMAT =================
+
 def format_message(df, balance, daily_risk, pos_count):
 
     message = f"🏦 RİSK MOTORU RAPOR\n\nPortföy: {balance} TL\n"
 
     if df.empty:
-        message += "Uygun CORE setup yok."
+        message += "\nUygun CORE setup yok."
     else:
         for _, row in df.iterrows():
             message += (
@@ -163,5 +196,28 @@ def format_message(df, balance, daily_risk, pos_count):
 
     message += f"\nToplam Günlük Risk: %{daily_risk*100}\n"
     message += f"Açık Pozisyon: {pos_count}/{MAX_POSITIONS}"
+
+    return message
+
+
+# ================= PERFORMANCE =================
+
+def get_performance():
+
+    trades = load_trades()
+
+    if not trades:
+        return "Henüz işlem kaydı yok."
+
+    total = len(trades)
+    avg_rr = sum(t["rr"] for t in trades) / total
+    total_risk = sum(t["risk"] for t in trades)
+
+    message = (
+        "📊 Performans Özeti\n\n"
+        f"Toplam İşlem: {total}\n"
+        f"Ortalama R/R: {round(avg_rr,2)}\n"
+        f"Toplam Risk Kullanımı: %{round(total_risk*100,2)}"
+    )
 
     return message
