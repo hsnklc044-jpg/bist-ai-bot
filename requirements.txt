@@ -1,5 +1,5 @@
-python-telegram-bot==20.7
-yfinance
+python-telegram-bot[job-queue]==20.7
 pandas
 numpy
+yfinance
 openpyxl
