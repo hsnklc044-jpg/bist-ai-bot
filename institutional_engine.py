@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 
 BASE_RISK = 0.01
-MAX_TRADES = 3
 MIN_RR = 2.0
 
 WATCHLIST = [
@@ -36,8 +35,40 @@ def atr(df, period=14):
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
+# ================= MARKET REGIME =================
+def market_regime():
+
+    df = yf.download("XU100.IS", period="6mo", interval="1d", progress=False)
+
+    if df.empty:
+        return "NEUTRAL", 0.005, 2
+
+    close = df["Close"]
+    ema200 = close.ewm(span=200).mean()
+    current_price = close.iloc[-1]
+    current_rsi = rsi(close).iloc[-1]
+
+    if current_price > ema200.iloc[-1] and current_rsi > 50:
+        return "BULL", 0.01, 3
+    elif current_price > ema200.iloc[-1]:
+        return "NEUTRAL", 0.005, 2
+    else:
+        return "BEAR", 0.0, 0
+
 # ================= SCAN =================
 def scan_trades():
+
+    regime, risk_per_trade, max_trades = market_regime()
+
+    if regime == "BEAR":
+        return {
+            "regime": {
+                "regime": regime,
+                "risk": risk_per_trade,
+                "max_trades": max_trades
+            },
+            "trades": []
+        }
 
     trades = []
 
@@ -56,17 +87,14 @@ def scan_trades():
             current_rsi = rsi(close).iloc[-1]
             current_atr = atr(df).iloc[-1]
 
-            # TREND: sadece EMA200 üstü
             if current_price < ema200.iloc[-1]:
                 continue
 
-            # RSI filtresi
             if current_rsi < 48:
                 continue
 
             recent_high = high.tail(20).max()
 
-            # Breakout'a yakınlık
             if current_price < recent_high * 0.99:
                 continue
 
@@ -100,9 +128,9 @@ def scan_trades():
 
     return {
         "regime": {
-            "regime": "STABLE_PRO",
-            "risk": BASE_RISK,
-            "max_trades": MAX_TRADES
+            "regime": regime,
+            "risk": risk_per_trade,
+            "max_trades": max_trades
         },
-        "trades": trades[:MAX_TRADES]
+        "trades": trades[:max_trades]
     }
