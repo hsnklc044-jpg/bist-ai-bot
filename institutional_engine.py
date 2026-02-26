@@ -22,29 +22,27 @@ def generate_weekly_report():
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
 
             if df.empty:
-                results.append({
-                    "Hisse": symbol,
-                    "Durum": "Veri çekilemedi"
-                })
+                results.append({"Hisse": symbol, "Durum": "Veri çekilemedi"})
                 continue
 
             close = df["Close"].dropna().values
 
             if len(close) < 20:
-                results.append({
-                    "Hisse": symbol,
-                    "Durum": "Yetersiz veri"
-                })
+                results.append({"Hisse": symbol, "Durum": "Yetersiz veri"})
                 continue
 
-            # Güvenli MA hesaplama
+            # MA hesaplama
             ma20 = np.mean(close[-20:])
             ma50 = np.mean(close[-50:]) if len(close) >= 50 else np.mean(close)
 
             trend = 1 if ma20 > ma50 else 0
 
-            momentum = ((close[-1] / close[-min(20,len(close))]) - 1) * 100
-            volatility = np.std(np.diff(close) / close[:-1]) * 100
+            # Momentum
+            momentum = ((close[-1] / close[-20]) - 1) * 100
+
+            # LOG RETURN volatilite (stabil yöntem)
+            returns = np.diff(np.log(close))
+            volatility = np.std(returns) * 100
 
             score = trend * 40 + momentum * 0.8 - volatility * 0.5
 
@@ -56,16 +54,11 @@ def generate_weekly_report():
             })
 
         except Exception as e:
-            results.append({
-                "Hisse": symbol,
-                "Hata": str(e)
-            })
+            results.append({"Hisse": symbol, "Hata": str(e)})
 
 
-    # DataFrame oluştur
     df_report = pd.DataFrame(results)
 
-    # Eğer Skor kolonu varsa sırala
     if "Skor" in df_report.columns:
         df_report = df_report.sort_values("Skor", ascending=False)
 
