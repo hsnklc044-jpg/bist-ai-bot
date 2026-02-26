@@ -14,10 +14,30 @@ BIST30 = [
 
 BALANCE_FILE = "balance.json"
 TRADES_FILE = "trades_log.json"
+SYSTEM_FILE = "system_state.json"
 
 RISK_PER_TRADE = 0.01
 MAX_POSITIONS = 5
 MAX_DAILY_RISK = 0.03
+MAX_DRAWDOWN = 0.05
+MAX_CONSECUTIVE_LOSS = 3
+
+
+# ================= STATE =================
+
+def load_system():
+    if os.path.exists(SYSTEM_FILE):
+        with open(SYSTEM_FILE, "r") as f:
+            return json.load(f)
+    return {
+        "peak_balance": 100000,
+        "consecutive_losses": 0,
+        "locked": False
+    }
+
+def save_system(state):
+    with open(SYSTEM_FILE, "w") as f:
+        json.dump(state, f)
 
 
 # ================= BALANCE =================
@@ -48,6 +68,32 @@ def save_trade(trade):
         json.dump(trades, f)
 
 
+# ================= RİSK KONTROL =================
+
+def risk_allowed():
+
+    balance = load_balance()["balance"]
+    system = load_system()
+
+    if system["locked"]:
+        return False, "⚠ Sistem kilitli."
+
+    peak = system["peak_balance"]
+    drawdown = (peak - balance) / peak
+
+    if drawdown >= MAX_DRAWDOWN:
+        system["locked"] = True
+        save_system(system)
+        return False, "⚠ Max drawdown aşıldı."
+
+    if system["consecutive_losses"] >= MAX_CONSECUTIVE_LOSS:
+        system["locked"] = True
+        save_system(system)
+        return False, "⚠ Üst üste kayıp limiti."
+
+    return True, ""
+
+
 # ================= RSI =================
 
 def calculate_rsi(close, period=14):
@@ -60,69 +106,35 @@ def calculate_rsi(close, period=14):
     return 100 - (100 / (1 + rs))
 
 
-# ================= DESTEK / DİRENÇ =================
-
-def find_strong_levels(close):
-    prices = close.tail(90).values
-    levels = []
-
-    for i in range(2, len(prices)-2):
-        if prices[i] < prices[i-1] and prices[i] < prices[i+1]:
-            levels.append(prices[i])
-        if prices[i] > prices[i-1] and prices[i] > prices[i+1]:
-            levels.append(prices[i])
-
-    strong = []
-    for lvl in levels:
-        cluster = [x for x in levels if abs(x - lvl) / lvl < 0.01]
-        if len(cluster) >= 2:
-            strong.append(np.mean(cluster))
-
-    return sorted(list(set([round(x,2) for x in strong])))
-
-
 # ================= ANA MOTOR =================
 
 def generate_weekly_report():
 
-    balance_data = load_balance()
-    balance = balance_data["balance"]
-    risk_amount = balance * RISK_PER_TRADE
+    allowed, msg = risk_allowed()
+    if not allowed:
+        return None, msg
 
-    daily_risk_used = 0
-    position_count = 0
+    balance = load_balance()["balance"]
+    risk_amount = balance * RISK_PER_TRADE
 
     results = []
 
     for symbol in BIST30:
 
-        if position_count >= MAX_POSITIONS:
-            break
-
         try:
             df = yf.download(symbol, period="6mo", interval="1d", progress=False)
-
             if df.empty:
                 continue
 
             close = df["Close"].dropna().astype(float)
-
             if len(close) < 90:
                 continue
 
             price = float(close.iloc[-1])
             rsi = float(calculate_rsi(close).iloc[-1])
 
-            strong_levels = find_strong_levels(close)
-
-            supports = [lvl for lvl in strong_levels if lvl < price]
-            resistances = [lvl for lvl in strong_levels if lvl > price]
-
-            if not supports or not resistances:
-                continue
-
-            support = max(supports)
-            resistance = min(resistances)
+            support = close.tail(20).min()
+            resistance = close.tail(20).max()
 
             stop = support * 0.98
             risk_per_share = price - stop
@@ -131,34 +143,26 @@ def generate_weekly_report():
                 continue
 
             rr_ratio = (resistance - price) / risk_per_share
-            mesafe = abs(price - support) / support * 100
 
-            if mesafe < 5 and 35 <= rsi <= 70 and rr_ratio >= 1.8:
+            if 35 <= rsi <= 70 and rr_ratio >= 1.8:
 
                 lot = int(risk_amount / risk_per_share)
-
-                if daily_risk_used + RISK_PER_TRADE > MAX_DAILY_RISK:
-                    break
 
                 results.append({
                     "Hisse": symbol,
                     "Fiyat": round(price,2),
                     "Stop": round(stop,2),
                     "R/R": round(rr_ratio,2),
-                    "Lot": lot,
-                    "RiskTL": int(risk_amount)
+                    "Lot": lot
                 })
 
                 save_trade({
                     "symbol": symbol,
                     "rr": rr_ratio,
-                    "risk": RISK_PER_TRADE,
-                    "date": datetime.now().strftime("%Y-%m-%d"),
                     "closed": False
                 })
 
-                daily_risk_used += RISK_PER_TRADE
-                position_count += 1
+                break
 
         except:
             continue
@@ -167,52 +171,39 @@ def generate_weekly_report():
     filename = "bist_core_report.xlsx"
     df_report.to_excel(filename, index=False)
 
-    telegram_text = format_message(df_report, balance, daily_risk_used, position_count)
-
-    return filename, telegram_text
+    return filename, "📊 Rapor üretildi."
 
 
-def format_message(df, balance, daily_risk, pos_count):
-
-    message = f"🏦 RİSK MOTORU RAPOR\n\nPortföy: {balance} TL\n"
-
-    if df.empty:
-        message += "\nUygun CORE setup yok."
-    else:
-        for _, row in df.iterrows():
-            message += (
-                f"\n{row['Hisse'].replace('.IS','')}\n"
-                f"Fiyat: {row['Fiyat']}\n"
-                f"Stop: {row['Stop']}\n"
-                f"R/R: {row['R/R']}\n"
-                f"Lot: {row['Lot']}\n"
-                f"Risk: {row['RiskTL']} TL\n"
-            )
-
-    message += f"\nToplam Günlük Risk: %{daily_risk*100}"
-    message += f"\nAçık Pozisyon: {pos_count}/{MAX_POSITIONS}"
-
-    return message
-
-
-# ================= CLOSE TRADE =================
+# ================= CLOSE =================
 
 def close_trade(symbol, rr_result):
 
     trades = load_trades()
-    balance_data = load_balance()
-    balance = balance_data["balance"]
+    balance = load_balance()["balance"]
+    system = load_system()
 
     for t in reversed(trades):
         if t["symbol"] == symbol and not t["closed"]:
+
             risk_amount = balance * RISK_PER_TRADE
             pnl = risk_amount * rr_result
             balance += pnl
+
             t["closed"] = True
             t["realized_rr"] = rr_result
+
+            if rr_result < 0:
+                system["consecutive_losses"] += 1
+            else:
+                system["consecutive_losses"] = 0
+
+            if balance > system["peak_balance"]:
+                system["peak_balance"] = balance
+
             break
 
     save_balance(balance)
+    save_system(system)
 
     with open(TRADES_FILE, "w") as f:
         json.dump(trades, f)
@@ -220,32 +211,19 @@ def close_trade(symbol, rr_result):
     return balance
 
 
-# ================= PERFORMANCE =================
-
-def get_performance():
-
-    trades = load_trades()
-
-    if not trades:
-        return "Henüz işlem yok."
-
-    realized = [t["realized_rr"] for t in trades if t.get("closed")]
-
-    total = len(realized)
-    avg_rr = sum(realized)/total if total > 0 else 0
-
-    return (
-        "📊 Performans Özeti\n\n"
-        f"Kapanan İşlem: {total}\n"
-        f"Ortalama R/R: {round(avg_rr,2)}"
-    )
-
+# ================= EQUITY =================
 
 def get_equity_report():
 
     balance = load_balance()["balance"]
+    system = load_system()
+
+    drawdown = (system["peak_balance"] - balance) / system["peak_balance"]
 
     return (
         "📈 EQUITY RAPOR\n\n"
-        f"Güncel Bakiye: {round(balance,2)} TL"
+        f"Bakiye: {round(balance,2)} TL\n"
+        f"Peak: {round(system['peak_balance'],2)} TL\n"
+        f"Drawdown: %{round(drawdown*100,2)}\n"
+        f"Consecutive Loss: {system['consecutive_losses']}"
     )
