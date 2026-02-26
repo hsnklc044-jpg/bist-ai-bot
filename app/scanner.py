@@ -36,29 +36,36 @@ def scan_market():
         if len(df) < 20:
             continue
 
-        df["rsi"] = calculate_rsi(df["close"])
+        # Close'u garanti düz hale getir
+        close = pd.Series(df["close"]).astype(float).values
 
-        latest = df.iloc[-1]
+        # RSI hesapla
+        rsi_series = calculate_rsi(pd.Series(close))
+        rsi = rsi_series.values
+
+        if len(close) < 20 or len(rsi) < 20:
+            continue
+
+        latest_close = float(close[-1])
+        latest_rsi = float(rsi[-1])
+
+        ma20 = float(pd.Series(close).rolling(20).mean().iloc[-1])
+        momentum = latest_close - float(close[-5])
 
         score = 0
 
-        # 20 günlük trend
-        ma20 = df["close"].rolling(20).mean().iloc[-1]
-        if latest["close"] > ma20:
+        if latest_close > ma20:
             score += 1
 
-        # RSI filtresi
-        if latest["rsi"] > 50:
+        if latest_rsi > 50:
             score += 1
 
-        # 5 günlük momentum
-        momentum = latest["close"] - df["close"].iloc[-5]
         if momentum > 0:
             score += 1
 
         results.append({
             "symbol": symbol.replace(".IS", ""),
-            "rsi": round(float(latest["rsi"]), 2),
+            "rsi": round(latest_rsi, 2),
             "score": score
         })
 
