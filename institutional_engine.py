@@ -60,7 +60,6 @@ def find_strong_levels(close):
             levels.append(prices[i])
 
     strong = []
-
     for lvl in levels:
         cluster = [x for x in levels if abs(x - lvl) / lvl < 0.01]
         if len(cluster) >= 2:
@@ -89,7 +88,6 @@ def generate_weekly_report():
                 df.columns = df.columns.get_level_values(0)
 
             close = df["Close"].dropna().astype(float)
-            volume = df["Volume"].astype(float)
 
             if len(close) < 90:
                 continue
@@ -118,7 +116,7 @@ def generate_weekly_report():
             rr_ratio = reward / risk
             mesafe = abs(price - support) / support * 100
 
-            data_row = {
+            row_data = {
                 "Hisse": symbol,
                 "Fiyat": round(price,2),
                 "Destek": round(support,2),
@@ -135,19 +133,19 @@ def generate_weekly_report():
                 35 <= rsi <= 70 and
                 rr_ratio >= 1.8
             ):
-                core_results.append(data_row)
+                core_results.append(row_data)
 
                 if mesafe <= 1 and not already_alerted(symbol):
                     alarm_message += f"🚨 {symbol.replace('.IS','')} destek %1 içinde!\n"
                     mark_alerted(symbol)
 
-            # ================= WATCHLIST =================
+            # ================= WATCHLIST (Genişletilmiş) =================
             elif (
-                mesafe < 8 and
-                30 <= rsi <= 75 and
-                rr_ratio >= 1.4
+                mesafe < 10 and
+                25 <= rsi <= 80 and
+                rr_ratio >= 1.2
             ):
-                watchlist_results.append(data_row)
+                watchlist_results.append(row_data)
 
         except:
             continue
@@ -177,7 +175,7 @@ def format_message(core_df, watch_df):
     message = "🏦 DUAL ENGINE RAPOR\n\n"
 
     if not core_df.empty:
-        message += "🎯 CORE SETUP (Hazır)\n"
+        message += "🎯 CORE SETUP\n"
         for _, row in core_df.iterrows():
             message += (
                 f"{row['Hisse'].replace('.IS','')} | "
@@ -189,7 +187,7 @@ def format_message(core_df, watch_df):
         message += "🎯 CORE SETUP: Yok\n\n"
 
     if not watch_df.empty:
-        message += "👀 WATCHLIST (Hazırlanıyor)\n"
+        message += "👀 WATCHLIST\n"
         for _, row in watch_df.iterrows():
             message += (
                 f"{row['Hisse'].replace('.IS','')} | "
