@@ -9,32 +9,36 @@ BIST30 = [
 ]
 
 
+def calculate_rsi(close, period=14):
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+
 def find_strong_levels(close):
-
-    prices = close.tail(60).values
-
+    prices = close.tail(90).values
     levels = []
 
-    # Lokal dip ve tepeleri bul
     for i in range(2, len(prices)-2):
-
         if prices[i] < prices[i-1] and prices[i] < prices[i+1]:
             levels.append(prices[i])
-
         if prices[i] > prices[i-1] and prices[i] > prices[i+1]:
             levels.append(prices[i])
 
-    # Benzer seviyeleri grupla (±1%)
-    strong_levels = []
+    strong = []
 
-    for level in levels:
-        cluster = [x for x in levels if abs(x - level) / level < 0.01]
+    for lvl in levels:
+        cluster = [x for x in levels if abs(x - lvl) / lvl < 0.01]
         if len(cluster) >= 2:
-            strong_levels.append(np.mean(cluster))
+            strong.append(np.mean(cluster))
 
-    strong_levels = list(set([round(x,2) for x in strong_levels]))
-
-    return sorted(strong_levels)
+    strong = list(set([round(x,2) for x in strong]))
+    return sorted(strong)
 
 
 def generate_weekly_report():
@@ -53,32 +57,56 @@ def generate_weekly_report():
                 df.columns = df.columns.get_level_values(0)
 
             close = df["Close"].dropna().astype(float)
+            volume = df["Volume"]
 
-            if len(close) < 60:
+            if len(close) < 90:
                 continue
 
             price = close.iloc[-1]
+
+            rsi_series = calculate_rsi(close)
+            rsi = rsi_series.iloc[-1]
+
+            avg_vol_5 = volume.tail(5).mean()
+            avg_vol_20 = volume.tail(20).mean()
 
             strong_levels = find_strong_levels(close)
 
             supports = [lvl for lvl in strong_levels if lvl < price]
             resistances = [lvl for lvl in strong_levels if lvl > price]
 
-            support = max(supports) if supports else None
-            resistance = min(resistances) if resistances else None
+            if not supports or not resistances:
+                continue
 
-            if support:
-                stop = support * 0.98
-            else:
-                stop = None
+            support = max(supports)
+            resistance = min(resistances)
 
-            results.append({
-                "Hisse": symbol,
-                "Fiyat": round(price,2),
-                "Güçlü Destek": support,
-                "Güçlü Direnç": resistance,
-                "Stop": round(stop,2) if stop else None
-            })
+            stop = support * 0.98
+
+            risk = price - stop
+            reward = resistance - price
+
+            if risk <= 0:
+                continue
+
+            rr_ratio = reward / risk
+
+            # ---- PROFESYONEL FİLTRE ----
+            if (
+                abs(price - support) / support < 0.03 and
+                40 <= rsi <= 65 and
+                avg_vol_5 > avg_vol_20 and
+                rr_ratio >= 2
+            ):
+                results.append({
+                    "Hisse": symbol,
+                    "Fiyat": round(price,2),
+                    "Destek": round(support,2),
+                    "Direnç": round(resistance,2),
+                    "Stop": round(stop,2),
+                    "RSI": round(rsi,2),
+                    "R/R": round(rr_ratio,2)
+                })
 
         except:
             continue
@@ -89,25 +117,27 @@ def generate_weekly_report():
     filename = "bist_core_report.xlsx"
     df_report.to_excel(filename, index=False)
 
-    telegram_text = format_telegram_message(df_report)
+    telegram_text = format_message(df_report)
 
     return filename, telegram_text
 
 
-def format_telegram_message(df):
+def format_message(df):
 
     if df.empty:
-        return "⚠️ Veri bulunamadı."
+        return "⚠️ Profesyonel filtreye uygun setup yok."
 
-    message = "📊 GÜÇLÜ SEVİYELER\n\n"
+    message = "🏦 PROFESYONEL SETUPLAR\n\n"
 
     for _, row in df.iterrows():
         message += (
             f"{row['Hisse'].replace('.IS','')}\n"
             f"Fiyat: {row['Fiyat']}\n"
-            f"Destek: {row['Güçlü Destek']}\n"
-            f"Direnç: {row['Güçlü Direnç']}\n"
+            f"Destek: {row['Destek']}\n"
+            f"Direnç: {row['Direnç']}\n"
             f"Stop: {row['Stop']}\n"
+            f"RSI: {row['RSI']}\n"
+            f"R/R: {row['R/R']}\n"
             f"---\n"
         )
 
