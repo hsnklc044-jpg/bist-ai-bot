@@ -35,10 +35,19 @@ def run_backtest(years=3):
 
         close = df["Close"]
         rsi = calculate_rsi(close)
+        ema200 = close.ewm(span=200).mean()
 
-        for i in range(50, len(df)-5):
+        for i in range(250, len(df)-5):
 
             price = close.iloc[i]
+
+            # 🔥 Trend filtresi
+            if price < ema200.iloc[i]:
+                continue
+
+            if rsi.iloc[i] < 50:
+                continue
+
             support = close.iloc[i-20:i].min()
             resistance = close.iloc[i-20:i].max()
 
@@ -51,7 +60,7 @@ def run_backtest(years=3):
 
             rr = reward / risk
 
-            if 35 <= rsi.iloc[i] <= 70 and rr >= 1.8:
+            if rr >= 1.8:
 
                 risk_amount = balance * RISK_PER_TRADE
                 pnl = risk_amount * rr
@@ -77,17 +86,20 @@ def analyze_results(equity_curve, trades):
     max_dd = np.max(drawdown)
 
     win_rate = sum(1 for t in trades if t > 0) / len(trades) if trades else 0
-    profit_factor = sum(t for t in trades if t > 0) / abs(sum(t for t in trades if t < 0)) if any(t < 0 for t in trades) else 0
+    profit_factor = (
+        sum(t for t in trades if t > 0) /
+        abs(sum(t for t in trades if t < 0))
+        if any(t < 0 for t in trades) else 0
+    )
 
-    # Grafik
     plt.figure(figsize=(8,4))
     plt.plot(equity_curve)
-    plt.title("Backtest Equity Curve")
+    plt.title("Trend Filtered Backtest Equity")
     plt.grid(True)
     plt.savefig("backtest_equity.png")
     plt.close()
 
-    result = {
+    return {
         "Final Balance": round(equity_curve[-1],2),
         "Sharpe Ratio": round(sharpe,2),
         "Max Drawdown %": round(max_dd*100,2),
@@ -95,5 +107,3 @@ def analyze_results(equity_curve, trades):
         "Profit Factor": round(profit_factor,2),
         "Total Trades": len(trades)
     }
-
-    return result
