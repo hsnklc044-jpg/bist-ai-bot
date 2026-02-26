@@ -5,7 +5,6 @@ import json
 import os
 from datetime import datetime
 
-
 # ================= AYARLAR =================
 
 BIST30 = [
@@ -29,7 +28,6 @@ def load_balance():
             return json.load(f)
     return {"balance": 100000}
 
-
 def save_balance(amount):
     with open(BALANCE_FILE, "w") as f:
         json.dump({"balance": amount}, f)
@@ -42,7 +40,6 @@ def load_trades():
         with open(TRADES_FILE, "r") as f:
             return json.load(f)
     return []
-
 
 def save_trade(trade):
     trades = load_trades()
@@ -63,7 +60,7 @@ def calculate_rsi(close, period=14):
     return 100 - (100 / (1 + rs))
 
 
-# ================= DESTEK/DİRENÇ =================
+# ================= DESTEK / DİRENÇ =================
 
 def find_strong_levels(close):
     prices = close.tail(90).values
@@ -136,7 +133,6 @@ def generate_weekly_report():
             rr_ratio = (resistance - price) / risk_per_share
             mesafe = abs(price - support) / support * 100
 
-            # CORE filtre
             if mesafe < 5 and 35 <= rsi <= 70 and rr_ratio >= 1.8:
 
                 lot = int(risk_amount / risk_per_share)
@@ -157,7 +153,8 @@ def generate_weekly_report():
                     "symbol": symbol,
                     "rr": rr_ratio,
                     "risk": RISK_PER_TRADE,
-                    "date": datetime.now().strftime("%Y-%m-%d")
+                    "date": datetime.now().strftime("%Y-%m-%d"),
+                    "closed": False
                 })
 
                 daily_risk_used += RISK_PER_TRADE
@@ -174,8 +171,6 @@ def generate_weekly_report():
 
     return filename, telegram_text
 
-
-# ================= TELEGRAM FORMAT =================
 
 def format_message(df, balance, daily_risk, pos_count):
 
@@ -194,10 +189,35 @@ def format_message(df, balance, daily_risk, pos_count):
                 f"Risk: {row['RiskTL']} TL\n"
             )
 
-    message += f"\nToplam Günlük Risk: %{daily_risk*100}\n"
-    message += f"Açık Pozisyon: {pos_count}/{MAX_POSITIONS}"
+    message += f"\nToplam Günlük Risk: %{daily_risk*100}"
+    message += f"\nAçık Pozisyon: {pos_count}/{MAX_POSITIONS}"
 
     return message
+
+
+# ================= CLOSE TRADE =================
+
+def close_trade(symbol, rr_result):
+
+    trades = load_trades()
+    balance_data = load_balance()
+    balance = balance_data["balance"]
+
+    for t in reversed(trades):
+        if t["symbol"] == symbol and not t["closed"]:
+            risk_amount = balance * RISK_PER_TRADE
+            pnl = risk_amount * rr_result
+            balance += pnl
+            t["closed"] = True
+            t["realized_rr"] = rr_result
+            break
+
+    save_balance(balance)
+
+    with open(TRADES_FILE, "w") as f:
+        json.dump(trades, f)
+
+    return balance
 
 
 # ================= PERFORMANCE =================
@@ -207,17 +227,25 @@ def get_performance():
     trades = load_trades()
 
     if not trades:
-        return "Henüz işlem kaydı yok."
+        return "Henüz işlem yok."
 
-    total = len(trades)
-    avg_rr = sum(t["rr"] for t in trades) / total
-    total_risk = sum(t["risk"] for t in trades)
+    realized = [t["realized_rr"] for t in trades if t.get("closed")]
 
-    message = (
+    total = len(realized)
+    avg_rr = sum(realized)/total if total > 0 else 0
+
+    return (
         "📊 Performans Özeti\n\n"
-        f"Toplam İşlem: {total}\n"
-        f"Ortalama R/R: {round(avg_rr,2)}\n"
-        f"Toplam Risk Kullanımı: %{round(total_risk*100,2)}"
+        f"Kapanan İşlem: {total}\n"
+        f"Ortalama R/R: {round(avg_rr,2)}"
     )
 
-    return message
+
+def get_equity_report():
+
+    balance = load_balance()["balance"]
+
+    return (
+        "📈 EQUITY RAPOR\n\n"
+        f"Güncel Bakiye: {round(balance,2)} TL"
+    )
