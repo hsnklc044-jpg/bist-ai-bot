@@ -8,153 +8,119 @@ from telegram.ext import (
 )
 
 from institutional_engine import (
-    generate_weekly_report,
-    save_balance,
-    close_trade,
-    generate_equity_chart,
-    check_intraday_alerts
+    scan_trades,
 )
-
-from backtest_engine import run_backtest
-
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 
-# ================= BASIC COMMANDS =================
+# ================= START =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     await update.message.reply_text(
-        "🏦 AI Trading Desk Aktif\n"
+        "🏦 AI Trading Desk Aktif\n\n"
         "Komutlar:\n"
-        "/weekly\n"
-        "/balance 150000\n"
-        "/close EREGL 2.0\n"
-        "/equitycurve\n"
-        "/backtest"
+        "/scan  → Günlük trade taraması\n"
     )
 
 
-# ================= SABAH RAPOR =================
+# ================= SCAN =================
 
-async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("📊 Sabah raporu hazırlanıyor...")
+    await update.message.reply_text("📊 Tarama başlatıldı...")
 
-    filename, text = generate_weekly_report()
+    result = scan_trades()
 
-    if filename:
-        with open(filename, "rb") as f:
-            await context.bot.send_document(
-                chat_id=update.effective_chat.id,
-                document=f
-            )
+    regime = result["regime"]
 
-    await update.message.reply_text(text)
+    regime_name = regime["regime"]
+    risk_percent = round(regime["risk"] * 100, 2)
+    max_trades = regime["max_trades"]
 
-
-# ================= BALANCE =================
-
-async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if not context.args:
-        await update.message.reply_text("Kullanım: /balance 150000")
+    # 🔴 KRİZ MODU
+    if regime_name == "CRISIS":
+        await update.message.reply_text(
+            "🔴 KRİZ MODU\n\n"
+            "Yeni işlem açılmaz.\n"
+            "Açık pozisyonlar %50 azaltılmalı.\n"
+        )
         return
 
-    try:
-        amount = int(context.args[0])
-        save_balance(amount)
-        await update.message.reply_text(f"💰 Yeni Bakiye: {amount} TL")
-    except:
-        await update.message.reply_text("Geçersiz değer.")
+    trades = result.get("trades", [])
 
-
-# ================= CLOSE TRADE =================
-
-async def close(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    if len(context.args) != 2:
-        await update.message.reply_text("Kullanım: /close EREGL 2.0")
+    if not trades:
+        await update.message.reply_text(
+            f"🟡 {regime_name} REJİM\n"
+            f"Risk: %{risk_percent}\n"
+            f"Max Trade: {max_trades}\n\n"
+            "Uygun trade bulunamadı."
+        )
         return
 
-    symbol = context.args[0] + ".IS"
-    rr = float(context.args[1])
-
-    new_balance = close_trade(symbol, rr)
-
-    await update.message.reply_text(
-        f"✅ İşlem kapandı.\nYeni Bakiye: {round(new_balance,2)} TL"
+    message = (
+        f"🟢 {regime_name} REJİM\n"
+        f"Risk: %{risk_percent}\n"
+        f"Max Trade: {max_trades}\n\n"
+        f"Seçilen Trade'ler:\n\n"
     )
 
-
-# ================= EQUITY CURVE =================
-
-async def equitycurve(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    filename, text = generate_equity_chart()
-
-    if filename:
-        with open(filename, "rb") as f:
-            await context.bot.send_photo(
-                chat_id=update.effective_chat.id,
-                photo=f
-            )
-
-    await update.message.reply_text(text)
-
-
-# ================= BACKTEST =================
-
-async def backtest(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    await update.message.reply_text("⏳ 3 yıllık backtest çalışıyor...")
-
-    results = run_backtest(3)
-
-    message = "📊 BACKTEST RAPOR\n\n"
-
-    for k, v in results.items():
-        message += f"{k}: {v}\n"
-
-    with open("backtest_equity.png", "rb") as f:
-        await context.bot.send_photo(
-            chat_id=update.effective_chat.id,
-            photo=f
+    for i, trade in enumerate(trades, 1):
+        message += (
+            f"{i}. {trade['symbol']}\n"
+            f"   Fiyat: {trade['price']}\n"
+            f"   R/R: {trade['rr']}\n"
+            f"   Skor: {trade['score']}\n\n"
         )
 
     await update.message.reply_text(message)
 
 
-# ================= OTOMATİK SABAH JOB =================
+# ================= OTOMATİK SABAH TARAMA =================
 
 async def morning_job(context: ContextTypes.DEFAULT_TYPE):
 
-    filename, text = generate_weekly_report()
+    result = scan_trades()
+    regime = result["regime"]
 
-    if filename:
-        with open(filename, "rb") as f:
-            await context.bot.send_document(
-                chat_id=context.job.chat_id,
-                document=f
-            )
+    regime_name = regime["regime"]
+    risk_percent = round(regime["risk"] * 100, 2)
+    max_trades = regime["max_trades"]
+
+    if regime_name == "CRISIS":
+        await context.bot.send_message(
+            chat_id=context.job.chat_id,
+            text="🔴 KRİZ MODU\nYeni işlem yok.\nAçık pozisyonları azalt."
+        )
+        return
+
+    trades = result.get("trades", [])
+
+    if not trades:
+        await context.bot.send_message(
+            chat_id=context.job.chat_id,
+            text=f"🟡 {regime_name} REJİM\nRisk: %{risk_percent}\nTrade yok."
+        )
+        return
+
+    message = (
+        f"🟢 {regime_name} REJİM\n"
+        f"Risk: %{risk_percent}\n"
+        f"Max Trade: {max_trades}\n\n"
+    )
+
+    for i, trade in enumerate(trades, 1):
+        message += (
+            f"{i}. {trade['symbol']} | "
+            f"Fiyat: {trade['price']} | "
+            f"R/R: {trade['rr']}\n"
+        )
 
     await context.bot.send_message(
         chat_id=context.job.chat_id,
-        text=text
+        text=message
     )
-
-
-# ================= GÜN İÇİ ALARM JOB =================
-
-async def intraday_job(context: ContextTypes.DEFAULT_TYPE):
-
-    messages = check_intraday_alerts()
-
-    for msg in messages:
-        await context.bot.send_message(
-            chat_id=context.job.chat_id,
-            text=msg
-        )
 
 
 # ================= MAIN =================
@@ -163,25 +129,13 @@ def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    # Komutlar
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("weekly", weekly))
-    app.add_handler(CommandHandler("balance", balance))
-    app.add_handler(CommandHandler("close", close))
-    app.add_handler(CommandHandler("equitycurve", equitycurve))
-    app.add_handler(CommandHandler("backtest", backtest))
+    app.add_handler(CommandHandler("scan", scan))
 
-    # Sabah 09:15
+    # Sabah 09:15 otomatik tarama
     app.job_queue.run_daily(
         morning_job,
         time=time(9, 15)
-    )
-
-    # 10 dakikada bir alarm
-    app.job_queue.run_repeating(
-        intraday_job,
-        interval=600,
-        first=60
     )
 
     app.run_polling()
