@@ -7,9 +7,9 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from institutional_engine import (
-    scan_trades,
-)
+from institutional_engine import scan_trades
+from backtest_engine import run_monte_carlo
+
 
 TOKEN = os.getenv("BOT_TOKEN")
 
@@ -17,11 +17,11 @@ TOKEN = os.getenv("BOT_TOKEN")
 # ================= START =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     await update.message.reply_text(
         "🏦 AI Trading Desk Aktif\n\n"
         "Komutlar:\n"
-        "/scan  → Günlük trade taraması\n"
+        "/scan → Günlük tarama\n"
+        "/backtestmc → Monte Carlo risk testi\n"
     )
 
 
@@ -32,7 +32,6 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📊 Tarama başlatıldı...")
 
     result = scan_trades()
-
     regime = result["regime"]
 
     regime_name = regime["regime"]
@@ -44,7 +43,7 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "🔴 KRİZ MODU\n\n"
             "Yeni işlem açılmaz.\n"
-            "Açık pozisyonlar %50 azaltılmalı.\n"
+            "Açık pozisyonları %50 azalt.\n"
         )
         return
 
@@ -63,7 +62,7 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🟢 {regime_name} REJİM\n"
         f"Risk: %{risk_percent}\n"
         f"Max Trade: {max_trades}\n\n"
-        f"Seçilen Trade'ler:\n\n"
+        "Seçilen Trade'ler:\n\n"
     )
 
     for i, trade in enumerate(trades, 1):
@@ -77,7 +76,33 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message)
 
 
-# ================= OTOMATİK SABAH TARAMA =================
+# ================= MONTE CARLO =================
+
+async def backtestmc(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    await update.message.reply_text("🎲 Monte Carlo simülasyonu çalışıyor...")
+
+    results, error = run_monte_carlo(1000)
+
+    if error:
+        await update.message.reply_text(error)
+        return
+
+    message = "📊 MONTE CARLO RAPOR\n\n"
+
+    for k, v in results.items():
+        message += f"{k}: {v}\n"
+
+    with open("montecarlo_dd.png", "rb") as f:
+        await context.bot.send_photo(
+            chat_id=update.effective_chat.id,
+            photo=f
+        )
+
+    await update.message.reply_text(message)
+
+
+# ================= SABAH OTOMATİK =================
 
 async def morning_job(context: ContextTypes.DEFAULT_TYPE):
 
@@ -131,6 +156,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("scan", scan))
+    app.add_handler(CommandHandler("backtestmc", backtestmc))
 
     # Sabah 09:15 otomatik tarama
     app.job_queue.run_daily(
