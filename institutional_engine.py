@@ -9,82 +9,106 @@ BIST30 = [
 ]
 
 
+def find_strong_levels(close):
+
+    prices = close.tail(60).values
+
+    levels = []
+
+    # Lokal dip ve tepeleri bul
+    for i in range(2, len(prices)-2):
+
+        if prices[i] < prices[i-1] and prices[i] < prices[i+1]:
+            levels.append(prices[i])
+
+        if prices[i] > prices[i-1] and prices[i] > prices[i+1]:
+            levels.append(prices[i])
+
+    # Benzer seviyeleri grupla (±1%)
+    strong_levels = []
+
+    for level in levels:
+        cluster = [x for x in levels if abs(x - level) / level < 0.01]
+        if len(cluster) >= 2:
+            strong_levels.append(np.mean(cluster))
+
+    strong_levels = list(set([round(x,2) for x in strong_levels]))
+
+    return sorted(strong_levels)
+
+
 def generate_weekly_report():
 
     results = []
-    total_attempted = 0
 
     for symbol in BIST30:
 
         try:
-            total_attempted += 1
-
-            df = yf.download(symbol, period="3mo", interval="1d", progress=False)
+            df = yf.download(symbol, period="6mo", interval="1d", progress=False)
 
             if df.empty:
-                results.append({"Hisse": symbol, "Durum": "Veri çekilemedi"})
                 continue
 
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            close = df["Close"].dropna()
+            close = df["Close"].dropna().astype(float)
 
-            if len(close) < 50:
-                results.append({"Hisse": symbol, "Durum": "Yetersiz veri"})
+            if len(close) < 60:
                 continue
-
-            close = close.astype(float)
 
             price = close.iloc[-1]
 
-            ma20 = close.tail(20).mean()
-            ma50 = close.tail(50).mean()
+            strong_levels = find_strong_levels(close)
 
-            swing_low = close.tail(14).min()
+            supports = [lvl for lvl in strong_levels if lvl < price]
+            resistances = [lvl for lvl in strong_levels if lvl > price]
 
-            trend = 1 if ma20 > ma50 else 0
+            support = max(supports) if supports else None
+            resistance = min(resistances) if resistances else None
 
-            momentum = (price / close.iloc[-20] - 1) * 100
-
-            returns = np.log(close / close.shift(1)).dropna()
-            volatility = returns.std() * 100
-
-            score = trend * 40 + momentum * 0.8 - volatility * 0.5
-
-            # Destek = MA20 ile Swing Low arasında düşük olan
-            support = min(ma20, swing_low)
-
-            # Stop = destek altı %2
-            stop = support * 0.98
+            if support:
+                stop = support * 0.98
+            else:
+                stop = None
 
             results.append({
                 "Hisse": symbol,
-                "Fiyat": round(price, 2),
-                "Skor": round(score, 2),
-                "Volatilite(%)": round(volatility, 2),
-                "Destek": round(support, 2),
-                "Stop": round(stop, 2),
-                "Trend": trend
+                "Fiyat": round(price,2),
+                "Güçlü Destek": support,
+                "Güçlü Direnç": resistance,
+                "Stop": round(stop,2) if stop else None
             })
 
-        except Exception as e:
-            results.append({
-                "Hisse": symbol,
-                "Hata": str(e)
-            })
+        except:
+            continue
+
 
     df_report = pd.DataFrame(results)
-
-    if "Skor" in df_report.columns:
-        df_report = df_report.sort_values("Skor", ascending=False)
 
     filename = "bist_core_report.xlsx"
     df_report.to_excel(filename, index=False)
 
-    summary = (
-        f"Toplam Denenen: {total_attempted}\n"
-        f"Excel'e Yazılan: {len(df_report)}"
-    )
+    telegram_text = format_telegram_message(df_report)
 
-    return filename, summary
+    return filename, telegram_text
+
+
+def format_telegram_message(df):
+
+    if df.empty:
+        return "⚠️ Veri bulunamadı."
+
+    message = "📊 GÜÇLÜ SEVİYELER\n\n"
+
+    for _, row in df.iterrows():
+        message += (
+            f"{row['Hisse'].replace('.IS','')}\n"
+            f"Fiyat: {row['Fiyat']}\n"
+            f"Destek: {row['Güçlü Destek']}\n"
+            f"Direnç: {row['Güçlü Direnç']}\n"
+            f"Stop: {row['Stop']}\n"
+            f"---\n"
+        )
+
+    return message
