@@ -5,13 +5,29 @@ import json
 import os
 from datetime import datetime
 
-
 BIST30 = [
     "ASELS.IS","THYAO.IS","KCHOL.IS","SISE.IS","EREGL.IS",
     "GARAN.IS","AKBNK.IS","ISCTR.IS","BIMAS.IS","TUPRS.IS"
 ]
 
+BALANCE_FILE = "balance.json"
 ALERT_FILE = "alerts_log.json"
+
+RISK_PER_TRADE = 0.01
+MAX_POSITIONS = 5
+MAX_DAILY_RISK = 0.03
+
+
+# ================= BALANCE =================
+def load_balance():
+    if os.path.exists(BALANCE_FILE):
+        with open(BALANCE_FILE, "r") as f:
+            return json.load(f)
+    return {"balance": 100000}
+
+def save_balance(amount):
+    with open(BALANCE_FILE, "w") as f:
+        json.dump({"balance": amount}, f)
 
 
 # ================= RSI =================
@@ -23,29 +39,6 @@ def calculate_rsi(close, period=14):
     avg_loss = loss.rolling(period).mean()
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
-
-
-# ================= ALERT STORAGE =================
-def load_alerts():
-    if os.path.exists(ALERT_FILE):
-        with open(ALERT_FILE, "r") as f:
-            return json.load(f)
-    return {}
-
-def save_alerts(alerts):
-    with open(ALERT_FILE, "w") as f:
-        json.dump(alerts, f)
-
-def already_alerted(symbol):
-    alerts = load_alerts()
-    today = datetime.now().strftime("%Y-%m-%d")
-    return alerts.get(symbol) == today
-
-def mark_alerted(symbol):
-    alerts = load_alerts()
-    today = datetime.now().strftime("%Y-%m-%d")
-    alerts[symbol] = today
-    save_alerts(alerts)
 
 
 # ================= STRONG LEVELS =================
@@ -65,27 +58,31 @@ def find_strong_levels(close):
         if len(cluster) >= 2:
             strong.append(np.mean(cluster))
 
-    strong = list(set([round(x,2) for x in strong]))
-    return sorted(strong)
+    return sorted(list(set([round(x,2) for x in strong])))
 
 
 # ================= MAIN ENGINE =================
 def generate_weekly_report():
 
-    core_results = []
-    watchlist_results = []
-    alarm_message = ""
+    balance_data = load_balance()
+    balance = balance_data["balance"]
+    risk_amount = balance * RISK_PER_TRADE
+
+    daily_risk_used = 0
+    position_count = 0
+
+    results = []
 
     for symbol in BIST30:
+
+        if position_count >= MAX_POSITIONS:
+            break
 
         try:
             df = yf.download(symbol, period="6mo", interval="1d", progress=False)
 
             if df.empty:
                 continue
-
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
 
             close = df["Close"].dropna().astype(float)
 
@@ -107,94 +104,64 @@ def generate_weekly_report():
             resistance = min(resistances)
 
             stop = support * 0.98
-            risk = price - stop
-            reward = resistance - price
+            risk_per_share = price - stop
 
-            if risk <= 0:
+            if risk_per_share <= 0:
                 continue
 
-            rr_ratio = reward / risk
+            rr_ratio = (resistance - price) / risk_per_share
             mesafe = abs(price - support) / support * 100
 
-            row_data = {
-                "Hisse": symbol,
-                "Fiyat": round(price,2),
-                "Destek": round(support,2),
-                "Direnç": round(resistance,2),
-                "Stop": round(stop,2),
-                "RSI": round(rsi,2),
-                "R/R": round(rr_ratio,2),
-                "Mesafe(%)": round(mesafe,2)
-            }
+            # CORE filtre
+            if mesafe < 5 and 35 <= rsi <= 70 and rr_ratio >= 1.8:
 
-            # ================= CORE =================
-            if (
-                mesafe < 5 and
-                35 <= rsi <= 70 and
-                rr_ratio >= 1.8
-            ):
-                core_results.append(row_data)
+                lot = int(risk_amount / risk_per_share)
 
-                if mesafe <= 1 and not already_alerted(symbol):
-                    alarm_message += f"🚨 {symbol.replace('.IS','')} destek %1 içinde!\n"
-                    mark_alerted(symbol)
+                if daily_risk_used + RISK_PER_TRADE > MAX_DAILY_RISK:
+                    break
 
-            # ================= WATCHLIST (Genişletilmiş) =================
-            elif (
-                mesafe < 10 and
-                25 <= rsi <= 80 and
-                rr_ratio >= 1.2
-            ):
-                watchlist_results.append(row_data)
+                results.append({
+                    "Hisse": symbol,
+                    "Fiyat": round(price,2),
+                    "Stop": round(stop,2),
+                    "R/R": round(rr_ratio,2),
+                    "Lot": lot,
+                    "RiskTL": int(risk_amount)
+                })
+
+                daily_risk_used += RISK_PER_TRADE
+                position_count += 1
 
         except:
             continue
 
-
-    core_df = pd.DataFrame(core_results)
-    watch_df = pd.DataFrame(watchlist_results)
-
+    df_report = pd.DataFrame(results)
     filename = "bist_core_report.xlsx"
+    df_report.to_excel(filename, index=False)
 
-    with pd.ExcelWriter(filename) as writer:
-        core_df.to_excel(writer, sheet_name="CORE_SETUP", index=False)
-        watch_df.to_excel(writer, sheet_name="WATCHLIST", index=False)
-
-
-    telegram_text = format_message(core_df, watch_df)
-
-    if alarm_message:
-        telegram_text = alarm_message + "\n" + telegram_text
+    telegram_text = format_message(df_report, balance, daily_risk_used, position_count)
 
     return filename, telegram_text
 
 
-# ================= TELEGRAM FORMAT =================
-def format_message(core_df, watch_df):
+def format_message(df, balance, daily_risk, pos_count):
 
-    message = "🏦 DUAL ENGINE RAPOR\n\n"
+    message = f"🏦 RİSK MOTORU RAPOR\n\nPortföy: {balance} TL\n"
 
-    if not core_df.empty:
-        message += "🎯 CORE SETUP\n"
-        for _, row in core_df.iterrows():
-            message += (
-                f"{row['Hisse'].replace('.IS','')} | "
-                f"R/R: {row['R/R']} | "
-                f"Mesafe: %{row['Mesafe(%)']}\n"
-            )
-        message += "\n"
+    if df.empty:
+        message += "Uygun CORE setup yok."
     else:
-        message += "🎯 CORE SETUP: Yok\n\n"
-
-    if not watch_df.empty:
-        message += "👀 WATCHLIST\n"
-        for _, row in watch_df.iterrows():
+        for _, row in df.iterrows():
             message += (
-                f"{row['Hisse'].replace('.IS','')} | "
-                f"R/R: {row['R/R']} | "
-                f"Mesafe: %{row['Mesafe(%)']}\n"
+                f"\n{row['Hisse'].replace('.IS','')}\n"
+                f"Fiyat: {row['Fiyat']}\n"
+                f"Stop: {row['Stop']}\n"
+                f"R/R: {row['R/R']}\n"
+                f"Lot: {row['Lot']}\n"
+                f"Risk: {row['RiskTL']} TL\n"
             )
-    else:
-        message += "👀 WATCHLIST: Yok"
+
+    message += f"\nToplam Günlük Risk: %{daily_risk*100}\n"
+    message += f"Açık Pozisyon: {pos_count}/{MAX_POSITIONS}"
 
     return message
