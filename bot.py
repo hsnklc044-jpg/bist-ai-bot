@@ -17,140 +17,133 @@ TOKEN = os.getenv("BOT_TOKEN")
 # ================= START =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🏦 AI Trading Desk Aktif\n\n"
-        "Komutlar:\n"
-        "/scan → Günlük tarama\n"
-        "/backtestmc → Monte Carlo risk testi\n"
-    )
+    try:
+        await update.message.reply_text(
+            "🏦 AI Trading Desk Aktif\n\n"
+            "Komutlar:\n"
+            "/scan → Günlük trade planı\n"
+            "/backtestmc → Monte Carlo risk testi\n"
+        )
+    except Exception as e:
+        print("START ERROR:", e)
 
 
 # ================= SCAN =================
 
 async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("📊 Tarama başlatıldı...")
+    try:
+        await update.message.reply_text("📊 Tarama başlatıldı...")
 
-    result = scan_trades()
-    regime = result["regime"]
+        result = scan_trades()
 
-    regime_name = regime["regime"]
-    risk_percent = round(regime["risk"] * 100, 2)
-    max_trades = regime["max_trades"]
+        regime = result.get("regime", {})
+        trades = result.get("trades", [])
 
-    # 🔴 KRİZ MODU
-    if regime_name == "CRISIS":
-        await update.message.reply_text(
-            "🔴 KRİZ MODU\n\n"
-            "Yeni işlem açılmaz.\n"
-            "Açık pozisyonları %50 azalt.\n"
-        )
-        return
+        regime_name = regime.get("regime", "UNKNOWN")
+        risk_percent = round(regime.get("risk", 0) * 100, 2)
+        max_trades = regime.get("max_trades", 0)
 
-    trades = result.get("trades", [])
-
-    if not trades:
-        await update.message.reply_text(
-            f"🟡 {regime_name} REJİM\n"
+        message = (
+            f"🟢 {regime_name} REJİM\n"
             f"Risk: %{risk_percent}\n"
             f"Max Trade: {max_trades}\n\n"
-            "Uygun trade bulunamadı."
-        )
-        return
-
-    message = (
-        f"🟢 {regime_name} REJİM\n"
-        f"Risk: %{risk_percent}\n"
-        f"Max Trade: {max_trades}\n\n"
-        "Seçilen Trade'ler:\n\n"
-    )
-
-    for i, trade in enumerate(trades, 1):
-        message += (
-            f"{i}. {trade['symbol']}\n"
-            f"   Fiyat: {trade['price']}\n"
-            f"   R/R: {trade['rr']}\n"
-            f"   Skor: {trade['score']}\n\n"
         )
 
-    await update.message.reply_text(message)
+        if not trades:
+            message += "Uygun trade bulunamadı."
+        else:
+            message += "Seçilen Trade Planları:\n\n"
+
+            for i, trade in enumerate(trades, 1):
+                message += (
+                    f"{i}. {trade['symbol']}\n"
+                    f"   Fiyat: {trade['price']}\n\n"
+                    f"   🚀 Breakout Entry: {trade['breakout_entry']}\n"
+                    f"   📉 Pullback Entry: {trade['pullback_entry']}\n"
+                    f"   🛑 Stop: {trade['stop']}\n"
+                    f"   🎯 Target: {trade['target']}\n"
+                    f"   📊 R/R: {trade['rr']}\n\n"
+                )
+
+        await update.message.reply_text(message)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ SCAN HATA: {str(e)}")
+        print("SCAN ERROR:", e)
 
 
 # ================= MONTE CARLO =================
 
 async def backtestmc(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("🎲 Monte Carlo simülasyonu çalışıyor...")
+    try:
+        await update.message.reply_text("🎲 Monte Carlo simülasyonu çalışıyor...")
 
-    results, error = run_monte_carlo(1000)
+        results, error = run_monte_carlo(300)
 
-    if error:
-        await update.message.reply_text(error)
-        return
+        if error:
+            await update.message.reply_text(error)
+            return
 
-    message = "📊 MONTE CARLO RAPOR\n\n"
+        message = "📊 MONTE CARLO RAPOR\n\n"
 
-    for k, v in results.items():
-        message += f"{k}: {v}\n"
+        for k, v in results.items():
+            message += f"{k}: {v}\n"
 
-    with open("montecarlo_dd.png", "rb") as f:
-        await context.bot.send_photo(
-            chat_id=update.effective_chat.id,
-            photo=f
-        )
+        try:
+            with open("montecarlo_dd.png", "rb") as f:
+                await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=f
+                )
+        except:
+            pass
 
-    await update.message.reply_text(message)
+        await update.message.reply_text(message)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ MC HATA: {str(e)}")
+        print("MC ERROR:", e)
 
 
-# ================= SABAH OTOMATİK =================
+# ================= SABAH OTOMATİK TARAMA =================
 
 async def morning_job(context: ContextTypes.DEFAULT_TYPE):
 
-    result = scan_trades()
-    regime = result["regime"]
+    try:
+        result = scan_trades()
+        trades = result.get("trades", [])
 
-    regime_name = regime["regime"]
-    risk_percent = round(regime["risk"] * 100, 2)
-    max_trades = regime["max_trades"]
+        message = "🌅 Sabah Trade Planı\n\n"
 
-    if regime_name == "CRISIS":
+        if not trades:
+            message += "Bugün uygun setup yok."
+        else:
+            for trade in trades:
+                message += (
+                    f"{trade['symbol']}\n"
+                    f"🚀 {trade['breakout_entry']} | "
+                    f"🛑 {trade['stop']} | "
+                    f"🎯 {trade['target']}\n\n"
+                )
+
         await context.bot.send_message(
             chat_id=context.job.chat_id,
-            text="🔴 KRİZ MODU\nYeni işlem yok.\nAçık pozisyonları azalt."
-        )
-        return
-
-    trades = result.get("trades", [])
-
-    if not trades:
-        await context.bot.send_message(
-            chat_id=context.job.chat_id,
-            text=f"🟡 {regime_name} REJİM\nRisk: %{risk_percent}\nTrade yok."
-        )
-        return
-
-    message = (
-        f"🟢 {regime_name} REJİM\n"
-        f"Risk: %{risk_percent}\n"
-        f"Max Trade: {max_trades}\n\n"
-    )
-
-    for i, trade in enumerate(trades, 1):
-        message += (
-            f"{i}. {trade['symbol']} | "
-            f"Fiyat: {trade['price']} | "
-            f"R/R: {trade['rr']}\n"
+            text=message
         )
 
-    await context.bot.send_message(
-        chat_id=context.job.chat_id,
-        text=message
-    )
+    except Exception as e:
+        print("MORNING JOB ERROR:", e)
 
 
 # ================= MAIN =================
 
 def main():
+
+    if not TOKEN:
+        print("BOT_TOKEN bulunamadı!")
+        return
 
     app = ApplicationBuilder().token(TOKEN).build()
 
@@ -158,12 +151,16 @@ def main():
     app.add_handler(CommandHandler("scan", scan))
     app.add_handler(CommandHandler("backtestmc", backtestmc))
 
-    # Sabah 09:15 otomatik tarama
-    app.job_queue.run_daily(
-        morning_job,
-        time=time(9, 15)
-    )
+    # Sabah 09:15 otomatik plan
+    try:
+        app.job_queue.run_daily(
+            morning_job,
+            time=time(9, 15)
+        )
+    except Exception as e:
+        print("JOB QUEUE ERROR:", e)
 
+    print("Bot başlatıldı...")
     app.run_polling()
 
 
