@@ -25,37 +25,41 @@ def generate_weekly_report():
                 results.append({"Hisse": symbol, "Durum": "Veri çekilemedi"})
                 continue
 
-            close = df["Close"].dropna().values
+            close = df["Close"].dropna()
 
             if len(close) < 20:
                 results.append({"Hisse": symbol, "Durum": "Yetersiz veri"})
                 continue
 
+            close = close.astype(float)
+
             # MA hesaplama
-            ma20 = np.mean(close[-20:])
-            ma50 = np.mean(close[-50:]) if len(close) >= 50 else np.mean(close)
+            ma20 = float(close.tail(20).mean())
+            ma50 = float(close.tail(50).mean()) if len(close) >= 50 else float(close.mean())
 
             trend = 1 if ma20 > ma50 else 0
 
             # Momentum
-            momentum = ((close[-1] / close[-20]) - 1) * 100
+            momentum = float((close.iloc[-1] / close.iloc[-20] - 1) * 100)
 
-            # LOG RETURN volatilite (stabil yöntem)
-            returns = np.diff(np.log(close))
-            volatility = np.std(returns) * 100
+            # LOG RETURN volatilite (tam scalar)
+            returns = np.log(close / close.shift(1)).dropna()
+            volatility = float(returns.std() * 100)
 
-            score = trend * 40 + momentum * 0.8 - volatility * 0.5
+            score = float(trend * 40 + momentum * 0.8 - volatility * 0.5)
 
             results.append({
                 "Hisse": symbol,
-                "Skor": round(float(score), 2),
-                "Volatilite(%)": round(float(volatility), 2),
+                "Skor": round(score, 2),
+                "Volatilite(%)": round(volatility, 2),
                 "Trend(0/1)": trend
             })
 
         except Exception as e:
-            results.append({"Hisse": symbol, "Hata": str(e)})
-
+            results.append({
+                "Hisse": symbol,
+                "Hata": str(e)
+            })
 
     df_report = pd.DataFrame(results)
 
@@ -67,7 +71,7 @@ def generate_weekly_report():
 
     summary = (
         f"Toplam Denenen: {total_attempted}\n"
-        f"Excel'e Yazılan: {len(results)}"
+        f"Excel'e Yazılan: {len(df_report)}"
     )
 
     return filename, summary
