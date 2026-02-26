@@ -1,8 +1,7 @@
 import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from institutional_engine import generate_weekly_report, save_balance
-
+from institutional_engine import generate_weekly_report, save_balance, get_performance
 
 TOKEN = os.getenv("BOT_TOKEN")
 
@@ -37,12 +36,18 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Geçersiz değer.")
 
 
+async def performance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    result = get_performance()
+    await update.message.reply_text(result)
+
+
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("weekly", weekly))
     app.add_handler(CommandHandler("balance", balance))
+    app.add_handler(CommandHandler("performance", performance))
 
     app.run_polling()
 
