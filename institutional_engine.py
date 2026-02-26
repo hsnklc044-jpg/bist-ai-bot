@@ -13,6 +13,7 @@ WATCHLIST = [
 ]
 
 
+# ================= RSI =================
 def calculate_rsi(close, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0)
@@ -23,7 +24,44 @@ def calculate_rsi(close, period=14):
     return 100 - (100 / (1 + rs))
 
 
+# ================= MARKET VOLATILITY =================
+def get_volatility_regime():
+
+    df = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
+
+    if df.empty:
+        return "NORMAL"
+
+    high = df["High"]
+    low = df["Low"]
+    close = df["Close"]
+
+    tr1 = high - low
+    tr2 = abs(high - close.shift())
+    tr3 = abs(low - close.shift())
+
+    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = true_range.rolling(14).mean()
+
+    atr_ratio = atr.iloc[-1] / atr.tail(30).mean()
+
+    if atr_ratio > 1.3:
+        return "HIGH_VOL"
+    else:
+        return "NORMAL"
+
+
+# ================= SCAN =================
 def scan_trades():
+
+    regime = get_volatility_regime()
+
+    if regime == "HIGH_VOL":
+        rsi_threshold = 45
+        rr_threshold = 1.6
+    else:
+        rsi_threshold = 50
+        rr_threshold = 1.8
 
     trades = []
 
@@ -31,6 +69,7 @@ def scan_trades():
 
         try:
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
+
             if df.empty:
                 continue
 
@@ -47,13 +86,12 @@ def scan_trades():
             if price < ema200.iloc[-1]:
                 continue
 
-            if rsi.iloc[-1] < 50:
+            if rsi.iloc[-1] < rsi_threshold:
                 continue
 
             support = low.tail(20).min()
             resistance = high.tail(20).max()
 
-            # ENTRY MODELLERİ
             breakout_entry = resistance * 1.005
             pullback_entry = support * 1.01
 
@@ -68,7 +106,7 @@ def scan_trades():
 
             rr = reward / risk
 
-            if rr >= 1.8:
+            if rr >= rr_threshold:
 
                 trades.append({
                     "symbol": symbol,
@@ -88,7 +126,7 @@ def scan_trades():
 
     return {
         "regime": {
-            "regime": "NORMAL",
+            "regime": regime,
             "risk": BASE_RISK,
             "max_trades": MAX_TRADES
         },
