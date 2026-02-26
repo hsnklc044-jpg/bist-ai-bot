@@ -1,51 +1,48 @@
 import os
-import logging
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from institutional_engine import generate_weekly_report
+from institutional_engine import generate_weekly_report, save_balance
 
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-logging.basicConfig(level=logging.INFO)
-
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🏦 Institutional BIST Engine Aktif")
+    await update.message.reply_text("🏦 Risk Motoru Aktif")
 
 
 async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("📊 Rapor hazırlanıyor...")
 
+    filename, text = generate_weekly_report()
+
+    with open(filename, "rb") as f:
+        await context.bot.send_document(chat_id=update.effective_chat.id, document=f)
+
+    await update.message.reply_text(text)
+
+
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    if not context.args:
+        await update.message.reply_text("Kullanım: /balance 150000")
+        return
+
     try:
-        filename, telegram_text = generate_weekly_report()
-
-        if os.path.exists(filename):
-            with open(filename, "rb") as f:
-                await context.bot.send_document(
-                    chat_id=update.effective_chat.id,
-                    document=f,
-                    filename="bist_core_report.xlsx"
-                )
-
-        await update.message.reply_text(telegram_text)
-
-    except Exception as e:
-        await update.message.reply_text(f"❌ Hata: {str(e)}")
+        amount = int(context.args[0])
+        save_balance(amount)
+        await update.message.reply_text(f"✅ Yeni portföy: {amount} TL")
+    except:
+        await update.message.reply_text("Geçersiz değer.")
 
 
 def main():
-
-    if not TOKEN:
-        raise ValueError("BOT_TOKEN eksik!")
-
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("weekly", weekly))
-
-    print("🚀 PROFESSIONAL ENGINE AKTİF")
+    app.add_handler(CommandHandler("balance", balance))
 
     app.run_polling()
 
