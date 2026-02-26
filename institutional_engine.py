@@ -6,6 +6,9 @@ import os
 from datetime import datetime
 
 
+# =============================
+# BIST30 LİSTESİ
+# =============================
 BIST30 = [
     "ASELS.IS","THYAO.IS","KCHOL.IS","SISE.IS","EREGL.IS",
     "GARAN.IS","AKBNK.IS","ISCTR.IS","BIMAS.IS","TUPRS.IS"
@@ -24,7 +27,8 @@ def calculate_rsi(close, period=14):
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
     rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
 
 
 # =============================
@@ -53,7 +57,7 @@ def mark_alerted(symbol):
 
 
 # =============================
-# STRONG LEVEL FINDER
+# GÜÇLÜ DESTEK/DİRENÇ
 # =============================
 def find_strong_levels(close):
 
@@ -61,8 +65,12 @@ def find_strong_levels(close):
     levels = []
 
     for i in range(2, len(prices)-2):
+
+        # local dip
         if prices[i] < prices[i-1] and prices[i] < prices[i+1]:
             levels.append(prices[i])
+
+        # local tepe
         if prices[i] > prices[i-1] and prices[i] > prices[i+1]:
             levels.append(prices[i])
 
@@ -78,7 +86,7 @@ def find_strong_levels(close):
 
 
 # =============================
-# MAIN ENGINE
+# ANA MOTOR
 # =============================
 def generate_weekly_report():
 
@@ -93,22 +101,23 @@ def generate_weekly_report():
             if df.empty:
                 continue
 
+            # MultiIndex temizliği
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
             close = df["Close"].dropna().astype(float)
-            volume = df["Volume"]
+            volume = df["Volume"].astype(float)
 
             if len(close) < 90:
                 continue
 
-            price = close.iloc[-1]
+            price = float(close.iloc[-1])
 
             rsi_series = calculate_rsi(close)
-            rsi = rsi_series.iloc[-1]
+            rsi = float(rsi_series.iloc[-1])
 
-            avg_vol_5 = volume.tail(5).mean()
-            avg_vol_20 = volume.tail(20).mean()
+            avg_vol_5 = float(volume.tail(5).mean())
+            avg_vol_20 = float(volume.tail(20).mean())
 
             strong_levels = find_strong_levels(close)
 
@@ -132,12 +141,14 @@ def generate_weekly_report():
             rr_ratio = reward / risk
             mesafe = abs(price - support) / support * 100
 
-            # PROFESYONEL FİLTRE
+            # =============================
+            # B MODU DENGELİ PROFESYONEL FİLTRE
+            # =============================
             if (
-                abs(price - support) / support < 0.03 and
-                40 <= rsi <= 65 and
-                avg_vol_5 > avg_vol_20 and
-                rr_ratio >= 2
+                abs(price - support) / support < 0.05 and
+                35 <= rsi <= 70 and
+                avg_vol_5 >= (avg_vol_20 * 0.9) and
+                rr_ratio >= 1.8
             ):
 
                 results.append({
@@ -151,7 +162,7 @@ def generate_weekly_report():
                     "Mesafe(%)": round(mesafe,2)
                 })
 
-                # ---- ALARM ----
+                # DESTEK YAKLAŞMA ALARMI
                 if mesafe <= 1 and not already_alerted(symbol):
                     alarm_message += (
                         f"🚨 DESTEK YAKLAŞTI\n"
@@ -164,6 +175,7 @@ def generate_weekly_report():
                     )
                     mark_alerted(symbol)
 
+                # DESTEK KIRILDI
                 if price < support and not already_alerted(symbol):
                     alarm_message += (
                         f"❌ DESTEK KIRILDI\n"
@@ -172,6 +184,7 @@ def generate_weekly_report():
                         f"---\n"
                     )
                     mark_alerted(symbol)
+
 
         except:
             continue
@@ -183,7 +196,7 @@ def generate_weekly_report():
     df_report.to_excel(filename, index=False)
 
     if df_report.empty:
-        telegram_text = "⚠️ Profesyonel filtreye uygun setup yok."
+        telegram_text = "⚠️ Dengeli filtreye uygun setup bulunamadı."
     else:
         telegram_text = format_message(df_report)
 
@@ -193,9 +206,12 @@ def generate_weekly_report():
     return filename, telegram_text
 
 
+# =============================
+# TELEGRAM MESAJ FORMAT
+# =============================
 def format_message(df):
 
-    message = "🏦 PROFESYONEL SETUPLAR\n\n"
+    message = "🏦 DENGELİ PROFESYONEL SETUPLAR\n\n"
 
     for _, row in df.iterrows():
         message += (
