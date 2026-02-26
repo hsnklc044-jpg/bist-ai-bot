@@ -6,9 +6,6 @@ import os
 from datetime import datetime
 
 
-# =============================
-# BIST30 LİSTESİ
-# =============================
 BIST30 = [
     "ASELS.IS","THYAO.IS","KCHOL.IS","SISE.IS","EREGL.IS",
     "GARAN.IS","AKBNK.IS","ISCTR.IS","BIMAS.IS","TUPRS.IS"
@@ -17,9 +14,7 @@ BIST30 = [
 ALERT_FILE = "alerts_log.json"
 
 
-# =============================
-# RSI
-# =============================
+# ================= RSI =================
 def calculate_rsi(close, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0)
@@ -27,13 +22,10 @@ def calculate_rsi(close, period=14):
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
     rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-    return rsi
+    return 100 - (100 / (1 + rs))
 
 
-# =============================
-# ALERT STORAGE
-# =============================
+# ================= ALERT STORAGE =================
 def load_alerts():
     if os.path.exists(ALERT_FILE):
         with open(ALERT_FILE, "r") as f:
@@ -56,21 +48,14 @@ def mark_alerted(symbol):
     save_alerts(alerts)
 
 
-# =============================
-# GÜÇLÜ DESTEK/DİRENÇ
-# =============================
+# ================= STRONG LEVELS =================
 def find_strong_levels(close):
-
     prices = close.tail(90).values
     levels = []
 
     for i in range(2, len(prices)-2):
-
-        # local dip
         if prices[i] < prices[i-1] and prices[i] < prices[i+1]:
             levels.append(prices[i])
-
-        # local tepe
         if prices[i] > prices[i-1] and prices[i] > prices[i+1]:
             levels.append(prices[i])
 
@@ -85,12 +70,11 @@ def find_strong_levels(close):
     return sorted(strong)
 
 
-# =============================
-# ANA MOTOR
-# =============================
+# ================= MAIN ENGINE =================
 def generate_weekly_report():
 
-    results = []
+    core_results = []
+    watchlist_results = []
     alarm_message = ""
 
     for symbol in BIST30:
@@ -101,7 +85,6 @@ def generate_weekly_report():
             if df.empty:
                 continue
 
-            # MultiIndex temizliği
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
@@ -112,12 +95,7 @@ def generate_weekly_report():
                 continue
 
             price = float(close.iloc[-1])
-
-            rsi_series = calculate_rsi(close)
-            rsi = float(rsi_series.iloc[-1])
-
-            avg_vol_5 = float(volume.tail(5).mean())
-            avg_vol_20 = float(volume.tail(20).mean())
+            rsi = float(calculate_rsi(close).iloc[-1])
 
             strong_levels = find_strong_levels(close)
 
@@ -131,7 +109,6 @@ def generate_weekly_report():
             resistance = min(resistances)
 
             stop = support * 0.98
-
             risk = price - stop
             reward = resistance - price
 
@@ -141,64 +118,52 @@ def generate_weekly_report():
             rr_ratio = reward / risk
             mesafe = abs(price - support) / support * 100
 
-            # =============================
-            # B MODU DENGELİ PROFESYONEL FİLTRE
-            # =============================
+            data_row = {
+                "Hisse": symbol,
+                "Fiyat": round(price,2),
+                "Destek": round(support,2),
+                "Direnç": round(resistance,2),
+                "Stop": round(stop,2),
+                "RSI": round(rsi,2),
+                "R/R": round(rr_ratio,2),
+                "Mesafe(%)": round(mesafe,2)
+            }
+
+            # ================= CORE =================
             if (
-                abs(price - support) / support < 0.05 and
+                mesafe < 5 and
                 35 <= rsi <= 70 and
-                avg_vol_5 >= (avg_vol_20 * 0.9) and
                 rr_ratio >= 1.8
             ):
+                core_results.append(data_row)
 
-                results.append({
-                    "Hisse": symbol,
-                    "Fiyat": round(price,2),
-                    "Destek": round(support,2),
-                    "Direnç": round(resistance,2),
-                    "Stop": round(stop,2),
-                    "RSI": round(rsi,2),
-                    "R/R": round(rr_ratio,2),
-                    "Mesafe(%)": round(mesafe,2)
-                })
-
-                # DESTEK YAKLAŞMA ALARMI
                 if mesafe <= 1 and not already_alerted(symbol):
-                    alarm_message += (
-                        f"🚨 DESTEK YAKLAŞTI\n"
-                        f"{symbol.replace('.IS','')}\n"
-                        f"Fiyat: {round(price,2)}\n"
-                        f"Destek: {round(support,2)}\n"
-                        f"Mesafe: %{round(mesafe,2)}\n"
-                        f"R/R: {round(rr_ratio,2)}\n"
-                        f"---\n"
-                    )
+                    alarm_message += f"🚨 {symbol.replace('.IS','')} destek %1 içinde!\n"
                     mark_alerted(symbol)
 
-                # DESTEK KIRILDI
-                if price < support and not already_alerted(symbol):
-                    alarm_message += (
-                        f"❌ DESTEK KIRILDI\n"
-                        f"{symbol.replace('.IS','')}\n"
-                        f"Fiyat: {round(price,2)}\n"
-                        f"---\n"
-                    )
-                    mark_alerted(symbol)
-
+            # ================= WATCHLIST =================
+            elif (
+                mesafe < 8 and
+                30 <= rsi <= 75 and
+                rr_ratio >= 1.4
+            ):
+                watchlist_results.append(data_row)
 
         except:
             continue
 
 
-    df_report = pd.DataFrame(results)
+    core_df = pd.DataFrame(core_results)
+    watch_df = pd.DataFrame(watchlist_results)
 
     filename = "bist_core_report.xlsx"
-    df_report.to_excel(filename, index=False)
 
-    if df_report.empty:
-        telegram_text = "⚠️ Dengeli filtreye uygun setup bulunamadı."
-    else:
-        telegram_text = format_message(df_report)
+    with pd.ExcelWriter(filename) as writer:
+        core_df.to_excel(writer, sheet_name="CORE_SETUP", index=False)
+        watch_df.to_excel(writer, sheet_name="WATCHLIST", index=False)
+
+
+    telegram_text = format_message(core_df, watch_df)
 
     if alarm_message:
         telegram_text = alarm_message + "\n" + telegram_text
@@ -206,24 +171,32 @@ def generate_weekly_report():
     return filename, telegram_text
 
 
-# =============================
-# TELEGRAM MESAJ FORMAT
-# =============================
-def format_message(df):
+# ================= TELEGRAM FORMAT =================
+def format_message(core_df, watch_df):
 
-    message = "🏦 DENGELİ PROFESYONEL SETUPLAR\n\n"
+    message = "🏦 DUAL ENGINE RAPOR\n\n"
 
-    for _, row in df.iterrows():
-        message += (
-            f"{row['Hisse'].replace('.IS','')}\n"
-            f"Fiyat: {row['Fiyat']}\n"
-            f"Destek: {row['Destek']}\n"
-            f"Direnç: {row['Direnç']}\n"
-            f"Stop: {row['Stop']}\n"
-            f"RSI: {row['RSI']}\n"
-            f"R/R: {row['R/R']}\n"
-            f"Mesafe: %{row['Mesafe(%)']}\n"
-            f"---\n"
-        )
+    if not core_df.empty:
+        message += "🎯 CORE SETUP (Hazır)\n"
+        for _, row in core_df.iterrows():
+            message += (
+                f"{row['Hisse'].replace('.IS','')} | "
+                f"R/R: {row['R/R']} | "
+                f"Mesafe: %{row['Mesafe(%)']}\n"
+            )
+        message += "\n"
+    else:
+        message += "🎯 CORE SETUP: Yok\n\n"
+
+    if not watch_df.empty:
+        message += "👀 WATCHLIST (Hazırlanıyor)\n"
+        for _, row in watch_df.iterrows():
+            message += (
+                f"{row['Hisse'].replace('.IS','')} | "
+                f"R/R: {row['R/R']} | "
+                f"Mesafe: %{row['Mesafe(%)']}\n"
+            )
+    else:
+        message += "👀 WATCHLIST: Yok"
 
     return message
