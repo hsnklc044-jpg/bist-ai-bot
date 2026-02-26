@@ -1,5 +1,4 @@
 import os
-import asyncio
 from datetime import time
 
 from telegram import Update
@@ -18,11 +17,10 @@ from institutional_engine import (
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-
 # ================= KOMUTLAR =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🏦 Risk Motoru + Drawdown Kalkanı Aktif")
+    await update.message.reply_text("🏦 Risk Motoru Aktif")
 
 
 async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -101,13 +99,12 @@ def main():
     app.add_handler(CommandHandler("close", close))
     app.add_handler(CommandHandler("equity", equity))
 
-    # Sabah 09:15 otomatik rapor
+    # Sabah 09:15
     app.job_queue.run_daily(
         morning_job,
         time=time(hour=9, minute=15),
         days=(0,1,2,3,4),
-        name="morning_report",
-        chat_id=None  # İlk start atan kullanıcıya bağlanacak
+        name="morning_report"
     )
 
     app.run_polling()
