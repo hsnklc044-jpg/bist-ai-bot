@@ -5,52 +5,12 @@ import json
 import os
 from datetime import datetime
 
-# ================= DOSYALAR =================
-
 BALANCE_FILE = "balance.json"
-SYSTEM_FILE = "system_state.json"
-EQUITY_FILE = "equity_curve.json"
-
-# ================= AYARLAR =================
 
 BASE_RISK = 0.01
 MAX_TRADES_NORMAL = 3
 MAX_TRADES_STRESS = 2
-
-
-# ================= YARDIMCI =================
-
-def load_json(file, default):
-    if os.path.exists(file):
-        with open(file, "r") as f:
-            return json.load(f)
-    return default
-
-
-def save_json(file, data):
-    with open(file, "w") as f:
-        json.dump(data, f)
-
-
-# ================= BALANCE =================
-
-def load_balance():
-    return load_json(BALANCE_FILE, {"balance": 100000})
-
-
-def save_balance(balance):
-    save_json(BALANCE_FILE, {"balance": balance})
-
-
-# ================= EQUITY =================
-
-def save_equity(balance):
-    equity = load_json(EQUITY_FILE, [])
-    equity.append({
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "balance": balance
-    })
-    save_json(EQUITY_FILE, equity)
+MAX_CORRELATION = 0.70
 
 
 # ================= RSI =================
@@ -65,7 +25,7 @@ def calculate_rsi(close, period=14):
     return 100 - (100 / (1 + rs))
 
 
-# ================= MARKET VOLATILITY REGIME =================
+# ================= MARKET REGIME =================
 
 def get_market_regime():
 
@@ -84,29 +44,12 @@ def get_market_regime():
 
     atr_ratio = atr.iloc[-1] / atr.tail(30).mean()
 
-    # 🟢 NORMAL
     if atr_ratio < 1.2:
-        return {
-            "regime": "NORMAL",
-            "risk": BASE_RISK,
-            "max_trades": MAX_TRADES_NORMAL
-        }
-
-    # 🟡 STRESS
+        return {"regime": "NORMAL", "risk": BASE_RISK, "max_trades": MAX_TRADES_NORMAL}
     elif atr_ratio < 1.8:
-        return {
-            "regime": "STRESS",
-            "risk": BASE_RISK * 0.5,
-            "max_trades": MAX_TRADES_STRESS
-        }
-
-    # 🔴 CRISIS
+        return {"regime": "STRESS", "risk": BASE_RISK * 0.5, "max_trades": MAX_TRADES_STRESS}
     else:
-        return {
-            "regime": "CRISIS",
-            "risk": 0,
-            "max_trades": 0
-        }
+        return {"regime": "CRISIS", "risk": 0, "max_trades": 0}
 
 
 # ================= DYNAMIC UNIVERSE =================
@@ -136,25 +79,63 @@ def get_dynamic_universe():
 
         high = df["High"]
         low = df["Low"]
-        close = df["Close"]
 
-        tr = (high - low).rolling(14).mean().iloc[-1]
+        atr = (high - low).rolling(14).mean().iloc[-1]
         avg_range = (high - low).tail(20).mean()
 
         volume_score = volume_ratio * avg_volume
-        volatility_score = tr + avg_range
+        volatility_score = atr + avg_range
 
         final_score = (volume_score * 0.6) + (volatility_score * 0.4)
 
-        scores.append({
-            "symbol": symbol,
-            "score": final_score
-        })
+        scores.append({"symbol": symbol, "score": final_score})
 
     df_scores = pd.DataFrame(scores)
     df_scores = df_scores.sort_values(by="score", ascending=False)
 
     return df_scores.head(12)["symbol"].tolist()
+
+
+# ================= CORRELATION FILTER =================
+
+def apply_correlation_filter(trades):
+
+    selected = []
+
+    for trade in trades:
+
+        symbol = trade["symbol"]
+
+        if not selected:
+            selected.append(trade)
+            continue
+
+        is_correlated = False
+
+        for sel in selected:
+
+            df1 = yf.download(symbol, period="3mo", interval="1d", progress=False)
+            df2 = yf.download(sel["symbol"], period="3mo", interval="1d", progress=False)
+
+            if df1.empty or df2.empty:
+                continue
+
+            returns1 = df1["Close"].pct_change().dropna()
+            returns2 = df2["Close"].pct_change().dropna()
+
+            corr = returns1.corr(returns2)
+
+            if corr > MAX_CORRELATION:
+                is_correlated = True
+                break
+
+        if not is_correlated:
+            selected.append(trade)
+
+        if len(selected) >= 3:
+            break
+
+    return selected
 
 
 # ================= TRADE SCAN =================
@@ -164,10 +145,7 @@ def scan_trades():
     regime = get_market_regime()
 
     if regime["regime"] == "CRISIS":
-        return {
-            "regime": regime,
-            "message": "🔴 KRİZ MODU — Yeni işlem yok"
-        }
+        return {"regime": regime, "trades": []}
 
     universe = get_dynamic_universe()
     trades = []
@@ -184,7 +162,6 @@ def scan_trades():
 
         price = close.iloc[-1]
 
-        # Trend filtresi
         if price < ema200.iloc[-1]:
             continue
 
@@ -205,18 +182,18 @@ def scan_trades():
 
         if rr >= 1.8:
 
-            trade_score = rr  # basit hibrit örnek
-
             trades.append({
                 "symbol": symbol,
                 "price": round(price,2),
                 "rr": round(rr,2),
-                "score": round(trade_score,2)
+                "score": round(rr,2)
             })
 
     trades = sorted(trades, key=lambda x: x["score"], reverse=True)
 
+    filtered_trades = apply_correlation_filter(trades)
+
     return {
         "regime": regime,
-        "trades": trades[:regime["max_trades"]]
+        "trades": filtered_trades[:regime["max_trades"]]
     }
