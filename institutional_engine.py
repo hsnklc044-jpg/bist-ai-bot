@@ -12,23 +12,38 @@ BIST30 = [
 def generate_weekly_report():
 
     results = []
+    total_attempted = 0
 
     for symbol in BIST30:
 
         try:
+            total_attempted += 1
+
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
 
-            if df.empty or len(df) < 60:
+            if df.empty:
+                results.append({
+                    "Hisse": symbol,
+                    "Durum": "Veri çekilemedi"
+                })
                 continue
 
-            close = df["Close"].values
+            close = df["Close"].dropna().values
 
+            if len(close) < 20:
+                results.append({
+                    "Hisse": symbol,
+                    "Durum": "Yetersiz veri"
+                })
+                continue
+
+            # Güvenli MA hesaplama
             ma20 = np.mean(close[-20:])
-            ma50 = np.mean(close[-50:])
+            ma50 = np.mean(close[-50:]) if len(close) >= 50 else np.mean(close)
 
             trend = 1 if ma20 > ma50 else 0
 
-            momentum = ((close[-1] / close[-20]) - 1) * 100
+            momentum = ((close[-1] / close[-min(20,len(close))]) - 1) * 100
             volatility = np.std(np.diff(close) / close[:-1]) * 100
 
             score = trend * 40 + momentum * 0.8 - volatility * 0.5
@@ -36,23 +51,30 @@ def generate_weekly_report():
             results.append({
                 "Hisse": symbol,
                 "Skor": round(float(score), 2),
-                "Volatilite(%)": round(float(volatility), 2)
+                "Volatilite(%)": round(float(volatility), 2),
+                "Trend(0/1)": trend
             })
 
-        except Exception:
-            continue
+        except Exception as e:
+            results.append({
+                "Hisse": symbol,
+                "Hata": str(e)
+            })
 
 
-    if len(results) == 0:
-        df_report = pd.DataFrame([{"Durum": "Uygun veri yok"}])
-    else:
-        df_report = pd.DataFrame(results)
+    # DataFrame oluştur
+    df_report = pd.DataFrame(results)
+
+    # Eğer Skor kolonu varsa sırala
+    if "Skor" in df_report.columns:
         df_report = df_report.sort_values("Skor", ascending=False)
-
 
     filename = "bist_core_report.xlsx"
     df_report.to_excel(filename, index=False)
 
-    summary = f"Toplam İncelenen: {len(results)}"
+    summary = (
+        f"Toplam Denenen: {total_attempted}\n"
+        f"Excel'e Yazılan: {len(results)}"
+    )
 
     return filename, summary
