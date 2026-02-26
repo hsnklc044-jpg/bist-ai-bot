@@ -2,6 +2,7 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import random
 
 RISK_PER_TRADE = 0.01
 START_BALANCE = 100000
@@ -10,6 +11,7 @@ BIST30 = [
     "ASELS.IS","THYAO.IS","KCHOL.IS","SISE.IS","EREGL.IS",
     "GARAN.IS","AKBNK.IS","ISCTR.IS","BIMAS.IS","TUPRS.IS"
 ]
+
 
 def calculate_rsi(close, period=14):
     delta = close.diff()
@@ -20,6 +22,8 @@ def calculate_rsi(close, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
+
+# ================= BACKTEST =================
 
 def run_backtest(years=3):
 
@@ -41,7 +45,6 @@ def run_backtest(years=3):
 
             price = close.iloc[i]
 
-            # 🔥 Trend filtresi
             if price < ema200.iloc[i]:
                 continue
 
@@ -70,40 +73,60 @@ def run_backtest(years=3):
 
                 trades.append(rr)
 
-    return analyze_results(equity_curve, trades)
+    return equity_curve, trades
 
 
-def analyze_results(equity_curve, trades):
+# ================= MONTE CARLO =================
 
-    returns = np.diff(equity_curve) / equity_curve[:-1]
+def run_monte_carlo(simulations=1000):
 
-    sharpe = 0
-    if np.std(returns) != 0:
-        sharpe = np.mean(returns) / np.std(returns) * np.sqrt(252)
+    _, trades = run_backtest()
 
-    peak = np.maximum.accumulate(equity_curve)
-    drawdown = (peak - equity_curve) / peak
-    max_dd = np.max(drawdown)
+    if not trades:
+        return None, "Trade verisi yok."
 
-    win_rate = sum(1 for t in trades if t > 0) / len(trades) if trades else 0
-    profit_factor = (
-        sum(t for t in trades if t > 0) /
-        abs(sum(t for t in trades if t < 0))
-        if any(t < 0 for t in trades) else 0
-    )
+    final_balances = []
+    max_dd_list = []
 
+    for _ in range(simulations):
+
+        shuffled = trades.copy()
+        random.shuffle(shuffled)
+
+        balance = START_BALANCE
+        equity = [balance]
+
+        for rr in shuffled:
+            risk_amount = balance * RISK_PER_TRADE
+            pnl = risk_amount * rr
+            balance += pnl
+            equity.append(balance)
+
+        equity = np.array(equity)
+        peak = np.maximum.accumulate(equity)
+        drawdown = (peak - equity) / peak
+        max_dd = np.max(drawdown)
+
+        final_balances.append(balance)
+        max_dd_list.append(max_dd)
+
+    worst_dd = np.percentile(max_dd_list, 95) * 100
+    avg_dd = np.mean(max_dd_list) * 100
+    avg_final = np.mean(final_balances)
+
+    # Grafik
     plt.figure(figsize=(8,4))
-    plt.plot(equity_curve)
-    plt.title("Trend Filtered Backtest Equity")
-    plt.grid(True)
-    plt.savefig("backtest_equity.png")
+    plt.hist(max_dd_list, bins=40)
+    plt.title("Monte Carlo Max Drawdown Distribution")
+    plt.xlabel("Drawdown")
+    plt.savefig("montecarlo_dd.png")
     plt.close()
 
-    return {
-        "Final Balance": round(equity_curve[-1],2),
-        "Sharpe Ratio": round(sharpe,2),
-        "Max Drawdown %": round(max_dd*100,2),
-        "Win Rate %": round(win_rate*100,2),
-        "Profit Factor": round(profit_factor,2),
-        "Total Trades": len(trades)
+    result = {
+        "Simulations": simulations,
+        "Avg Final Balance": round(avg_final,2),
+        "Average Max DD %": round(avg_dd,2),
+        "Worst 5% DD %": round(worst_dd,2)
     }
+
+    return result, None
