@@ -3,6 +3,7 @@ import numpy as np
 import yfinance as yf
 import json
 import os
+import matplotlib.pyplot as plt
 from datetime import datetime
 
 # ================= AYARLAR =================
@@ -13,17 +14,29 @@ BIST30 = [
 ]
 
 BALANCE_FILE = "balance.json"
-TRADES_FILE = "trades_log.json"
 SYSTEM_FILE = "system_state.json"
+EQUITY_FILE = "equity_curve.json"
+ALERT_FILE = "alert_state.json"
 
 RISK_PER_TRADE = 0.01
-MAX_POSITIONS = 5
-MAX_DAILY_RISK = 0.03
 MAX_DRAWDOWN = 0.05
 MAX_CONSECUTIVE_LOSS = 3
 
 
-# ================= STATE =================
+# ================= BALANCE =================
+
+def load_balance():
+    if os.path.exists(BALANCE_FILE):
+        with open(BALANCE_FILE, "r") as f:
+            return json.load(f)
+    return {"balance": 100000}
+
+def save_balance(amount):
+    with open(BALANCE_FILE, "w") as f:
+        json.dump({"balance": amount}, f)
+
+
+# ================= SYSTEM STATE =================
 
 def load_system():
     if os.path.exists(SYSTEM_FILE):
@@ -40,32 +53,53 @@ def save_system(state):
         json.dump(state, f)
 
 
-# ================= BALANCE =================
+# ================= EQUITY =================
 
-def load_balance():
-    if os.path.exists(BALANCE_FILE):
-        with open(BALANCE_FILE, "r") as f:
-            return json.load(f)
-    return {"balance": 100000}
-
-def save_balance(amount):
-    with open(BALANCE_FILE, "w") as f:
-        json.dump({"balance": amount}, f)
-
-
-# ================= TRADE LOG =================
-
-def load_trades():
-    if os.path.exists(TRADES_FILE):
-        with open(TRADES_FILE, "r") as f:
+def load_equity():
+    if os.path.exists(EQUITY_FILE):
+        with open(EQUITY_FILE, "r") as f:
             return json.load(f)
     return []
 
-def save_trade(trade):
-    trades = load_trades()
-    trades.append(trade)
-    with open(TRADES_FILE, "w") as f:
-        json.dump(trades, f)
+def save_equity(balance):
+    equity = load_equity()
+    equity.append({
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "balance": balance
+    })
+    with open(EQUITY_FILE, "w") as f:
+        json.dump(equity, f)
+
+
+def generate_equity_chart():
+
+    equity = load_equity()
+
+    if not equity:
+        return None, "Henüz equity verisi yok."
+
+    balances = [e["balance"] for e in equity]
+
+    peaks = np.maximum.accumulate(balances)
+    drawdowns = (peaks - balances) / peaks
+    max_dd = np.max(drawdowns)
+
+    plt.figure(figsize=(8,4))
+    plt.plot(balances)
+    plt.title("Equity Curve")
+    plt.grid(True)
+
+    filename = "equity_curve.png"
+    plt.savefig(filename)
+    plt.close()
+
+    text = (
+        "📈 EQUITY ANALİZ\n\n"
+        f"Güncel: {balances[-1]} TL\n"
+        f"Max DD: %{round(max_dd*100,2)}"
+    )
+
+    return filename, text
 
 
 # ================= RİSK KONTROL =================
@@ -89,33 +123,18 @@ def risk_allowed():
     if system["consecutive_losses"] >= MAX_CONSECUTIVE_LOSS:
         system["locked"] = True
         save_system(system)
-        return False, "⚠ Üst üste kayıp limiti."
+        return False, "⚠ Üst üste 3 kayıp."
 
     return True, ""
 
 
-# ================= RSI =================
-
-def calculate_rsi(close, period=14):
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
-
-
-# ================= ANA MOTOR =================
+# ================= RAPOR =================
 
 def generate_weekly_report():
 
     allowed, msg = risk_allowed()
     if not allowed:
         return None, msg
-
-    balance = load_balance()["balance"]
-    risk_amount = balance * RISK_PER_TRADE
 
     results = []
 
@@ -127,39 +146,20 @@ def generate_weekly_report():
                 continue
 
             close = df["Close"].dropna().astype(float)
-            if len(close) < 90:
-                continue
-
             price = float(close.iloc[-1])
-            rsi = float(calculate_rsi(close).iloc[-1])
 
             support = close.tail(20).min()
             resistance = close.tail(20).max()
 
             stop = support * 0.98
-            risk_per_share = price - stop
+            rr = (resistance - price) / (price - stop)
 
-            if risk_per_share <= 0:
-                continue
-
-            rr_ratio = (resistance - price) / risk_per_share
-
-            if 35 <= rsi <= 70 and rr_ratio >= 1.8:
-
-                lot = int(risk_amount / risk_per_share)
-
+            if rr >= 1.8:
                 results.append({
                     "Hisse": symbol,
                     "Fiyat": round(price,2),
                     "Stop": round(stop,2),
-                    "R/R": round(rr_ratio,2),
-                    "Lot": lot
-                })
-
-                save_trade({
-                    "symbol": symbol,
-                    "rr": rr_ratio,
-                    "closed": False
+                    "R/R": round(rr,2)
                 })
 
                 break
@@ -171,59 +171,78 @@ def generate_weekly_report():
     filename = "bist_core_report.xlsx"
     df_report.to_excel(filename, index=False)
 
-    return filename, "📊 Rapor üretildi."
+    return filename, "📊 Sabah raporu üretildi."
 
 
-# ================= CLOSE =================
+# ================= CLOSE TRADE =================
 
 def close_trade(symbol, rr_result):
 
-    trades = load_trades()
     balance = load_balance()["balance"]
     system = load_system()
 
-    for t in reversed(trades):
-        if t["symbol"] == symbol and not t["closed"]:
+    risk_amount = balance * RISK_PER_TRADE
+    pnl = risk_amount * rr_result
+    balance += pnl
 
-            risk_amount = balance * RISK_PER_TRADE
-            pnl = risk_amount * rr_result
-            balance += pnl
+    if rr_result < 0:
+        system["consecutive_losses"] += 1
+    else:
+        system["consecutive_losses"] = 0
 
-            t["closed"] = True
-            t["realized_rr"] = rr_result
-
-            if rr_result < 0:
-                system["consecutive_losses"] += 1
-            else:
-                system["consecutive_losses"] = 0
-
-            if balance > system["peak_balance"]:
-                system["peak_balance"] = balance
-
-            break
+    if balance > system["peak_balance"]:
+        system["peak_balance"] = balance
 
     save_balance(balance)
     save_system(system)
-
-    with open(TRADES_FILE, "w") as f:
-        json.dump(trades, f)
+    save_equity(balance)
 
     return balance
 
 
-# ================= EQUITY =================
+# ================= ALARM =================
 
-def get_equity_report():
+def load_alerts():
+    if os.path.exists(ALERT_FILE):
+        with open(ALERT_FILE, "r") as f:
+            return json.load(f)
+    return {}
 
-    balance = load_balance()["balance"]
-    system = load_system()
+def save_alerts(data):
+    with open(ALERT_FILE, "w") as f:
+        json.dump(data, f)
 
-    drawdown = (system["peak_balance"] - balance) / system["peak_balance"]
 
-    return (
-        "📈 EQUITY RAPOR\n\n"
-        f"Bakiye: {round(balance,2)} TL\n"
-        f"Peak: {round(system['peak_balance'],2)} TL\n"
-        f"Drawdown: %{round(drawdown*100,2)}\n"
-        f"Consecutive Loss: {system['consecutive_losses']}"
-    )
+def check_intraday_alerts():
+
+    alerts = load_alerts()
+    messages = []
+
+    for symbol in BIST30:
+
+        try:
+            df = yf.download(symbol, period="5d", interval="30m", progress=False)
+            if df.empty:
+                continue
+
+            close = df["Close"].dropna().astype(float)
+            price = float(close.iloc[-1])
+
+            support = close.tail(20).min()
+            resistance = close.tail(20).max()
+
+            today = datetime.now().strftime("%Y-%m-%d")
+
+            if price < support and alerts.get(symbol) != today:
+                messages.append(f"🚨 {symbol} DESTEK KIRILDI: {round(price,2)}")
+                alerts[symbol] = today
+
+            if price > resistance and alerts.get(symbol) != today:
+                messages.append(f"🔥 {symbol} DİRENÇ KIRILDI: {round(price,2)}")
+                alerts[symbol] = today
+
+        except:
+            continue
+
+    save_alerts(alerts)
+    return messages
