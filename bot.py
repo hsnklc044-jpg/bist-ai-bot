@@ -1,5 +1,7 @@
 import os
 import logging
+from datetime import time
+
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -10,11 +12,9 @@ from telegram.ext import (
 from institutional_engine import generate_weekly_report
 
 
-# =============================
-# CONFIG
-# =============================
-
 TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")  # kendi chat id'n
+
 
 logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -23,54 +23,52 @@ logging.basicConfig(
 
 
 # =============================
-# COMMANDS
+# MANUEL KOMUTLAR
 # =============================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🏦 BIST HEDGE Fund Engine 20.0 AKTİF\n\n"
-        "Komutlar:\n"
-        "/status → Sistem durumu\n"
-        "/weekly → Haftalık Core + Performans Raporu"
-    )
-
-
-async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "✅ Sistem Çalışıyor\n"
-        "📊 Core Engine Aktif\n"
-        "📈 Equity Tracking Aktif\n"
-        "🛡 Kill Switch Hazır"
-    )
+    await update.message.reply_text("🏦 BIST Core Engine Aktif")
 
 
 async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await send_report(context, update.effective_chat.id)
 
-    await update.message.reply_text("📊 Haftalık Core rapor hazırlanıyor...")
+
+# =============================
+# OTOMATİK RAPOR
+# =============================
+
+async def auto_morning_report(context: ContextTypes.DEFAULT_TYPE):
+    await send_report(context, CHAT_ID)
+
+
+async def send_report(context, chat_id):
 
     try:
-        # ÖNEMLİ: tuple unpack
         filename, summary = generate_weekly_report()
 
-        # Excel dosyası gönder
-        if filename and os.path.exists(filename):
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text="📊 Sabah Otomatik Core Raporu"
+        )
 
+        if os.path.exists(filename):
             with open(filename, "rb") as f:
                 await context.bot.send_document(
-                    chat_id=update.effective_chat.id,
-                    document=f,
-                    filename="bist_core_report.xlsx"
+                    chat_id=chat_id,
+                    document=f
                 )
 
-        # Performans özeti gönder
-        if summary:
-            await update.message.reply_text(summary)
-
-        await update.message.reply_text("✅ Rapor tamamlandı.")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=summary
+        )
 
     except Exception as e:
-        logging.error(str(e))
-        await update.message.reply_text(f"❌ Hata:\n{str(e)}")
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=f"❌ Sabah rapor hatası:\n{str(e)}"
+        )
 
 
 # =============================
@@ -79,16 +77,18 @@ async def weekly(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
 
-    if not TOKEN:
-        raise ValueError("❌ BOT_TOKEN environment variable eksik!")
-
     application = ApplicationBuilder().token(TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("status", status))
     application.add_handler(CommandHandler("weekly", weekly))
 
-    print("🚀 HEDGE FUND ENGINE 20.0 BAŞLADI")
+    # ⏰ HER GÜN 09:15
+    application.job_queue.run_daily(
+        auto_morning_report,
+        time=time(9, 15)
+    )
+
+    print("🚀 Core Engine + Sabah Scheduler Aktif")
 
     application.run_polling()
 
