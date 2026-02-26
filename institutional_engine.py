@@ -45,12 +45,15 @@ def market_regime():
 
     close = df["Close"]
     ema200 = close.ewm(span=200).mean()
-    current_price = close.iloc[-1]
-    current_rsi = rsi(close).iloc[-1]
+    rsi_series = rsi(close)
 
-    if current_price > ema200.iloc[-1] and current_rsi > 50:
+    current_price = float(close.iloc[-1])
+    current_ema200 = float(ema200.iloc[-1])
+    current_rsi = float(rsi_series.iloc[-1])
+
+    if current_price > current_ema200 and current_rsi > 50:
         return "BULL", 0.01, 3
-    elif current_price > ema200.iloc[-1]:
+    elif current_price > current_ema200:
         return "NEUTRAL", 0.005, 2
     else:
         return "BEAR", 0.0, 0
@@ -83,17 +86,21 @@ def scan_trades():
             high = df["High"]
 
             ema200 = close.ewm(span=200).mean()
-            current_price = close.iloc[-1]
-            current_rsi = rsi(close).iloc[-1]
-            current_atr = atr(df).iloc[-1]
+            rsi_series = rsi(close)
+            atr_series = atr(df)
 
-            if current_price < ema200.iloc[-1]:
+            current_price = float(close.iloc[-1])
+            current_ema200 = float(ema200.iloc[-1])
+            current_rsi = float(rsi_series.iloc[-1])
+            current_atr = float(atr_series.iloc[-1])
+
+            if current_price < current_ema200:
                 continue
 
             if current_rsi < 48:
                 continue
 
-            recent_high = high.tail(20).max()
+            recent_high = float(high.tail(20).max())
 
             if current_price < recent_high * 0.99:
                 continue
