@@ -1,4 +1,5 @@
 import os
+from datetime import time
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -16,10 +17,9 @@ TOKEN = os.getenv("BOT_TOKEN")
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🏦 AI Trading Desk Aktif\n\n"
-        "Komutlar:\n"
+        "🏦 Institutional Trading Desk Aktif\n\n"
         "/scan → Günlük trade planı\n"
-        "/balance → Equity + Performans\n"
+        "/balance → Anlık performans\n"
     )
 
 # ================= SCAN =================
@@ -28,7 +28,6 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📊 Tarama başlatıldı...")
 
     result = scan_trades()
-
     regime = result.get("regime", {})
     trades = result.get("trades", [])
 
@@ -47,18 +46,15 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         for i, trade in enumerate(trades, 1):
 
-            # trade log kaydı
             log_trade(trade)
 
             message += (
                 f"{i}. {trade['symbol']}\n"
-                f"Fiyat: {trade['price']}\n"
                 f"Entry: {trade['entry']}\n"
                 f"Stop: {trade['stop']}\n"
                 f"Target: {trade['target']}\n"
                 f"R/R: {trade['rr']}\n"
-                f"Lot: {trade['lot']}\n"
-                f"Pozisyon: {trade['position_value']} TL\n\n"
+                f"Lot: {trade['lot']}\n\n"
             )
 
     await update.message.reply_text(message)
@@ -83,6 +79,30 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
             photo=photo
         )
 
+# ================= MORNING AUTO REPORT =================
+async def morning_report(context: ContextTypes.DEFAULT_TYPE):
+
+    equity = get_balance()
+    graph_file = generate_equity_graph()
+    metrics = performance_metrics()
+
+    message = f"🌅 GÜNLÜK PERFORMANS RAPORU\n\n"
+    message += f"Equity: {equity} TL\n\n"
+
+    for k, v in metrics.items():
+        message += f"{k}: {v}\n"
+
+    await context.bot.send_message(
+        chat_id=context.job.chat_id,
+        text=message
+    )
+
+    with open(graph_file, "rb") as photo:
+        await context.bot.send_photo(
+            chat_id=context.job.chat_id,
+            photo=photo
+        )
+
 # ================= MAIN =================
 def main():
 
@@ -98,7 +118,13 @@ def main():
     app.add_handler(CommandHandler("scan", scan))
     app.add_handler(CommandHandler("balance", balance))
 
-    print("Bot başlatıldı...")
+    # ⏰ Sabah 09:00 otomatik rapor
+    app.job_queue.run_daily(
+        morning_report,
+        time=time(9, 0)
+    )
+
+    print("Institutional Bot başlatıldı...")
     app.run_polling()
 
 if __name__ == "__main__":
