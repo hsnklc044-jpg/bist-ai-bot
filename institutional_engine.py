@@ -3,11 +3,10 @@ import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
 
-# ================= SETTINGS =================
 ACCOUNT_SIZE = 100000
 RISK_FREE_RATE = 0.25
 TAU = 0.05
-LAMBDA = 2.0   # Drawdown penalty strength
+LAMBDA = 2.0
 
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
@@ -26,7 +25,7 @@ def rsi(close, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-# ================= FEATURE ENGINE =================
+# ================= FEATURES =================
 def compute_features(symbol):
     df = yf.download(symbol, period="6mo", interval="1d", progress=False)
     if df.empty:
@@ -43,9 +42,8 @@ def compute_features(symbol):
 
     return np.array([rsi_val, momentum, trend_dist, vol_ratio])
 
-# ================= AI VIEW BUILDER =================
+# ================= AI VIEW =================
 def build_ai_views():
-
     feature_matrix = []
     symbols_valid = []
 
@@ -59,11 +57,8 @@ def build_ai_views():
         return None, None, None
 
     feature_matrix = np.array(feature_matrix)
-
-    # Normalize
     feature_matrix = (feature_matrix - feature_matrix.mean(axis=0)) / feature_matrix.std(axis=0)
 
-    # Linear alpha weights
     alpha_weights = np.array([0.3, 0.3, 0.2, 0.2])
     alpha_scores = feature_matrix @ alpha_weights
 
@@ -79,12 +74,10 @@ def build_ai_views():
 # ================= RETURNS =================
 def get_returns(symbols):
     data = yf.download(symbols, period="6mo", interval="1d", progress=False)["Close"]
-    returns = data.pct_change().dropna()
-    return returns
+    return data.pct_change().dropna()
 
 # ================= BLACK LITTERMAN =================
 def black_litterman(returns, P, Q):
-
     cov = returns.cov() * 252
     market_weights = np.ones(len(returns.columns)) / len(returns.columns)
     pi = cov @ market_weights
@@ -102,21 +95,18 @@ def black_litterman(returns, P, Q):
 
     return mu_bl, cov
 
-# ================= OPTIMIZER WITH DRAWDOWN =================
+# ================= OPTIMIZER =================
 def optimize(mu, cov, returns):
 
     def objective(weights):
-
         port_returns = returns @ weights
         equity = (1 + port_returns).cumprod()
-
         peak = equity.cummax()
         drawdown = (equity - peak) / peak
         max_dd = abs(drawdown.min())
 
         port_return = np.sum(mu * weights)
         port_vol = np.sqrt(weights.T @ cov @ weights)
-
         sharpe = (port_return - RISK_FREE_RATE) / port_vol
 
         return -(sharpe - LAMBDA * max_dd)
@@ -133,6 +123,27 @@ def optimize(mu, cov, returns):
 
     return result.x
 
+# ================= MONTE CARLO =================
+def monte_carlo_simulation(mu, cov, weights, days=60, simulations=1000):
+
+    port_mean = np.sum(mu * weights) / 252
+    port_vol = np.sqrt(weights.T @ cov @ weights) / np.sqrt(252)
+
+    final_values = []
+
+    for _ in range(simulations):
+        daily_returns = np.random.normal(port_mean, port_vol, days)
+        equity = 1
+        for r in daily_returns:
+            equity *= (1 + r)
+        final_values.append(equity)
+
+    return {
+        "expected_return_%": round((np.mean(final_values)-1)*100,2),
+        "worst_case_%": round((np.percentile(final_values,5)-1)*100,2),
+        "best_case_%": round((np.percentile(final_values,95)-1)*100,2)
+    }
+
 # ================= MAIN =================
 def scan_trades():
 
@@ -142,16 +153,17 @@ def scan_trades():
 
     returns = get_returns(symbols)
     mu_bl, cov = black_litterman(returns, P, Q)
-
     weights = optimize(mu_bl, cov, returns)
 
-    trades = []
     portfolio_return = np.sum(mu_bl * weights)
     portfolio_vol = np.sqrt(weights.T @ cov @ weights)
     sharpe = (portfolio_return - RISK_FREE_RATE) / portfolio_vol
 
-    for i, symbol in enumerate(symbols):
+    monte_carlo = monte_carlo_simulation(mu_bl, cov, weights)
 
+    trades = []
+
+    for i, symbol in enumerate(symbols):
         weight = weights[i]
         if weight < 0.05:
             continue
@@ -169,10 +181,11 @@ def scan_trades():
 
     return {
         "portfolio": {
-            "model": "AI Black-Litterman + Drawdown Control",
+            "model": "AI BL + Drawdown + MonteCarlo",
             "expected_return_%": round(portfolio_return*100,2),
             "volatility_%": round(portfolio_vol*100,2),
             "sharpe_ratio": round(sharpe,2)
         },
+        "monte_carlo_60d": monte_carlo,
         "trades": trades
     }
