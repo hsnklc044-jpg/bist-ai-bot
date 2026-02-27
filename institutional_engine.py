@@ -1,18 +1,13 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
-import os
-import csv
 
 # ================= SETTINGS =================
 ACCOUNT_SIZE = 100000
 BASE_RISK = 0.01
 MIN_RR = 1.5
 BREAKOUT_BUFFER = 0.97
-MAX_DAILY_RISK = 0.03
-MAX_TOTAL_EXPOSURE = 0.40
 MAX_CORRELATION = 0.80
-TRADE_LOG = "trade_log.csv"
 
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
@@ -22,7 +17,7 @@ WATCHLIST = [
 ]
 
 # ================= HELPERS =================
-def last_value(series):
+def last(series):
     if isinstance(series, pd.DataFrame):
         series = series.iloc[:, 0]
     return float(series.iloc[-1])
@@ -46,85 +41,81 @@ def atr(df, period=14):
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
-# ================= DYNAMIC RISK =================
-def dynamic_risk():
-    df = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
+# ================= MARKET REGIME =================
+def market_regime():
+
+    df = yf.download("XU100.IS", period="6mo", interval="1d", progress=False)
     if df.empty:
-        return BASE_RISK
+        return "NEUTRAL", BASE_RISK
 
     close = df["Close"]
-    atr_series = atr(df)
+    ema200 = close.ewm(span=200).mean()
+    rsi_series = rsi(close)
 
-    atr_value = last_value(atr_series)
-    price = last_value(close)
-    volatility_ratio = atr_value / price
+    price = last(close)
+    ema = last(ema200)
+    rsi_val = last(rsi_series)
 
-    if volatility_ratio > 0.03:
-        return BASE_RISK * 0.5
-    elif volatility_ratio > 0.02:
-        return BASE_RISK * 0.75
+    if price > ema and rsi_val > 50:
+        return "BULL", BASE_RISK
+    elif price > ema:
+        return "NEUTRAL", BASE_RISK * 0.5
     else:
-        return BASE_RISK * 1.2
-
-# ================= EXPOSURE =================
-def current_exposure():
-    if not os.path.exists(TRADE_LOG):
-        return 0
-    exposure = 0
-    with open(TRADE_LOG, mode="r") as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            if row["Status"] == "OPEN":
-                exposure += float(row["PositionValue"])
-    return exposure
+        return "BEAR", 0
 
 # ================= CORRELATION =================
-def is_highly_correlated(new_symbol, selected_symbols):
+def is_correlated(new_symbol, selected_symbols):
     if not selected_symbols:
         return False
 
     symbols = selected_symbols + [new_symbol]
     data = yf.download(symbols, period="60d", interval="1d", progress=False)["Close"]
     returns = data.pct_change().dropna()
-    corr_matrix = returns.corr()
+    corr = returns.corr()
 
-    for sym in selected_symbols:
-        if corr_matrix.loc[new_symbol, sym] >= MAX_CORRELATION:
+    for s in selected_symbols:
+        if corr.loc[new_symbol, s] > MAX_CORRELATION:
             return True
     return False
 
 # ================= BETA =================
 def calculate_beta(symbol):
     try:
-        data = yf.download([symbol, "XU100.IS"], period="6mo", interval="1d", progress=False)["Close"]
+        data = yf.download([symbol,"XU100.IS"], period="6mo", interval="1d", progress=False)["Close"]
         returns = data.pct_change().dropna()
-
-        stock_returns = returns[symbol]
-        index_returns = returns["XU100.IS"]
-
-        covariance = np.cov(stock_returns, index_returns)[0][1]
-        variance = np.var(index_returns)
-
-        beta = covariance / variance
-        return round(beta, 2)
+        stock = returns[symbol]
+        index = returns["XU100.IS"]
+        cov = np.cov(stock, index)[0][1]
+        var = np.var(index)
+        return round(cov/var,2)
     except:
         return 1.0
 
 # ================= MAIN SCAN =================
 def scan_trades():
 
-    risk_per_trade = dynamic_risk()
+    regime, risk_per_trade = market_regime()
 
     trades = []
-    total_risk = 0
-    selected_symbols = []
     betas = []
-
     portfolio_value = 0
+    selected_symbols = []
+
+    if regime == "BEAR":
+        return {
+            "regime": {
+                "regime": regime,
+                "risk_%": 0,
+                "portfolio_beta": 0,
+                "hedge_ratio": 1.0,
+                "hedge_lot_xu100": "FULL HEDGE"
+            },
+            "trades": []
+        }
 
     for symbol in WATCHLIST:
 
-        if is_highly_correlated(symbol, selected_symbols):
+        if is_correlated(symbol, selected_symbols):
             continue
 
         try:
@@ -140,13 +131,13 @@ def scan_trades():
             rsi_series = rsi(close)
             atr_series = atr(df)
 
-            price = last_value(close)
-            ema = last_value(ema200)
-            rsi_val = last_value(rsi_series)
-            atr_val = last_value(atr_series)
+            price = last(close)
+            ema = last(ema200)
+            rsi_val = last(rsi_series)
+            atr_val = last(atr_series)
 
-            avg_vol = last_value(volume.rolling(20).mean())
-            cur_vol = last_value(volume)
+            avg_vol = last(volume.rolling(20).mean())
+            cur_vol = last(volume)
 
             if price < ema or rsi_val < 50 or cur_vol < avg_vol:
                 continue
@@ -160,7 +151,6 @@ def scan_trades():
 
             risk = price - stop
             reward = target - price
-
             if risk <= 0:
                 continue
 
@@ -185,7 +175,6 @@ def scan_trades():
                 "target": round(target,2),
                 "rr": round(rr,2),
                 "lot": qty,
-                "position_value": round(position_value,2),
                 "beta": beta
             })
 
@@ -195,16 +184,16 @@ def scan_trades():
     portfolio_beta = round(np.mean(betas),2) if betas else 0
     hedge_ratio = max(portfolio_beta - 1, 0)
 
-    # ================= HEDGE LOT CALC =================
     index_df = yf.download("XU100.IS", period="5d", interval="1d", progress=False)
-    index_price = last_value(index_df["Close"]) if not index_df.empty else 0
+    index_price = last(index_df["Close"]) if not index_df.empty else 0
 
     hedge_value = portfolio_value * hedge_ratio
     hedge_lot = int(hedge_value / index_price) if index_price > 0 else 0
 
     return {
         "regime": {
-            "dynamic_risk_%": round(risk_per_trade * 100,2),
+            "regime": regime,
+            "risk_%": round(risk_per_trade*100,2),
             "portfolio_beta": portfolio_beta,
             "hedge_ratio": round(hedge_ratio,2),
             "hedge_lot_xu100": hedge_lot
