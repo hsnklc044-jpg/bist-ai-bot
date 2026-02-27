@@ -11,6 +11,7 @@ BREAKOUT_BUFFER = 0.97
 MAX_DAILY_RISK = 0.03
 MAX_TOTAL_EXPOSURE = 0.40
 TRADE_LOG = "trade_log.csv"
+MAX_PER_SECTOR = 1
 
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
@@ -18,6 +19,20 @@ WATCHLIST = [
     "SISE.IS","BIMAS.IS",
     "ASELS.IS","TUPRS.IS","ISCTR.IS"
 ]
+
+# ================= SECTOR MAP =================
+SECTOR_MAP = {
+    "GARAN": "BANK",
+    "AKBNK": "BANK",
+    "ISCTR": "BANK",
+    "EREGL": "INDUSTRY",
+    "TUPRS": "ENERGY",
+    "THYAO": "AVIATION",
+    "BIMAS": "RETAIL",
+    "SISE": "INDUSTRY",
+    "ASELS": "DEFENSE",
+    "KCHOL": "HOLDING"
+}
 
 # ================= HELPERS =================
 def last_value(series):
@@ -44,9 +59,8 @@ def atr(df, period=14):
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
-# ================= VOLATILITY ADJUSTED RISK =================
+# ================= DYNAMIC RISK =================
 def dynamic_risk():
-
     df = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
     if df.empty:
         return BASE_RISK
@@ -56,7 +70,6 @@ def dynamic_risk():
 
     atr_value = last_value(atr_series)
     price = last_value(close)
-
     volatility_ratio = atr_value / price
 
     if volatility_ratio > 0.03:
@@ -68,31 +81,24 @@ def dynamic_risk():
 
 # ================= EXPOSURE =================
 def current_exposure():
-
     if not os.path.exists(TRADE_LOG):
         return 0
-
     exposure = 0
-
     with open(TRADE_LOG, mode="r") as file:
         reader = csv.DictReader(file)
         for row in reader:
             if row["Status"] == "OPEN":
                 exposure += float(row["PositionValue"])
-
     return exposure / ACCOUNT_SIZE
 
 def is_symbol_open(symbol):
-
     if not os.path.exists(TRADE_LOG):
         return False
-
     with open(TRADE_LOG, mode="r") as file:
         reader = csv.DictReader(file)
         for row in reader:
             if row["Symbol"] == symbol and row["Status"] == "OPEN":
                 return True
-
     return False
 
 # ================= SCAN =================
@@ -103,10 +109,15 @@ def scan_trades():
     trades = []
     total_risk = 0
     exposure = current_exposure()
+    sector_count = {}
 
     for symbol in WATCHLIST:
 
         base_symbol = symbol.replace(".IS","")
+        sector = SECTOR_MAP.get(base_symbol, "OTHER")
+
+        if sector_count.get(sector, 0) >= MAX_PER_SECTOR:
+            continue
 
         if is_symbol_open(base_symbol):
             continue
@@ -168,9 +179,11 @@ def scan_trades():
 
             exposure += position_value / ACCOUNT_SIZE
             total_risk += risk_per_trade
+            sector_count[sector] = sector_count.get(sector, 0) + 1
 
             trades.append({
                 "symbol": base_symbol,
+                "sector": sector,
                 "price": round(price,2),
                 "entry": round(price,2),
                 "stop": round(stop,2),
