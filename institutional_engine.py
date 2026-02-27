@@ -21,12 +21,9 @@ def rsi(close, period=14):
 
 # ================= ATR =================
 def atr(df, period=14):
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    high = pd.Series(df["High"]).astype(float)
-    low = pd.Series(df["Low"]).astype(float)
-    close = pd.Series(df["Close"]).astype(float)
+    high = df["High"]
+    low = df["Low"]
+    close = df["Close"]
 
     tr1 = high - low
     tr2 = abs(high - close.shift())
@@ -43,29 +40,15 @@ def market_regime():
     if df.empty:
         return "NEUTRAL", 0.005, 2
 
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    close = pd.Series(df["Close"]).astype(float)
-
+    close = df["Close"]
     ema200 = close.ewm(span=200).mean()
     ema50 = close.ewm(span=50).mean()
     rsi_series = rsi(close)
 
-    if len(close) < 200:
-        return "NEUTRAL", 0.005, 2
-
-    current_price = float(close.values[-1])
-    current_ema200 = float(ema200.values[-1])
-    current_ema50 = float(ema50.values[-1])
-    current_rsi = float(rsi_series.values[-1])
-
-    # ===== DEBUG SATIRI =====
-    print("REJIM DEBUG:",
-          "PRICE:", current_price,
-          "EMA50:", current_ema50,
-          "EMA200:", current_ema200,
-          "RSI:", current_rsi)
+    current_price = float(close.iloc[-1])
+    current_ema200 = float(ema200.iloc[-1])
+    current_ema50 = float(ema50.iloc[-1])
+    current_rsi = float(rsi_series.iloc[-1])
 
     if current_price > current_ema200 and current_ema50 > current_ema200 and current_rsi > 50:
         return "BULL", 0.01, 3
@@ -81,11 +64,7 @@ def scan_trades():
 
     if regime == "BEAR":
         return {
-            "regime": {
-                "regime": regime,
-                "risk": risk_per_trade,
-                "max_trades": max_trades
-            },
+            "regime": {"regime": regime, "risk": risk_per_trade, "max_trades": max_trades},
             "trades": []
         }
 
@@ -95,65 +74,61 @@ def scan_trades():
 
         try:
             df = yf.download(symbol, period="6mo", interval="1d", progress=False)
-
-            if df.empty:
+            if df.empty or len(df) < 200:
                 continue
 
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-
-            close = pd.Series(df["Close"]).astype(float)
-            high = pd.Series(df["High"]).astype(float)
-            volume = pd.Series(df["Volume"]).astype(float)
-
-            if len(close) < 200:
-                continue
+            close = df["Close"]
+            high = df["High"]
+            volume = df["Volume"]
 
             ema200 = close.ewm(span=200).mean()
             ema50 = close.ewm(span=50).mean()
             rsi_series = rsi(close)
             atr_series = atr(df)
 
-            current_price = float(close.values[-1])
-            current_ema200 = float(ema200.values[-1])
-            current_ema50 = float(ema50.values[-1])
-            current_rsi = float(rsi_series.values[-1])
-            current_atr = float(atr_series.values[-1])
+            current_price = float(close.iloc[-1])
+            current_ema200 = float(ema200.iloc[-1])
+            current_ema50 = float(ema50.iloc[-1])
+            current_rsi = float(rsi_series.iloc[-1])
+            current_atr = float(atr_series.iloc[-1])
 
             if current_price < current_ema200:
                 continue
 
-            if current_ema50 < current_ema200:
-                continue
-
-            # -------- REJİME GÖRE FİLTRE --------
-
+            # ================= BULL MODE =================
             if regime == "BULL":
-                min_rsi = 55
-                breakout_period = 20
-                min_rr = 2.2
-                require_volume = True
-            else:  # NEUTRAL
-                min_rsi = 52
-                breakout_period = 15
-                min_rr = 2.0
-                require_volume = False
 
-            if current_rsi < min_rsi:
-                continue
-
-            recent_close_high = float(close.tail(breakout_period).max())
-            if current_price < recent_close_high:
-                continue
-
-            if require_volume:
-                avg_volume = float(volume.rolling(20).mean().iloc[-1])
-                current_volume = float(volume.values[-1])
-                if current_volume < avg_volume:
+                if current_ema50 < current_ema200:
                     continue
 
-            stop = current_price - (current_atr * 1.5)
-            target = current_price + (current_atr * 3)
+                if current_rsi < 55:
+                    continue
+
+                recent_high = float(close.tail(20).max())
+                if current_price < recent_high:
+                    continue
+
+                avg_volume = float(volume.rolling(20).mean().iloc[-1])
+                if volume.iloc[-1] < avg_volume:
+                    continue
+
+                stop = current_price - (current_atr * 1.5)
+                target = current_price + (current_atr * 3)
+                min_rr = 2.2
+
+            # ================= NEUTRAL MODE =================
+            else:
+
+                if not (45 < current_rsi < 60):
+                    continue
+
+                # EMA50'ye yakınlık (pullback)
+                if abs(current_price - current_ema50) > current_atr:
+                    continue
+
+                stop = current_price - (current_atr * 1.2)
+                target = current_price + (current_atr * 2.2)
+                min_rr = 1.8
 
             risk = current_price - stop
             reward = target - current_price
@@ -169,24 +144,19 @@ def scan_trades():
                 "symbol": symbol,
                 "price": round(current_price, 2),
                 "breakout_entry": round(current_price, 2),
-                "pullback_entry": round(current_price * 0.98, 2),
+                "pullback_entry": round(current_price * 0.99, 2),
                 "stop": round(stop, 2),
                 "target": round(target, 2),
                 "rr": round(rr, 2),
                 "score": round(rr, 2)
             })
 
-        except Exception as e:
-            print("SCAN ERROR:", e)
+        except:
             continue
 
     trades = sorted(trades, key=lambda x: x["score"], reverse=True)
 
     return {
-        "regime": {
-            "regime": regime,
-            "risk": risk_per_trade,
-            "max_trades": max_trades
-        },
+        "regime": {"regime": regime, "risk": risk_per_trade, "max_trades": max_trades},
         "trades": trades[:max_trades]
     }
