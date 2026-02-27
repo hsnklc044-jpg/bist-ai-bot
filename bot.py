@@ -25,7 +25,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= SCAN =================
 async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("📊 Tarama başlatıldı...")
+    await update.message.reply_text("🚀 NEW BOT SCAN FUNCTION")
 
     result = scan_trades()
     regime = result.get("regime", {})
