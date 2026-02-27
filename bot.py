@@ -5,7 +5,6 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 from institutional_engine import scan_trades
 from performance_tracker import (
-    init_log,
     log_trade,
     get_balance,
     generate_equity_graph,
@@ -19,8 +18,8 @@ TOKEN = os.getenv("BOT_TOKEN")
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🏦 Institutional Trading Desk Aktif\n\n"
-        "/scan → Institutional portfolio dağılımı\n"
-        "/balance → Anlık performans\n"
+        "/scan → Portfolio dağılımı\n"
+        "/balance → Performans durumu\n"
     )
 
 
@@ -58,13 +57,17 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             for t in trades:
 
-                log_trade(t)
+                # trade log kaydı
+                try:
+                    log_trade(t)
+                except:
+                    pass
 
                 message += (
-                    f"{t['symbol']}\n"
-                    f"Ağırlık: %{t['weight_%']}\n"
-                    f"Lot: {t['lot']}\n"
-                    f"Tutar: {t['allocation']} TL\n\n"
+                    f"{t.get('symbol','-')}\n"
+                    f"Ağırlık: %{t.get('weight_%',0)}\n"
+                    f"Lot: {t.get('lot',0)}\n"
+                    f"Tutar: {t.get('allocation',0)} TL\n\n"
                 )
 
         await update.message.reply_text(message)
@@ -92,6 +95,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(message)
 
+        # grafik varsa gönder
         try:
             generate_equity_graph()
             with open("equity_curve.png", "rb") as f:
@@ -107,34 +111,6 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print("BALANCE ERROR:", e)
 
 
-# ================= SABAH OTOMATİK =================
-async def morning_job(context: ContextTypes.DEFAULT_TYPE):
-
-    try:
-        result = scan_trades()
-        trades = result.get("trades", [])
-
-        message = "🌅 Sabah Institutional Plan\n\n"
-
-        if not trades:
-            message += "Bugün uygun dağılım yok."
-        else:
-            for t in trades:
-                message += (
-                    f"{t['symbol']} → "
-                    f"%{t['weight_%']} | "
-                    f"Lot: {t['lot']}\n"
-                )
-
-        await context.bot.send_message(
-            chat_id=context.job.chat_id,
-            text=message
-        )
-
-    except Exception as e:
-        print("MORNING JOB ERROR:", e)
-
-
 # ================= MAIN =================
 def main():
 
@@ -142,21 +118,11 @@ def main():
         print("BOT_TOKEN bulunamadı!")
         return
 
-    init_log()
-
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("scan", scan))
     app.add_handler(CommandHandler("balance", balance))
-
-    try:
-        app.job_queue.run_daily(
-            morning_job,
-            time=time(9, 15)
-        )
-    except Exception as e:
-        print("JOB ERROR:", e)
 
     print("Institutional Bot başlatıldı...")
     app.run_polling()
