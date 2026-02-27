@@ -2,7 +2,8 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-BASE_RISK = 0.01
+# ================= AYARLAR =================
+ACCOUNT_SIZE = 100000      # Toplam sermaye (değiştirebilirsin)
 MIN_RR = 1.5
 BREAKOUT_BUFFER = 0.97
 
@@ -26,8 +27,10 @@ def rsi(close, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
+
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
+
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
@@ -43,6 +46,19 @@ def atr(df, period=14):
 
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.rolling(period).mean()
+
+# ================= POZİSYON BOYUTU =================
+def position_size(entry, stop, risk_percent):
+    risk_amount = ACCOUNT_SIZE * risk_percent
+    risk_per_share = entry - stop
+
+    if risk_per_share <= 0:
+        return 0, 0
+
+    quantity = risk_amount / risk_per_share
+    position_value = quantity * entry
+
+    return int(quantity), round(position_value, 2)
 
 # ================= MARKET REGIME =================
 def market_regime():
@@ -94,6 +110,8 @@ def scan_trades():
 
     trades = []
 
+    xu100 = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
+
     for symbol in WATCHLIST:
 
         try:
@@ -119,8 +137,7 @@ def scan_trades():
             avg_volume = last_value(volume.rolling(20).mean())
             current_volume = last_value(volume)
 
-            # Relative Strength vs XU100
-            xu100 = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
+            # Relative Strength
             if not xu100.empty:
                 rs_score = last_value(close.pct_change(20)) - last_value(xu100["Close"].pct_change(20))
             else:
@@ -151,9 +168,10 @@ def scan_trades():
                 continue
 
             rr = reward / risk
-
             if rr < MIN_RR:
                 continue
+
+            qty, position_value = position_size(current_price, stop, risk_per_trade)
 
             trades.append({
                 "symbol": symbol.replace(".IS",""),
@@ -163,7 +181,9 @@ def scan_trades():
                 "stop": round(stop, 2),
                 "target": round(target, 2),
                 "rr": round(rr, 2),
-                "score": score
+                "score": score,
+                "lot": qty,
+                "position_value": position_value
             })
 
         except Exception as e:
