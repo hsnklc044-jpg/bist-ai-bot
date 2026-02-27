@@ -3,10 +3,12 @@ import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
 
+# ================= SETTINGS =================
 ACCOUNT_SIZE = 100000
 RISK_FREE_RATE = 0.25
 TAU = 0.05
 LAMBDA = 2.0
+TARGET_VOL = 0.20
 
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
@@ -25,7 +27,7 @@ def rsi(close, period=14):
     rs = avg_gain / (avg_loss + 1e-9)
     return 100 - (100 / (1 + rs))
 
-# ================= ADAPTIVE AI VIEW =================
+# ================= ADAPTIVE AI =================
 def build_ai_views():
 
     feature_matrix = []
@@ -182,6 +184,32 @@ def kelly_position_size(portfolio_return, portfolio_vol):
 
     return round(kelly_fraction, 2)
 
+# ================= VOL TARGET =================
+def volatility_targeting(portfolio_vol):
+
+    if portfolio_vol == 0:
+        return 0
+
+    scaling_factor = TARGET_VOL / portfolio_vol
+    scaling_factor = min(max(scaling_factor, 0.5), 1.5)
+
+    return round(scaling_factor, 2)
+
+# ================= REGIME =================
+def regime_multiplier():
+
+    df = yf.download("XU100.IS", period="6mo", interval="1d", progress=False)
+    if df.empty:
+        return 1
+
+    close = df["Close"]
+    ema200 = close.ewm(span=200).mean()
+
+    if close.iloc[-1] > ema200.iloc[-1]:
+        return 1.0
+    else:
+        return 0.7
+
 # ================= MAIN =================
 def scan_trades():
 
@@ -203,6 +231,11 @@ def scan_trades():
     monte_carlo = monte_carlo_simulation(mu_bl, cov, weights)
     kelly_fraction = kelly_position_size(portfolio_return, portfolio_vol)
 
+    vol_scaler = volatility_targeting(portfolio_vol)
+    regime_scale = regime_multiplier()
+
+    final_leverage = round(min(kelly_fraction * vol_scaler * regime_scale, 1.5), 2)
+
     trades = []
 
     for i, symbol in enumerate(symbols):
@@ -211,7 +244,7 @@ def scan_trades():
             continue
 
         price = yf.download(symbol, period="5d", interval="1d", progress=False)["Close"].iloc[-1]
-        allocation = ACCOUNT_SIZE * weight
+        allocation = ACCOUNT_SIZE * weight * final_leverage
         lot = int(allocation / price)
 
         trades.append({
@@ -223,11 +256,14 @@ def scan_trades():
 
     return {
         "portfolio": {
-            "model": "Adaptive AI + BL + DD + MC + Kelly",
+            "model": "Adaptive AI + BL + DD + MC + Kelly + VolTarget + Regime",
             "expected_return_%": round(portfolio_return*100,2),
             "volatility_%": round(portfolio_vol*100,2),
             "sharpe_ratio": round(sharpe,2),
-            "kelly_fraction": kelly_fraction
+            "kelly_fraction": kelly_fraction,
+            "vol_scaler": vol_scaler,
+            "regime_scale": regime_scale,
+            "final_leverage": final_leverage
         },
         "monte_carlo_60d": monte_carlo,
         "trades": trades
