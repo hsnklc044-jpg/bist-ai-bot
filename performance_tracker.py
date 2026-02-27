@@ -9,8 +9,9 @@ def init_log():
         with open(FILE_NAME, mode="w", newline="") as file:
             writer = csv.writer(file)
             writer.writerow([
-                "Symbol", "Entry", "Stop", "Target",
-                "Lot", "PositionValue", "RR"
+                "Symbol", "Entry", "Stop",
+                "Target", "Lot",
+                "PositionValue", "RR"
             ])
 
 def log_trade(trade):
@@ -27,7 +28,6 @@ def log_trade(trade):
         ])
 
 def get_balance():
-    # Basit equity hesap (simülasyon)
     if not os.path.exists(FILE_NAME):
         return START_BALANCE
 
@@ -38,6 +38,6 @@ def get_balance():
         for row in reader:
             rr = float(row["RR"])
             position = float(row["PositionValue"])
-            balance += position * 0.02 * rr  # simülasyon kar modeli
+            balance += position * 0.02 * rr
 
     return round(balance, 2)
