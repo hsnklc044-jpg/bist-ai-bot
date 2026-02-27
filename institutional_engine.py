@@ -17,16 +17,23 @@ def rsi(close, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
+
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
+
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
+
 # ================= ATR =================
 def atr(df, period=14):
-    high = df["High"]
-    low = df["Low"]
-    close = df["Close"]
+
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    high = pd.Series(df["High"]).astype(float)
+    low = pd.Series(df["Low"]).astype(float)
+    close = pd.Series(df["Close"]).astype(float)
 
     tr1 = high - low
     tr2 = abs(high - close.shift())
@@ -34,6 +41,7 @@ def atr(df, period=14):
 
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.rolling(period).mean()
+
 
 # ================= MARKET REGIME =================
 def market_regime():
@@ -43,13 +51,20 @@ def market_regime():
     if df.empty:
         return "NEUTRAL", 0.005, 2
 
-    close = df["Close"]
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    close = pd.Series(df["Close"]).astype(float)
+
     ema200 = close.ewm(span=200).mean()
     rsi_series = rsi(close)
 
-    current_price = float(close.to_numpy()[-1])
-    current_ema200 = float(ema200.to_numpy()[-1])
-    current_rsi = float(rsi_series.to_numpy()[-1])
+    if len(close) < 200:
+        return "NEUTRAL", 0.005, 2
+
+    current_price = float(close.values[-1])
+    current_ema200 = float(ema200.values[-1])
+    current_rsi = float(rsi_series.values[-1])
 
     if current_price > current_ema200 and current_rsi > 50:
         return "BULL", 0.01, 3
@@ -57,6 +72,7 @@ def market_regime():
         return "NEUTRAL", 0.005, 2
     else:
         return "BEAR", 0.0, 0
+
 
 # ================= SCAN =================
 def scan_trades():
@@ -79,32 +95,44 @@ def scan_trades():
 
         try:
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
+
             if df.empty:
                 continue
 
-            close = df["Close"]
-            high = df["High"]
+            # MultiIndex güvenliği
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+
+            close = pd.Series(df["Close"]).astype(float)
+            high = pd.Series(df["High"]).astype(float)
+
+            if len(close) < 200:
+                continue
 
             ema200 = close.ewm(span=200).mean()
             rsi_series = rsi(close)
             atr_series = atr(df)
 
-            current_price = float(close.to_numpy()[-1])
-            current_ema200 = float(ema200.to_numpy()[-1])
-            current_rsi = float(rsi_series.to_numpy()[-1])
-            current_atr = float(atr_series.to_numpy()[-1])
+            current_price = float(close.values[-1])
+            current_ema200 = float(ema200.values[-1])
+            current_rsi = float(rsi_series.values[-1])
+            current_atr = float(atr_series.values[-1])
 
+            # Trend filtresi
             if current_price < current_ema200:
                 continue
 
+            # RSI filtresi
             if current_rsi < 48:
                 continue
 
+            # 20 günlük tepe
             recent_high = float(high.tail(20).max())
 
             if current_price < recent_high * 0.99:
                 continue
 
+            # Risk hesaplama
             stop = current_price - (current_atr * 1.5)
             target = current_price + (current_atr * 3)
 
@@ -121,14 +149,17 @@ def scan_trades():
 
             trades.append({
                 "symbol": symbol,
-                "entry": round(current_price,2),
-                "stop": round(stop,2),
-                "target": round(target,2),
-                "rr": round(rr,2),
-                "score": round(rr,2)
+                "price": round(current_price, 2),
+                "breakout_entry": round(current_price, 2),
+                "pullback_entry": round(current_price * 0.98, 2),
+                "stop": round(stop, 2),
+                "target": round(target, 2),
+                "rr": round(rr, 2),
+                "score": round(rr, 2)
             })
 
-        except:
+        except Exception as e:
+            print("SCAN ERROR:", e)
             continue
 
     trades = sorted(trades, key=lambda x: x["score"], reverse=True)
