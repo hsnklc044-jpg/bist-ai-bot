@@ -10,22 +10,18 @@ from telegram.ext import (
 from institutional_engine import scan_trades
 from backtest_engine import run_monte_carlo
 
-
 TOKEN = os.getenv("BOT_TOKEN")
 
 
 # ================= START =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        await update.message.reply_text(
-            "🏦 AI Trading Desk Aktif\n\n"
-            "Komutlar:\n"
-            "/scan → Günlük trade planı\n"
-            "/backtestmc → Monte Carlo risk testi\n"
-        )
-    except Exception as e:
-        print("START ERROR:", e)
+    await update.message.reply_text(
+        "🏦 AI Trading Desk Aktif\n\n"
+        "Komutlar:\n"
+        "/scan → Günlük trade planı\n"
+        "/backtestmc → Monte Carlo risk testi\n"
+    )
 
 
 # ================= SCAN =================
@@ -58,12 +54,13 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for i, trade in enumerate(trades, 1):
                 message += (
                     f"{i}. {trade['symbol']}\n"
-                    f"   Fiyat: {trade['price']}\n\n"
-                    f"   🚀 Breakout Entry: {trade['breakout_entry']}\n"
-                    f"   📉 Pullback Entry: {trade['pullback_entry']}\n"
+                    f"   Fiyat: {trade['price']}\n"
+                    f"   🚀 Entry: {trade['breakout_entry']}\n"
                     f"   🛑 Stop: {trade['stop']}\n"
                     f"   🎯 Target: {trade['target']}\n"
-                    f"   📊 R/R: {trade['rr']}\n\n"
+                    f"   📊 R/R: {trade['rr']}\n"
+                    f"   💰 Lot: {trade['lot']}\n"
+                    f"   💵 Pozisyon: {trade['position_value']} TL\n\n"
                 )
 
         await update.message.reply_text(message)
@@ -125,13 +122,13 @@ async def morning_job(context: ContextTypes.DEFAULT_TYPE):
                     f"{trade['symbol']}\n"
                     f"🚀 {trade['breakout_entry']} | "
                     f"🛑 {trade['stop']} | "
-                    f"🎯 {trade['target']}\n\n"
+                    f"🎯 {trade['target']}\n"
+                    f"💰 Lot: {trade['lot']}\n\n"
                 )
 
-        await context.bot.send_message(
-            chat_id=context.job.chat_id,
-            text=message
-        )
+        # Chat ID'yi ilk kullanıcıdan al
+        chat_id = context.job.chat_id
+        await context.bot.send_message(chat_id=chat_id, text=message)
 
     except Exception as e:
         print("MORNING JOB ERROR:", e)
