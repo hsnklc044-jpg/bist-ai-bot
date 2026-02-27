@@ -60,6 +60,13 @@ def market_regime():
     current_ema50 = float(ema50.values[-1])
     current_rsi = float(rsi_series.values[-1])
 
+    # ===== DEBUG SATIRI =====
+    print("REJIM DEBUG:",
+          "PRICE:", current_price,
+          "EMA50:", current_ema50,
+          "EMA200:", current_ema200,
+          "RSI:", current_rsi)
+
     if current_price > current_ema200 and current_ema50 > current_ema200 and current_rsi > 50:
         return "BULL", 0.01, 3
     elif current_price > current_ema200:
@@ -169,7 +176,8 @@ def scan_trades():
                 "score": round(rr, 2)
             })
 
-        except:
+        except Exception as e:
+            print("SCAN ERROR:", e)
             continue
 
     trades = sorted(trades, key=lambda x: x["score"], reverse=True)
