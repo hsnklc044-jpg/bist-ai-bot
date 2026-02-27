@@ -4,14 +4,15 @@ import numpy as np
 import os
 import csv
 
+# ================= SETTINGS =================
 ACCOUNT_SIZE = 100000
 BASE_RISK = 0.01
 MIN_RR = 1.5
 BREAKOUT_BUFFER = 0.97
 MAX_DAILY_RISK = 0.03
 MAX_TOTAL_EXPOSURE = 0.40
-TRADE_LOG = "trade_log.csv"
 MAX_CORRELATION = 0.80
+TRADE_LOG = "trade_log.csv"
 
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
@@ -50,8 +51,10 @@ def dynamic_risk():
     df = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
     if df.empty:
         return BASE_RISK
+
     close = df["Close"]
     atr_series = atr(df)
+
     atr_value = last_value(atr_series)
     price = last_value(close)
     volatility_ratio = atr_value / price
@@ -85,26 +88,39 @@ def is_symbol_open(symbol):
                 return True
     return False
 
-# ================= CORRELATION CHECK =================
+# ================= CORRELATION =================
 def is_highly_correlated(new_symbol, selected_symbols):
-
     if not selected_symbols:
         return False
 
     symbols = selected_symbols + [new_symbol]
     data = yf.download(symbols, period="60d", interval="1d", progress=False)["Close"]
-
     returns = data.pct_change().dropna()
     corr_matrix = returns.corr()
 
     for sym in selected_symbols:
-        corr = corr_matrix.loc[new_symbol, sym]
-        if corr >= MAX_CORRELATION:
+        if corr_matrix.loc[new_symbol, sym] >= MAX_CORRELATION:
             return True
-
     return False
 
-# ================= SCAN =================
+# ================= BETA =================
+def calculate_beta(symbol):
+    try:
+        data = yf.download([symbol, "XU100.IS"], period="6mo", interval="1d", progress=False)["Close"]
+        returns = data.pct_change().dropna()
+
+        stock_returns = returns[symbol]
+        index_returns = returns["XU100.IS"]
+
+        covariance = np.cov(stock_returns, index_returns)[0][1]
+        variance = np.var(index_returns)
+
+        beta = covariance / variance
+        return round(beta, 2)
+    except:
+        return 1.0
+
+# ================= MAIN SCAN =================
 def scan_trades():
 
     risk_per_trade = dynamic_risk()
@@ -113,6 +129,7 @@ def scan_trades():
     total_risk = 0
     exposure = current_exposure()
     selected_symbols = []
+    betas = []
 
     for symbol in WATCHLIST:
 
@@ -183,6 +200,9 @@ def scan_trades():
             total_risk += risk_per_trade
             selected_symbols.append(symbol)
 
+            beta = calculate_beta(symbol)
+            betas.append(beta)
+
             trades.append({
                 "symbol": base_symbol,
                 "price": round(price,2),
@@ -191,17 +211,23 @@ def scan_trades():
                 "target": round(target,2),
                 "rr": round(rr,2),
                 "lot": qty,
-                "position_value": round(position_value,2)
+                "position_value": round(position_value,2),
+                "beta": beta
             })
 
         except:
             continue
 
+    portfolio_beta = round(np.mean(betas),2) if betas else 0
+    hedge_ratio = round(max(portfolio_beta - 1, 0),2)
+
     return {
         "regime": {
             "dynamic_risk_%": round(risk_per_trade * 100,2),
             "daily_risk_used_%": round(total_risk * 100,2),
-            "exposure_%": round(exposure * 100,2)
+            "exposure_%": round(exposure * 100,2),
+            "portfolio_beta": portfolio_beta,
+            "hedge_ratio": hedge_ratio
         },
         "trades": trades
     }
