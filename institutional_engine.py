@@ -76,17 +76,7 @@ def current_exposure():
         for row in reader:
             if row["Status"] == "OPEN":
                 exposure += float(row["PositionValue"])
-    return exposure / ACCOUNT_SIZE
-
-def is_symbol_open(symbol):
-    if not os.path.exists(TRADE_LOG):
-        return False
-    with open(TRADE_LOG, mode="r") as file:
-        reader = csv.DictReader(file)
-        for row in reader:
-            if row["Symbol"] == symbol and row["Status"] == "OPEN":
-                return True
-    return False
+    return exposure
 
 # ================= CORRELATION =================
 def is_highly_correlated(new_symbol, selected_symbols):
@@ -127,19 +117,12 @@ def scan_trades():
 
     trades = []
     total_risk = 0
-    exposure = current_exposure()
     selected_symbols = []
     betas = []
 
+    portfolio_value = 0
+
     for symbol in WATCHLIST:
-
-        base_symbol = symbol.replace(".IS","")
-
-        if is_symbol_open(base_symbol):
-            continue
-
-        if exposure >= MAX_TOTAL_EXPOSURE:
-            break
 
         if is_highly_correlated(symbol, selected_symbols):
             continue
@@ -165,11 +148,7 @@ def scan_trades():
             avg_vol = last_value(volume.rolling(20).mean())
             cur_vol = last_value(volume)
 
-            if price < ema:
-                continue
-            if rsi_val < 50:
-                continue
-            if cur_vol < avg_vol:
+            if price < ema or rsi_val < 50 or cur_vol < avg_vol:
                 continue
 
             recent_high = float(high.tail(20).max())
@@ -189,23 +168,18 @@ def scan_trades():
             if rr < MIN_RR:
                 continue
 
-            if total_risk + risk_per_trade > MAX_DAILY_RISK:
-                break
-
             risk_amount = ACCOUNT_SIZE * risk_per_trade
             qty = int(risk_amount / risk)
             position_value = qty * price
 
-            exposure += position_value / ACCOUNT_SIZE
-            total_risk += risk_per_trade
+            portfolio_value += position_value
             selected_symbols.append(symbol)
 
             beta = calculate_beta(symbol)
             betas.append(beta)
 
             trades.append({
-                "symbol": base_symbol,
-                "price": round(price,2),
+                "symbol": symbol.replace(".IS",""),
                 "entry": round(price,2),
                 "stop": round(stop,2),
                 "target": round(target,2),
@@ -219,15 +193,21 @@ def scan_trades():
             continue
 
     portfolio_beta = round(np.mean(betas),2) if betas else 0
-    hedge_ratio = round(max(portfolio_beta - 1, 0),2)
+    hedge_ratio = max(portfolio_beta - 1, 0)
+
+    # ================= HEDGE LOT CALC =================
+    index_df = yf.download("XU100.IS", period="5d", interval="1d", progress=False)
+    index_price = last_value(index_df["Close"]) if not index_df.empty else 0
+
+    hedge_value = portfolio_value * hedge_ratio
+    hedge_lot = int(hedge_value / index_price) if index_price > 0 else 0
 
     return {
         "regime": {
             "dynamic_risk_%": round(risk_per_trade * 100,2),
-            "daily_risk_used_%": round(total_risk * 100,2),
-            "exposure_%": round(exposure * 100,2),
             "portfolio_beta": portfolio_beta,
-            "hedge_ratio": hedge_ratio
+            "hedge_ratio": round(hedge_ratio,2),
+            "hedge_lot_xu100": hedge_lot
         },
         "trades": trades
     }
