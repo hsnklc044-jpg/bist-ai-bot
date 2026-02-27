@@ -11,7 +11,7 @@ BREAKOUT_BUFFER = 0.97
 MAX_DAILY_RISK = 0.03
 MAX_TOTAL_EXPOSURE = 0.40
 TRADE_LOG = "trade_log.csv"
-MAX_PER_SECTOR = 1
+MAX_CORRELATION = 0.80
 
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
@@ -19,20 +19,6 @@ WATCHLIST = [
     "SISE.IS","BIMAS.IS",
     "ASELS.IS","TUPRS.IS","ISCTR.IS"
 ]
-
-# ================= SECTOR MAP =================
-SECTOR_MAP = {
-    "GARAN": "BANK",
-    "AKBNK": "BANK",
-    "ISCTR": "BANK",
-    "EREGL": "INDUSTRY",
-    "TUPRS": "ENERGY",
-    "THYAO": "AVIATION",
-    "BIMAS": "RETAIL",
-    "SISE": "INDUSTRY",
-    "ASELS": "DEFENSE",
-    "KCHOL": "HOLDING"
-}
 
 # ================= HELPERS =================
 def last_value(series):
@@ -64,10 +50,8 @@ def dynamic_risk():
     df = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
     if df.empty:
         return BASE_RISK
-
     close = df["Close"]
     atr_series = atr(df)
-
     atr_value = last_value(atr_series)
     price = last_value(close)
     volatility_ratio = atr_value / price
@@ -101,6 +85,25 @@ def is_symbol_open(symbol):
                 return True
     return False
 
+# ================= CORRELATION CHECK =================
+def is_highly_correlated(new_symbol, selected_symbols):
+
+    if not selected_symbols:
+        return False
+
+    symbols = selected_symbols + [new_symbol]
+    data = yf.download(symbols, period="60d", interval="1d", progress=False)["Close"]
+
+    returns = data.pct_change().dropna()
+    corr_matrix = returns.corr()
+
+    for sym in selected_symbols:
+        corr = corr_matrix.loc[new_symbol, sym]
+        if corr >= MAX_CORRELATION:
+            return True
+
+    return False
+
 # ================= SCAN =================
 def scan_trades():
 
@@ -109,21 +112,20 @@ def scan_trades():
     trades = []
     total_risk = 0
     exposure = current_exposure()
-    sector_count = {}
+    selected_symbols = []
 
     for symbol in WATCHLIST:
 
         base_symbol = symbol.replace(".IS","")
-        sector = SECTOR_MAP.get(base_symbol, "OTHER")
-
-        if sector_count.get(sector, 0) >= MAX_PER_SECTOR:
-            continue
 
         if is_symbol_open(base_symbol):
             continue
 
         if exposure >= MAX_TOTAL_EXPOSURE:
             break
+
+        if is_highly_correlated(symbol, selected_symbols):
+            continue
 
         try:
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
@@ -179,11 +181,10 @@ def scan_trades():
 
             exposure += position_value / ACCOUNT_SIZE
             total_risk += risk_per_trade
-            sector_count[sector] = sector_count.get(sector, 0) + 1
+            selected_symbols.append(symbol)
 
             trades.append({
                 "symbol": base_symbol,
-                "sector": sector,
                 "price": round(price,2),
                 "entry": round(price,2),
                 "stop": round(stop,2),
