@@ -3,9 +3,11 @@ import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
 
+# ================= SETTINGS =================
 ACCOUNT_SIZE = 100000
 RISK_FREE_RATE = 0.25
 TAU = 0.05
+LAMBDA = 2.0   # Drawdown penalty strength
 
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
@@ -24,75 +26,68 @@ def rsi(close, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-# ================= GET RETURNS =================
+# ================= FEATURE ENGINE =================
+def compute_features(symbol):
+    df = yf.download(symbol, period="6mo", interval="1d", progress=False)
+    if df.empty:
+        return None
+
+    close = df["Close"]
+    volume = df["Volume"]
+
+    rsi_val = rsi(close).iloc[-1]
+    momentum = close.iloc[-1] / close.iloc[-20] - 1
+    ema200 = close.ewm(span=200).mean().iloc[-1]
+    trend_dist = (close.iloc[-1] - ema200) / ema200
+    vol_ratio = volume.iloc[-1] / volume.rolling(20).mean().iloc[-1]
+
+    return np.array([rsi_val, momentum, trend_dist, vol_ratio])
+
+# ================= AI VIEW BUILDER =================
+def build_ai_views():
+
+    feature_matrix = []
+    symbols_valid = []
+
+    for symbol in WATCHLIST:
+        features = compute_features(symbol)
+        if features is not None:
+            feature_matrix.append(features)
+            symbols_valid.append(symbol)
+
+    if not feature_matrix:
+        return None, None, None
+
+    feature_matrix = np.array(feature_matrix)
+
+    # Normalize
+    feature_matrix = (feature_matrix - feature_matrix.mean(axis=0)) / feature_matrix.std(axis=0)
+
+    # Linear alpha weights
+    alpha_weights = np.array([0.3, 0.3, 0.2, 0.2])
+    alpha_scores = feature_matrix @ alpha_weights
+
+    P = np.zeros((len(symbols_valid), len(symbols_valid)))
+    Q = []
+
+    for i in range(len(symbols_valid)):
+        P[i, i] = 1
+        Q.append(alpha_scores[i] * 0.02)
+
+    return np.array(P), np.array(Q), symbols_valid
+
+# ================= RETURNS =================
 def get_returns(symbols):
     data = yf.download(symbols, period="6mo", interval="1d", progress=False)["Close"]
     returns = data.pct_change().dropna()
     return returns
 
-# ================= BUILD DYNAMIC VIEWS =================
-def build_views(returns):
-
-    views = []
-    P = []
-
-    index_data = yf.download("XU100.IS", period="6mo", interval="1d", progress=False)
-    index_close = index_data["Close"]
-    index_ema200 = index_close.ewm(span=200).mean()
-
-    market_bear = index_close.iloc[-1] < index_ema200.iloc[-1]
-
-    for i, symbol in enumerate(WATCHLIST):
-
-        df = yf.download(symbol, period="3mo", interval="1d", progress=False)
-        close = df["Close"]
-
-        rsi_val = rsi(close).iloc[-1]
-        momentum = close.iloc[-1] - close.iloc[-20]
-
-        view_strength = 0
-
-        # RSI View
-        if rsi_val > 60:
-            view_strength += 0.02
-        elif rsi_val < 40:
-            view_strength -= 0.02
-
-        # Momentum View
-        if momentum > 0:
-            view_strength += 0.01
-        else:
-            view_strength -= 0.01
-
-        # Macro View
-        if market_bear:
-            view_strength -= 0.02
-
-        if abs(view_strength) > 0:
-            row = np.zeros(len(WATCHLIST))
-            row[i] = 1
-            P.append(row)
-            views.append(view_strength)
-
-    if not P:
-        return None, None
-
-    P = np.array(P)
-    Q = np.array(views)
-
-    return P, Q
-
 # ================= BLACK LITTERMAN =================
-def black_litterman(returns):
+def black_litterman(returns, P, Q):
 
     cov = returns.cov() * 252
-    market_weights = np.ones(len(WATCHLIST)) / len(WATCHLIST)
+    market_weights = np.ones(len(returns.columns)) / len(returns.columns)
     pi = cov @ market_weights
-
-    P, Q = build_views(returns)
-
-    if P is None:
-        return pi, cov
 
     omega = np.diag(np.diag(P @ (TAU * cov) @ P.T))
 
@@ -107,19 +102,30 @@ def black_litterman(returns):
 
     return mu_bl, cov
 
-# ================= OPTIMIZER =================
-def optimize(mu, cov):
+# ================= OPTIMIZER WITH DRAWDOWN =================
+def optimize(mu, cov, returns):
 
-    def negative_sharpe(weights):
+    def objective(weights):
+
+        port_returns = returns @ weights
+        equity = (1 + port_returns).cumprod()
+
+        peak = equity.cummax()
+        drawdown = (equity - peak) / peak
+        max_dd = abs(drawdown.min())
+
         port_return = np.sum(mu * weights)
         port_vol = np.sqrt(weights.T @ cov @ weights)
-        return -(port_return - RISK_FREE_RATE) / port_vol
+
+        sharpe = (port_return - RISK_FREE_RATE) / port_vol
+
+        return -(sharpe - LAMBDA * max_dd)
 
     constraints = ({'type': 'eq', 'fun': lambda x: np.sum(x) - 1})
     bounds = tuple((0,1) for _ in range(len(mu)))
     init_guess = np.ones(len(mu)) / len(mu)
 
-    result = minimize(negative_sharpe,
+    result = minimize(objective,
                       init_guess,
                       method='SLSQP',
                       bounds=bounds,
@@ -130,13 +136,21 @@ def optimize(mu, cov):
 # ================= MAIN =================
 def scan_trades():
 
-    returns = get_returns(WATCHLIST)
-    mu_bl, cov = black_litterman(returns)
-    weights = optimize(mu_bl, cov)
+    P, Q, symbols = build_ai_views()
+    if P is None:
+        return {"error": "Feature üretilemedi"}
+
+    returns = get_returns(symbols)
+    mu_bl, cov = black_litterman(returns, P, Q)
+
+    weights = optimize(mu_bl, cov, returns)
 
     trades = []
+    portfolio_return = np.sum(mu_bl * weights)
+    portfolio_vol = np.sqrt(weights.T @ cov @ weights)
+    sharpe = (portfolio_return - RISK_FREE_RATE) / portfolio_vol
 
-    for i, symbol in enumerate(WATCHLIST):
+    for i, symbol in enumerate(symbols):
 
         weight = weights[i]
         if weight < 0.05:
@@ -155,7 +169,10 @@ def scan_trades():
 
     return {
         "portfolio": {
-            "model": "Dynamic Black-Litterman",
+            "model": "AI Black-Litterman + Drawdown Control",
+            "expected_return_%": round(portfolio_return*100,2),
+            "volatility_%": round(portfolio_vol*100,2),
+            "sharpe_ratio": round(sharpe,2)
         },
         "trades": trades
     }
