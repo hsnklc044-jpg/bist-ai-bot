@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np
 
 # ================= AYARLAR =================
-ACCOUNT_SIZE = 100000      # Toplam sermaye
+ACCOUNT_SIZE = 100000      # Sermaye
 MIN_RR = 1.5
 BREAKOUT_BUFFER = 0.97
 MAX_DAILY_RISK = 0.03      # Günlük maksimum %3 risk
@@ -111,8 +111,6 @@ def scan_trades():
     trades = []
     total_risk = 0
 
-    xu100 = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
-
     for symbol in WATCHLIST:
 
         try:
@@ -164,7 +162,6 @@ def scan_trades():
             if rr < MIN_RR:
                 continue
 
-            # Günlük risk limiti kontrolü
             if total_risk + risk_per_trade > MAX_DAILY_RISK:
                 break
 
@@ -183,8 +180,7 @@ def scan_trades():
 
             total_risk += risk_per_trade
 
-        except Exception as e:
-            print("SYMBOL ERROR:", symbol, e)
+        except:
             continue
 
     return {
