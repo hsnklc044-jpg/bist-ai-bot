@@ -40,15 +40,19 @@ def market_regime():
     if df.empty:
         return "NEUTRAL", 0.005, 2
 
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
     close = df["Close"]
+
     ema200 = close.ewm(span=200).mean()
     ema50 = close.ewm(span=50).mean()
     rsi_series = rsi(close)
 
-    current_price = float(close.iloc[-1])
-    current_ema200 = float(ema200.iloc[-1])
-    current_ema50 = float(ema50.iloc[-1])
-    current_rsi = float(rsi_series.iloc[-1])
+    current_price = float(close.values[-1])
+    current_ema200 = float(ema200.values[-1])
+    current_ema50 = float(ema50.values[-1])
+    current_rsi = float(rsi_series.values[-1])
 
     if current_price > current_ema200 and current_ema50 > current_ema200 and current_rsi > 50:
         return "BULL", 0.01, 3
@@ -74,8 +78,12 @@ def scan_trades():
 
         try:
             df = yf.download(symbol, period="6mo", interval="1d", progress=False)
+
             if df.empty or len(df) < 200:
                 continue
+
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
 
             close = df["Close"]
             high = df["High"]
@@ -86,16 +94,15 @@ def scan_trades():
             rsi_series = rsi(close)
             atr_series = atr(df)
 
-            current_price = float(close.iloc[-1])
-            current_ema200 = float(ema200.iloc[-1])
-            current_ema50 = float(ema50.iloc[-1])
-            current_rsi = float(rsi_series.iloc[-1])
-            current_atr = float(atr_series.iloc[-1])
+            current_price = float(close.values[-1])
+            current_ema200 = float(ema200.values[-1])
+            current_ema50 = float(ema50.values[-1])
+            current_rsi = float(rsi_series.values[-1])
+            current_atr = float(atr_series.values[-1])
 
             if current_price < current_ema200:
                 continue
 
-            # ================= BULL MODE =================
             if regime == "BULL":
 
                 if current_ema50 < current_ema200:
@@ -108,21 +115,19 @@ def scan_trades():
                 if current_price < recent_high:
                     continue
 
-                avg_volume = float(volume.rolling(20).mean().iloc[-1])
-                if volume.iloc[-1] < avg_volume:
+                avg_volume = float(volume.rolling(20).mean().values[-1])
+                if float(volume.values[-1]) < avg_volume:
                     continue
 
                 stop = current_price - (current_atr * 1.5)
                 target = current_price + (current_atr * 3)
                 min_rr = 2.2
 
-            # ================= NEUTRAL MODE =================
             else:
 
                 if not (45 < current_rsi < 60):
                     continue
 
-                # EMA50'ye yakınlık (pullback)
                 if abs(current_price - current_ema50) > current_atr:
                     continue
 
@@ -151,7 +156,8 @@ def scan_trades():
                 "score": round(rr, 2)
             })
 
-        except:
+        except Exception as e:
+            print("SCAN ERROR:", e)
             continue
 
     trades = sorted(trades, key=lambda x: x["score"], reverse=True)
