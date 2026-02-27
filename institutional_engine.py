@@ -3,8 +3,8 @@ import pandas as pd
 import numpy as np
 
 BASE_RISK = 0.01
-MIN_RR = 1.5   # Biraz esnettik
-BREAKOUT_BUFFER = 0.97  # %3 tolerans
+MIN_RR = 1.5
+BREAKOUT_BUFFER = 0.97
 
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
@@ -15,16 +15,10 @@ WATCHLIST = [
 
 # ================= SAFE LAST VALUE =================
 def last_value(data):
-    """
-    Series, DataFrame veya MultiIndex gelirse güvenli şekilde
-    son değeri float olarak döndürür.
-    """
     if isinstance(data, pd.DataFrame):
         data = data.iloc[:, 0]
-
     if isinstance(data, pd.Series):
         return float(data.iloc[-1])
-
     return float(data)
 
 # ================= RSI =================
@@ -32,10 +26,8 @@ def rsi(close, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
-
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
@@ -61,17 +53,26 @@ def market_regime():
         return "NEUTRAL", 0.005, 2
 
     close = df["Close"]
-
     ema200 = close.ewm(span=200).mean()
     rsi_series = rsi(close)
 
-    current_price = last_value(close)
-    current_ema200 = last_value(ema200)
-    current_rsi = last_value(rsi_series)
+    momentum20 = close.pct_change(20)
+    momentum50 = close.pct_change(50)
 
-    if current_price > current_ema200 and current_rsi > 50:
+    score = 0
+
+    if last_value(close) > last_value(ema200):
+        score += 1
+    if last_value(rsi_series) > 50:
+        score += 1
+    if last_value(momentum20) > 0:
+        score += 1
+    if last_value(momentum50) > 0:
+        score += 1
+
+    if score >= 3:
         return "BULL", 0.01, 3
-    elif current_price > current_ema200:
+    elif score >= 2:
         return "NEUTRAL", 0.005, 2
     else:
         return "BEAR", 0.0, 0
@@ -97,7 +98,6 @@ def scan_trades():
 
         try:
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
-
             if df.empty:
                 continue
 
@@ -119,19 +119,24 @@ def scan_trades():
             avg_volume = last_value(volume.rolling(20).mean())
             current_volume = last_value(volume)
 
-            # Trend filtresi
-            if current_price < current_ema200:
-                continue
+            # Relative Strength vs XU100
+            xu100 = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
+            if not xu100.empty:
+                rs_score = last_value(close.pct_change(20)) - last_value(xu100["Close"].pct_change(20))
+            else:
+                rs_score = 0
 
-            # RSI filtresi (gevşek)
-            if current_rsi < 45:
-                continue
+            score = 0
 
-            # Hacim filtresi
-            if current_volume < avg_volume * 1.1:
-                continue
+            if current_price > current_ema200:
+                score += 1
+            if current_rsi > 50:
+                score += 1
+            if current_volume > avg_volume:
+                score += 1
+            if rs_score > 0:
+                score += 1
 
-            # Breakout toleransı
             recent_high = float(high.tail(20).max())
             if current_price < recent_high * BREAKOUT_BUFFER:
                 continue
@@ -158,7 +163,7 @@ def scan_trades():
                 "stop": round(stop, 2),
                 "target": round(target, 2),
                 "rr": round(rr, 2),
-                "score": round(rr, 2)
+                "score": score
             })
 
         except Exception as e:
