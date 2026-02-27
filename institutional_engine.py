@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 from scipy.optimize import minimize
 
-# ================= SETTINGS =================
 ACCOUNT_SIZE = 100000
 RISK_FREE_RATE = 0.25
 TAU = 0.05
@@ -26,6 +25,31 @@ def rsi(close, period=14):
     avg_loss = loss.rolling(period).mean()
     rs = avg_gain / (avg_loss + 1e-9)
     return 100 - (100 / (1 + rs))
+
+# ================= TAIL RISK FILTER =================
+def tail_risk_multiplier():
+
+    df = yf.download("XU100.IS", period="6mo", interval="1d", progress=False)
+    if df.empty:
+        return 1.0
+
+    close = df["Close"]
+    returns = close.pct_change().dropna()
+
+    vol_20 = returns.rolling(20).std().iloc[-1] * np.sqrt(252)
+    vol_60 = returns.rolling(60).std().iloc[-1] * np.sqrt(252)
+
+    ema100 = close.ewm(span=100).mean().iloc[-1]
+
+    crash_signal = (
+        close.iloc[-1] < ema100 and
+        vol_20 > vol_60
+    )
+
+    if crash_signal:
+        return 0.5  # risk yarıya düşer
+    else:
+        return 1.0
 
 # ================= ADAPTIVE AI =================
 def build_ai_views():
@@ -92,8 +116,7 @@ def build_ai_views():
 # ================= RETURNS =================
 def get_returns(symbols):
     data = yf.download(symbols, period="6mo", interval="1d", progress=False)["Close"]
-    returns = data.pct_change().dropna()
-    return returns
+    return data.pct_change().dropna()
 
 # ================= BLACK LITTERMAN =================
 def black_litterman(returns, P, Q):
@@ -123,7 +146,6 @@ def optimize(mu, cov, returns):
     def objective(weights):
         port_returns = returns @ weights
         equity = (1 + port_returns).cumprod()
-
         peak = equity.cummax()
         drawdown = (equity - peak) / peak
         max_dd = abs(drawdown.min())
@@ -150,66 +172,6 @@ def optimize(mu, cov, returns):
 
     return result.x
 
-# ================= MONTE CARLO =================
-def monte_carlo_simulation(mu, cov, weights, days=60, simulations=500):
-
-    port_mean = np.sum(mu * weights) / 252
-    port_vol = np.sqrt(weights.T @ cov @ weights) / np.sqrt(252)
-
-    final_values = []
-
-    for _ in range(simulations):
-        daily_returns = np.random.normal(port_mean, port_vol, days)
-        equity = 1
-        for r in daily_returns:
-            equity *= (1 + r)
-        final_values.append(equity)
-
-    return {
-        "expected_%": round((np.mean(final_values)-1)*100,2),
-        "worst_%": round((np.percentile(final_values,5)-1)*100,2),
-        "best_%": round((np.percentile(final_values,95)-1)*100,2)
-    }
-
-# ================= KELLY =================
-def kelly_position_size(portfolio_return, portfolio_vol):
-
-    variance = portfolio_vol ** 2
-    if variance == 0:
-        return 0
-
-    raw_kelly = (portfolio_return - RISK_FREE_RATE) / variance
-    kelly_fraction = raw_kelly * 0.5
-    kelly_fraction = max(0, min(kelly_fraction, 1.5))
-
-    return round(kelly_fraction, 2)
-
-# ================= VOL TARGET =================
-def volatility_targeting(portfolio_vol):
-
-    if portfolio_vol == 0:
-        return 0
-
-    scaling_factor = TARGET_VOL / portfolio_vol
-    scaling_factor = min(max(scaling_factor, 0.5), 1.5)
-
-    return round(scaling_factor, 2)
-
-# ================= REGIME =================
-def regime_multiplier():
-
-    df = yf.download("XU100.IS", period="6mo", interval="1d", progress=False)
-    if df.empty:
-        return 1
-
-    close = df["Close"]
-    ema200 = close.ewm(span=200).mean()
-
-    if close.iloc[-1] > ema200.iloc[-1]:
-        return 1.0
-    else:
-        return 0.7
-
 # ================= MAIN =================
 def scan_trades():
 
@@ -228,13 +190,8 @@ def scan_trades():
     if portfolio_vol != 0:
         sharpe = (portfolio_return - RISK_FREE_RATE) / portfolio_vol
 
-    monte_carlo = monte_carlo_simulation(mu_bl, cov, weights)
-    kelly_fraction = kelly_position_size(portfolio_return, portfolio_vol)
-
-    vol_scaler = volatility_targeting(portfolio_vol)
-    regime_scale = regime_multiplier()
-
-    final_leverage = round(min(kelly_fraction * vol_scaler * regime_scale, 1.5), 2)
+    # ===== Risk Controls =====
+    tail_scale = tail_risk_multiplier()
 
     trades = []
 
@@ -244,7 +201,7 @@ def scan_trades():
             continue
 
         price = yf.download(symbol, period="5d", interval="1d", progress=False)["Close"].iloc[-1]
-        allocation = ACCOUNT_SIZE * weight * final_leverage
+        allocation = ACCOUNT_SIZE * weight * tail_scale
         lot = int(allocation / price)
 
         trades.append({
@@ -256,15 +213,11 @@ def scan_trades():
 
     return {
         "portfolio": {
-            "model": "Adaptive AI + BL + DD + MC + Kelly + VolTarget + Regime",
+            "model": "Adaptive AI + BL + DD + Tail Hedge",
             "expected_return_%": round(portfolio_return*100,2),
             "volatility_%": round(portfolio_vol*100,2),
             "sharpe_ratio": round(sharpe,2),
-            "kelly_fraction": kelly_fraction,
-            "vol_scaler": vol_scaler,
-            "regime_scale": regime_scale,
-            "final_leverage": final_leverage
+            "tail_scale": tail_scale
         },
-        "monte_carlo_60d": monte_carlo,
         "trades": trades
     }
