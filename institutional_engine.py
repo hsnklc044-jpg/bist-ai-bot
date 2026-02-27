@@ -1,12 +1,15 @@
 import yfinance as yf
 import pandas as pd
 import numpy as np
+import os
+import csv
 
-# ================= AYARLAR =================
 ACCOUNT_SIZE = 100000
 MIN_RR = 1.5
 BREAKOUT_BUFFER = 0.97
 MAX_DAILY_RISK = 0.03
+MAX_TOTAL_EXPOSURE = 0.40  # max %40 sermaye açık pozisyon
+TRADE_LOG = "trade_log.csv"
 
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
@@ -15,13 +18,11 @@ WATCHLIST = [
     "ASELS.IS","TUPRS.IS","ISCTR.IS"
 ]
 
-# ================= SAFE LAST VALUE =================
-def last_value(data):
-    if isinstance(data, pd.DataFrame):
-        data = data.iloc[:, 0]
-    if isinstance(data, pd.Series):
-        return float(data.iloc[-1])
-    return float(data)
+# ================= SAFE VALUE =================
+def last_value(series):
+    if isinstance(series, pd.DataFrame):
+        series = series.iloc[:, 0]
+    return float(series.iloc[-1])
 
 # ================= RSI =================
 def rsi(close, period=14):
@@ -46,21 +47,40 @@ def atr(df, period=14):
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
-# ================= POZİSYON BOYUTU =================
-def position_size(entry, stop, risk_percent):
-    risk_amount = ACCOUNT_SIZE * risk_percent
-    risk_per_share = entry - stop
-    if risk_per_share <= 0:
-        return 0, 0
-    quantity = risk_amount / risk_per_share
-    position_value = quantity * entry
-    return int(quantity), round(position_value, 2)
+# ================= ACTIVE EXPOSURE =================
+def current_exposure():
+
+    if not os.path.exists(TRADE_LOG):
+        return 0
+
+    exposure = 0
+
+    with open(TRADE_LOG, mode="r") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            if row["Status"] == "OPEN":
+                exposure += float(row["PositionValue"])
+
+    return exposure / ACCOUNT_SIZE
+
+# ================= OPEN SYMBOL CHECK =================
+def is_symbol_open(symbol):
+
+    if not os.path.exists(TRADE_LOG):
+        return False
+
+    with open(TRADE_LOG, mode="r") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            if row["Symbol"] == symbol and row["Status"] == "OPEN":
+                return True
+
+    return False
 
 # ================= MARKET REGIME =================
 def market_regime():
 
     df = yf.download("XU100.IS", period="6mo", interval="1d", progress=False)
-
     if df.empty:
         return "NEUTRAL", 0.005, 2
 
@@ -68,23 +88,15 @@ def market_regime():
     ema200 = close.ewm(span=200).mean()
     rsi_series = rsi(close)
 
-    momentum20 = close.pct_change(20)
-    momentum50 = close.pct_change(50)
-
     score = 0
-
     if last_value(close) > last_value(ema200):
         score += 1
     if last_value(rsi_series) > 50:
         score += 1
-    if last_value(momentum20) > 0:
-        score += 1
-    if last_value(momentum50) > 0:
-        score += 1
 
-    if score >= 3:
+    if score == 2:
         return "BULL", 0.01, 3
-    elif score >= 2:
+    elif score == 1:
         return "NEUTRAL", 0.005, 2
     else:
         return "BEAR", 0.0, 0
@@ -99,7 +111,6 @@ def scan_trades():
             "regime": {
                 "regime": regime,
                 "risk": risk_per_trade,
-                "max_trades": 0,
                 "daily_risk_used": 0
             },
             "trades": []
@@ -107,8 +118,17 @@ def scan_trades():
 
     trades = []
     total_risk = 0
+    exposure = current_exposure()
 
     for symbol in WATCHLIST:
+
+        base_symbol = symbol.replace(".IS","")
+
+        if is_symbol_open(base_symbol):
+            continue
+
+        if exposure >= MAX_TOTAL_EXPOSURE:
+            break
 
         try:
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
@@ -120,34 +140,33 @@ def scan_trades():
             volume = df["Volume"]
 
             ema200 = close.ewm(span=200).mean()
-            ema50 = close.ewm(span=50).mean()
             rsi_series = rsi(close)
             atr_series = atr(df)
 
-            current_price = last_value(close)
-            current_ema200 = last_value(ema200)
-            current_rsi = last_value(rsi_series)
-            current_atr = last_value(atr_series)
+            price = last_value(close)
+            ema = last_value(ema200)
+            rsi_val = last_value(rsi_series)
+            atr_val = last_value(atr_series)
 
-            avg_volume = last_value(volume.rolling(20).mean())
-            current_volume = last_value(volume)
+            avg_vol = last_value(volume.rolling(20).mean())
+            cur_vol = last_value(volume)
 
-            if current_price < current_ema200:
+            if price < ema:
                 continue
-            if current_rsi < 50:
+            if rsi_val < 50:
                 continue
-            if current_volume < avg_volume:
+            if cur_vol < avg_vol:
                 continue
 
             recent_high = float(high.tail(20).max())
-            if current_price < recent_high * BREAKOUT_BUFFER:
+            if price < recent_high * BREAKOUT_BUFFER:
                 continue
 
-            stop = current_price - (current_atr * 1.5)
-            target = current_price + (current_atr * 3)
+            stop = price - atr_val * 1.5
+            target = price + atr_val * 3
 
-            risk = current_price - stop
-            reward = target - current_price
+            risk = price - stop
+            reward = target - price
 
             if risk <= 0:
                 continue
@@ -159,21 +178,23 @@ def scan_trades():
             if total_risk + risk_per_trade > MAX_DAILY_RISK:
                 break
 
-            qty, position_value = position_size(current_price, stop, risk_per_trade)
+            risk_amount = ACCOUNT_SIZE * risk_per_trade
+            qty = int(risk_amount / risk)
+            position_value = qty * price
 
-            trade_data = {
-                "symbol": symbol.replace(".IS",""),
-                "price": round(current_price, 2),
-                "entry": round(current_price, 2),
-                "stop": round(stop, 2),
-                "target": round(target, 2),
-                "rr": round(rr, 2),
-                "lot": qty,
-                "position_value": position_value
-            }
-
-            trades.append(trade_data)
+            exposure += position_value / ACCOUNT_SIZE
             total_risk += risk_per_trade
+
+            trades.append({
+                "symbol": base_symbol,
+                "price": round(price,2),
+                "entry": round(price,2),
+                "stop": round(stop,2),
+                "target": round(target,2),
+                "rr": round(rr,2),
+                "lot": qty,
+                "position_value": round(position_value,2)
+            })
 
         except:
             continue
@@ -182,8 +203,8 @@ def scan_trades():
         "regime": {
             "regime": regime,
             "risk": risk_per_trade,
-            "max_trades": len(trades),
-            "daily_risk_used": round(total_risk * 100, 2)
+            "daily_risk_used": round(total_risk * 100,2),
+            "current_exposure_%": round(exposure * 100,2)
         },
         "trades": trades
     }
