@@ -4,3 +4,4 @@ numpy
 yfinance
 openpyxl
 matplotlib
+scipy
