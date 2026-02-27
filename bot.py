@@ -3,7 +3,12 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 from institutional_engine import scan_trades
-from performance_tracker import init_log, log_trade, get_balance
+from performance_tracker import (
+    init_log,
+    log_trade,
+    get_balance,
+    generate_equity_graph
+)
 
 TOKEN = os.getenv("BOT_TOKEN")
 
@@ -11,7 +16,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🏦 AI Trading Desk Aktif\n\n"
         "/scan → Günlük trade planı\n"
-        "/balance → Equity durumu\n"
+        "/balance → Equity + Grafik\n"
     )
 
 async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -53,8 +58,17 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message)
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     equity = get_balance()
+    graph_file = generate_equity_graph()
+
     await update.message.reply_text(f"💰 Güncel Equity: {equity} TL")
+
+    with open(graph_file, "rb") as photo:
+        await context.bot.send_photo(
+            chat_id=update.effective_chat.id,
+            photo=photo
+        )
 
 def main():
     if not TOKEN:
