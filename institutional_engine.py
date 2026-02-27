@@ -2,8 +2,6 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 
-MIN_RR = 2.2
-
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
     "THYAO.IS","KCHOL.IS",
@@ -21,10 +19,8 @@ def rsi(close, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-
 # ================= ATR =================
 def atr(df, period=14):
-
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
@@ -38,7 +34,6 @@ def atr(df, period=14):
 
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.rolling(period).mean()
-
 
 # ================= MARKET REGIME =================
 def market_regime():
@@ -71,7 +66,6 @@ def market_regime():
         return "NEUTRAL", 0.005, 2
     else:
         return "BEAR", 0.0, 0
-
 
 # ================= SCAN =================
 def scan_trades():
@@ -119,31 +113,38 @@ def scan_trades():
             current_rsi = float(rsi_series.values[-1])
             current_atr = float(atr_series.values[-1])
 
-            # Trend Gücü
             if current_price < current_ema200:
                 continue
 
             if current_ema50 < current_ema200:
                 continue
 
-            # Momentum Gücü
-            if current_rsi < 55:
+            # -------- REJİME GÖRE FİLTRE --------
+
+            if regime == "BULL":
+                min_rsi = 55
+                breakout_period = 20
+                min_rr = 2.2
+                require_volume = True
+            else:  # NEUTRAL
+                min_rsi = 52
+                breakout_period = 15
+                min_rr = 2.0
+                require_volume = False
+
+            if current_rsi < min_rsi:
                 continue
 
-            # Gerçek Breakout (kapanış bazlı)
-            recent_close_high = float(close.tail(20).max())
-
+            recent_close_high = float(close.tail(breakout_period).max())
             if current_price < recent_close_high:
                 continue
 
-            # Hacim Onayı
-            avg_volume = float(volume.rolling(20).mean().iloc[-1])
-            current_volume = float(volume.values[-1])
+            if require_volume:
+                avg_volume = float(volume.rolling(20).mean().iloc[-1])
+                current_volume = float(volume.values[-1])
+                if current_volume < avg_volume:
+                    continue
 
-            if current_volume < avg_volume:
-                continue
-
-            # Risk Hesabı
             stop = current_price - (current_atr * 1.5)
             target = current_price + (current_atr * 3)
 
@@ -154,8 +155,7 @@ def scan_trades():
                 continue
 
             rr = reward / risk
-
-            if rr < MIN_RR:
+            if rr < min_rr:
                 continue
 
             trades.append({
@@ -169,8 +169,7 @@ def scan_trades():
                 "score": round(rr, 2)
             })
 
-        except Exception as e:
-            print("SCAN ERROR:", e)
+        except:
             continue
 
     trades = sorted(trades, key=lambda x: x["score"], reverse=True)
