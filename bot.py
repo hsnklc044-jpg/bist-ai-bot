@@ -14,94 +14,126 @@ from performance_tracker import (
 
 TOKEN = os.getenv("BOT_TOKEN")
 
+
 # ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🏦 Institutional Trading Desk Aktif\n\n"
-        "/scan → Günlük trade planı\n"
+        "/scan → Institutional portfolio dağılımı\n"
         "/balance → Anlık performans\n"
     )
+
 
 # ================= SCAN =================
 async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("🚀 NEW BOT SCAN FUNCTION")
+    await update.message.reply_text("📊 Institutional Scan başlatıldı...")
 
-    result = scan_trades()
-    regime = result.get("regime", {})
-    trades = result.get("trades", [])
+    try:
+        result = scan_trades()
 
-    regime_name = regime.get("regime", "UNKNOWN")
-    risk_percent = round(regime.get("risk", 0) * 100, 2)
-    daily_risk = regime.get("daily_risk_used", 0)
+        if not result:
+            await update.message.reply_text("Engine cevap vermedi.")
+            return
 
-    message = (
-        f"🟢 {regime_name} REJİM\n"
-        f"Risk: %{risk_percent}\n"
-        f"Günlük Risk Kullanımı: %{daily_risk}\n\n"
-    )
+        if "error" in result:
+            await update.message.reply_text(result["error"])
+            return
 
-    if not trades:
-        message += "Uygun trade bulunamadı."
-    else:
-        for i, trade in enumerate(trades, 1):
+        portfolio = result.get("portfolio", {})
+        trades = result.get("trades", [])
 
-            log_trade(trade)
+        message = (
+            f"📈 MODEL: {portfolio.get('model','-')}\n"
+            f"Beklenen Getiri: %{portfolio.get('expected_return_%',0)}\n"
+            f"Volatilite: %{portfolio.get('volatility_%',0)}\n"
+            f"Sharpe: {portfolio.get('sharpe_ratio',0)}\n"
+            f"Leverage: {portfolio.get('leverage',0)}\n\n"
+        )
 
-            message += (
-                f"{i}. {trade['symbol']}\n"
-                f"Entry: {trade['entry']}\n"
-                f"Stop: {trade['stop']}\n"
-                f"Target: {trade['target']}\n"
-                f"R/R: {trade['rr']}\n"
-                f"Lot: {trade['lot']}\n\n"
-            )
+        if not trades:
+            message += "Uygun trade bulunamadı."
+        else:
+            message += "📌 Trade Dağılımı:\n\n"
 
-    await update.message.reply_text(message)
+            for t in trades:
+
+                log_trade(t)
+
+                message += (
+                    f"{t['symbol']}\n"
+                    f"Ağırlık: %{t['weight_%']}\n"
+                    f"Lot: {t['lot']}\n"
+                    f"Tutar: {t['allocation']} TL\n\n"
+                )
+
+        await update.message.reply_text(message)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ SCAN HATA: {str(e)}")
+        print("SCAN ERROR:", e)
+
 
 # ================= BALANCE =================
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    equity = get_balance()
-    graph_file = generate_equity_graph()
-    metrics = performance_metrics()
+    try:
+        balance_data = get_balance()
+        metrics = performance_metrics()
 
-    message = f"💰 Equity: {equity} TL\n\n"
-
-    for k, v in metrics.items():
-        message += f"{k}: {v}\n"
-
-    await update.message.reply_text(message)
-
-    with open(graph_file, "rb") as photo:
-        await context.bot.send_photo(
-            chat_id=update.effective_chat.id,
-            photo=photo
+        message = (
+            "📊 PORTFÖY DURUMU\n\n"
+            f"Toplam Equity: {balance_data.get('equity',0)} TL\n"
+            f"Günlük PnL: {balance_data.get('daily_pnl',0)} TL\n"
+            f"Toplam PnL: {balance_data.get('total_pnl',0)} TL\n\n"
+            f"Max Drawdown: %{metrics.get('max_drawdown',0)}\n"
+            f"Sharpe: {metrics.get('sharpe',0)}\n"
         )
 
-# ================= MORNING AUTO REPORT =================
-async def morning_report(context: ContextTypes.DEFAULT_TYPE):
+        await update.message.reply_text(message)
 
-    equity = get_balance()
-    graph_file = generate_equity_graph()
-    metrics = performance_metrics()
+        try:
+            generate_equity_graph()
+            with open("equity_curve.png", "rb") as f:
+                await context.bot.send_photo(
+                    chat_id=update.effective_chat.id,
+                    photo=f
+                )
+        except:
+            pass
 
-    message = f"🌅 GÜNLÜK PERFORMANS RAPORU\n\n"
-    message += f"Equity: {equity} TL\n\n"
+    except Exception as e:
+        await update.message.reply_text(f"❌ BALANCE HATA: {str(e)}")
+        print("BALANCE ERROR:", e)
 
-    for k, v in metrics.items():
-        message += f"{k}: {v}\n"
 
-    await context.bot.send_message(
-        chat_id=context.job.chat_id,
-        text=message
-    )
+# ================= SABAH OTOMATİK =================
+async def morning_job(context: ContextTypes.DEFAULT_TYPE):
 
-    with open(graph_file, "rb") as photo:
-        await context.bot.send_photo(
+    try:
+        result = scan_trades()
+        trades = result.get("trades", [])
+
+        message = "🌅 Sabah Institutional Plan\n\n"
+
+        if not trades:
+            message += "Bugün uygun dağılım yok."
+        else:
+            for t in trades:
+                message += (
+                    f"{t['symbol']} → "
+                    f"%{t['weight_%']} | "
+                    f"Lot: {t['lot']}\n"
+                )
+
+        await context.bot.send_message(
             chat_id=context.job.chat_id,
-            photo=photo
+            text=message
         )
+
+    except Exception as e:
+        print("MORNING JOB ERROR:", e)
+
 
 # ================= MAIN =================
 def main():
@@ -118,14 +150,17 @@ def main():
     app.add_handler(CommandHandler("scan", scan))
     app.add_handler(CommandHandler("balance", balance))
 
-    # ⏰ Sabah 09:00 otomatik rapor
-    app.job_queue.run_daily(
-        morning_report,
-        time=time(9, 0)
-    )
+    try:
+        app.job_queue.run_daily(
+            morning_job,
+            time=time(9, 15)
+        )
+    except Exception as e:
+        print("JOB ERROR:", e)
 
     print("Institutional Bot başlatıldı...")
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
