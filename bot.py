@@ -7,18 +7,22 @@ from performance_tracker import (
     init_log,
     log_trade,
     get_balance,
-    generate_equity_graph
+    generate_equity_graph,
+    performance_metrics
 )
 
 TOKEN = os.getenv("BOT_TOKEN")
 
+# ================= START =================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🏦 AI Trading Desk Aktif\n\n"
+        "Komutlar:\n"
         "/scan → Günlük trade planı\n"
-        "/balance → Equity + Grafik\n"
+        "/balance → Equity + Performans\n"
     )
 
+# ================= SCAN =================
 async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("📊 Tarama başlatıldı...")
@@ -42,6 +46,8 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += "Uygun trade bulunamadı."
     else:
         for i, trade in enumerate(trades, 1):
+
+            # trade log kaydı
             log_trade(trade)
 
             message += (
@@ -57,12 +63,19 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(message)
 
+# ================= BALANCE =================
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     equity = get_balance()
     graph_file = generate_equity_graph()
+    metrics = performance_metrics()
 
-    await update.message.reply_text(f"💰 Güncel Equity: {equity} TL")
+    message = f"💰 Equity: {equity} TL\n\n"
+
+    for k, v in metrics.items():
+        message += f"{k}: {v}\n"
+
+    await update.message.reply_text(message)
 
     with open(graph_file, "rb") as photo:
         await context.bot.send_photo(
@@ -70,7 +83,9 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
             photo=photo
         )
 
+# ================= MAIN =================
 def main():
+
     if not TOKEN:
         print("BOT_TOKEN bulunamadı!")
         return
