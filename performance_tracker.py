@@ -1,13 +1,13 @@
 import csv
 import os
 import yfinance as yf
-import pandas as pd
 import matplotlib.pyplot as plt
 
 FILE_NAME = "trade_log.csv"
 START_BALANCE = 100000
 GRAPH_FILE = "equity_curve.png"
 
+# ================= INIT =================
 def init_log():
     if not os.path.exists(FILE_NAME):
         with open(FILE_NAME, mode="w", newline="") as file:
@@ -18,6 +18,7 @@ def init_log():
                 "Status","Result"
             ])
 
+# ================= LOG TRADE =================
 def log_trade(trade):
     with open(FILE_NAME, mode="a", newline="") as file:
         writer = csv.writer(file)
@@ -33,24 +34,22 @@ def log_trade(trade):
             0
         ])
 
+# ================= UPDATE RESULTS =================
 def update_trade_results():
 
     if not os.path.exists(FILE_NAME):
         return
 
-    rows = []
-    updated = False
-
     with open(FILE_NAME, mode="r") as file:
-        reader = csv.DictReader(file)
-        rows = list(reader)
+        rows = list(csv.DictReader(file))
+
+    updated = False
 
     for row in rows:
         if row["Status"] != "OPEN":
             continue
 
         symbol = row["Symbol"] + ".IS"
-        entry = float(row["Entry"])
         stop = float(row["Stop"])
         target = float(row["Target"])
         position = float(row["PositionValue"])
@@ -78,6 +77,7 @@ def update_trade_results():
             writer.writeheader()
             writer.writerows(rows)
 
+# ================= EQUITY =================
 def calculate_equity_curve():
 
     balance = START_BALANCE
@@ -96,8 +96,8 @@ def calculate_equity_curve():
     return curve
 
 def generate_equity_graph():
-    update_trade_results()
 
+    update_trade_results()
     curve = calculate_equity_curve()
 
     plt.figure(figsize=(8,4))
@@ -116,3 +116,51 @@ def get_balance():
     update_trade_results()
     curve = calculate_equity_curve()
     return round(curve[-1], 2)
+
+# ================= PERFORMANCE METRICS =================
+def performance_metrics():
+
+    update_trade_results()
+
+    wins = 0
+    losses = 0
+    gross_profit = 0
+    gross_loss = 0
+
+    if not os.path.exists(FILE_NAME):
+        return {}
+
+    with open(FILE_NAME, mode="r") as file:
+        reader = csv.DictReader(file)
+        for row in reader:
+            result = float(row["Result"])
+
+            if result > 0:
+                wins += 1
+                gross_profit += result
+            elif result < 0:
+                losses += 1
+                gross_loss += abs(result)
+
+    total_trades = wins + losses
+
+    win_rate = (wins / total_trades * 100) if total_trades > 0 else 0
+    profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else 0
+
+    curve = calculate_equity_curve()
+    peak = curve[0]
+    max_dd = 0
+
+    for equity in curve:
+        if equity > peak:
+            peak = equity
+        drawdown = (peak - equity)
+        if drawdown > max_dd:
+            max_dd = drawdown
+
+    return {
+        "Total Trades": total_trades,
+        "Win Rate (%)": round(win_rate,2),
+        "Profit Factor": round(profit_factor,2),
+        "Max Drawdown (TL)": round(max_dd,2)
+    }
