@@ -3,10 +3,10 @@ import pandas as pd
 import numpy as np
 
 # ================= AYARLAR =================
-ACCOUNT_SIZE = 100000      # Sermaye
+ACCOUNT_SIZE = 100000
 MIN_RR = 1.5
 BREAKOUT_BUFFER = 0.97
-MAX_DAILY_RISK = 0.03      # Günlük maksimum %3 risk
+MAX_DAILY_RISK = 0.03
 
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
@@ -50,13 +50,10 @@ def atr(df, period=14):
 def position_size(entry, stop, risk_percent):
     risk_amount = ACCOUNT_SIZE * risk_percent
     risk_per_share = entry - stop
-
     if risk_per_share <= 0:
         return 0, 0
-
     quantity = risk_amount / risk_per_share
     position_value = quantity * entry
-
     return int(quantity), round(position_value, 2)
 
 # ================= MARKET REGIME =================
@@ -95,7 +92,7 @@ def market_regime():
 # ================= SCAN =================
 def scan_trades():
 
-    regime, risk_per_trade, max_trades = market_regime()
+    regime, risk_per_trade, _ = market_regime()
 
     if regime == "BEAR":
         return {
@@ -129,7 +126,6 @@ def scan_trades():
 
             current_price = last_value(close)
             current_ema200 = last_value(ema200)
-            current_ema50 = last_value(ema50)
             current_rsi = last_value(rsi_series)
             current_atr = last_value(atr_series)
 
@@ -138,10 +134,8 @@ def scan_trades():
 
             if current_price < current_ema200:
                 continue
-
             if current_rsi < 50:
                 continue
-
             if current_volume < avg_volume:
                 continue
 
@@ -167,7 +161,7 @@ def scan_trades():
 
             qty, position_value = position_size(current_price, stop, risk_per_trade)
 
-            trades.append({
+            trade_data = {
                 "symbol": symbol.replace(".IS",""),
                 "price": round(current_price, 2),
                 "entry": round(current_price, 2),
@@ -176,8 +170,9 @@ def scan_trades():
                 "rr": round(rr, 2),
                 "lot": qty,
                 "position_value": position_value
-            })
+            }
 
+            trades.append(trade_data)
             total_risk += risk_per_trade
 
         except:
