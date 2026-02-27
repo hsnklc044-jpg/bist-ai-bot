@@ -3,9 +3,10 @@ import pandas as pd
 import numpy as np
 
 # ================= AYARLAR =================
-ACCOUNT_SIZE = 100000      # Toplam sermaye (değiştirebilirsin)
+ACCOUNT_SIZE = 100000      # Toplam sermaye
 MIN_RR = 1.5
 BREAKOUT_BUFFER = 0.97
+MAX_DAILY_RISK = 0.03      # Günlük maksimum %3 risk
 
 WATCHLIST = [
     "EREGL.IS","GARAN.IS","AKBNK.IS",
@@ -27,10 +28,8 @@ def rsi(close, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
-
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
@@ -103,12 +102,14 @@ def scan_trades():
             "regime": {
                 "regime": regime,
                 "risk": risk_per_trade,
-                "max_trades": max_trades
+                "max_trades": 0,
+                "daily_risk_used": 0
             },
             "trades": []
         }
 
     trades = []
+    total_risk = 0
 
     xu100 = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
 
@@ -137,22 +138,14 @@ def scan_trades():
             avg_volume = last_value(volume.rolling(20).mean())
             current_volume = last_value(volume)
 
-            # Relative Strength
-            if not xu100.empty:
-                rs_score = last_value(close.pct_change(20)) - last_value(xu100["Close"].pct_change(20))
-            else:
-                rs_score = 0
+            if current_price < current_ema200:
+                continue
 
-            score = 0
+            if current_rsi < 50:
+                continue
 
-            if current_price > current_ema200:
-                score += 1
-            if current_rsi > 50:
-                score += 1
-            if current_volume > avg_volume:
-                score += 1
-            if rs_score > 0:
-                score += 1
+            if current_volume < avg_volume:
+                continue
 
             recent_high = float(high.tail(20).max())
             if current_price < recent_high * BREAKOUT_BUFFER:
@@ -171,32 +164,35 @@ def scan_trades():
             if rr < MIN_RR:
                 continue
 
+            # Günlük risk limiti kontrolü
+            if total_risk + risk_per_trade > MAX_DAILY_RISK:
+                break
+
             qty, position_value = position_size(current_price, stop, risk_per_trade)
 
             trades.append({
                 "symbol": symbol.replace(".IS",""),
                 "price": round(current_price, 2),
-                "breakout_entry": round(current_price, 2),
-                "pullback_entry": round(current_ema50, 2),
+                "entry": round(current_price, 2),
                 "stop": round(stop, 2),
                 "target": round(target, 2),
                 "rr": round(rr, 2),
-                "score": score,
                 "lot": qty,
                 "position_value": position_value
             })
+
+            total_risk += risk_per_trade
 
         except Exception as e:
             print("SYMBOL ERROR:", symbol, e)
             continue
 
-    trades = sorted(trades, key=lambda x: x["score"], reverse=True)
-
     return {
         "regime": {
             "regime": regime,
             "risk": risk_per_trade,
-            "max_trades": max_trades
+            "max_trades": len(trades),
+            "daily_risk_used": round(total_risk * 100, 2)
         },
-        "trades": trades[:max_trades]
+        "trades": trades
     }
