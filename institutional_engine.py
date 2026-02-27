@@ -26,31 +26,6 @@ def rsi(close, period=14):
     rs = avg_gain / (avg_loss + 1e-9)
     return 100 - (100 / (1 + rs))
 
-# ================= TAIL RISK FILTER =================
-def tail_risk_multiplier():
-
-    df = yf.download("XU100.IS", period="6mo", interval="1d", progress=False)
-    if df.empty:
-        return 1.0
-
-    close = df["Close"]
-    returns = close.pct_change().dropna()
-
-    vol_20 = returns.rolling(20).std().iloc[-1] * np.sqrt(252)
-    vol_60 = returns.rolling(60).std().iloc[-1] * np.sqrt(252)
-
-    ema100 = close.ewm(span=100).mean().iloc[-1]
-
-    crash_signal = (
-        close.iloc[-1] < ema100 and
-        vol_20 > vol_60
-    )
-
-    if crash_signal:
-        return 0.5  # risk yarıya düşer
-    else:
-        return 1.0
-
 # ================= ADAPTIVE AI =================
 def build_ai_views():
 
@@ -146,6 +121,7 @@ def optimize(mu, cov, returns):
     def objective(weights):
         port_returns = returns @ weights
         equity = (1 + port_returns).cumprod()
+
         peak = equity.cummax()
         drawdown = (equity - peak) / peak
         max_dd = abs(drawdown.min())
@@ -172,6 +148,17 @@ def optimize(mu, cov, returns):
 
     return result.x
 
+# ================= VOL TARGET =================
+def volatility_targeting(portfolio_vol):
+
+    if portfolio_vol == 0:
+        return 1
+
+    scaling_factor = TARGET_VOL / portfolio_vol
+    scaling_factor = min(max(scaling_factor, 0.5), 1.5)
+
+    return scaling_factor
+
 # ================= MAIN =================
 def scan_trades():
 
@@ -183,25 +170,37 @@ def scan_trades():
     mu_bl, cov = black_litterman(returns, P, Q)
     weights = optimize(mu_bl, cov, returns)
 
-    portfolio_return = np.sum(mu_bl * weights)
-    portfolio_vol = np.sqrt(weights.T @ cov @ weights)
+    portfolio_return = float(np.sum(mu_bl * weights))
+    portfolio_vol = float(np.sqrt(weights.T @ cov @ weights))
 
     sharpe = 0
     if portfolio_vol != 0:
         sharpe = (portfolio_return - RISK_FREE_RATE) / portfolio_vol
 
-    # ===== Risk Controls =====
-    tail_scale = tail_risk_multiplier()
+    # ===== RISK SCALING =====
+    kelly_fraction = 0.5  # sabit test için
+    vol_scaler = volatility_targeting(portfolio_vol)
+
+    final_leverage = min(kelly_fraction * vol_scaler, 1.5)
+
+    print("DEBUG:")
+    print("Return:", portfolio_return)
+    print("Vol:", portfolio_vol)
+    print("Sharpe:", sharpe)
+    print("Vol scaler:", vol_scaler)
+    print("Final leverage:", final_leverage)
 
     trades = []
 
     for i, symbol in enumerate(symbols):
         weight = weights[i]
+
         if weight < 0.05:
             continue
 
         price = yf.download(symbol, period="5d", interval="1d", progress=False)["Close"].iloc[-1]
-        allocation = ACCOUNT_SIZE * weight * tail_scale
+
+        allocation = ACCOUNT_SIZE * weight * final_leverage
         lot = int(allocation / price)
 
         trades.append({
@@ -213,11 +212,11 @@ def scan_trades():
 
     return {
         "portfolio": {
-            "model": "Adaptive AI + BL + DD + Tail Hedge",
+            "model": "STABLE DEBUG MODE",
             "expected_return_%": round(portfolio_return*100,2),
             "volatility_%": round(portfolio_vol*100,2),
             "sharpe_ratio": round(sharpe,2),
-            "tail_scale": tail_scale
+            "leverage": round(final_leverage,2)
         },
         "trades": trades
     }
