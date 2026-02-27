@@ -5,10 +5,11 @@ import os
 import csv
 
 ACCOUNT_SIZE = 100000
+BASE_RISK = 0.01
 MIN_RR = 1.5
 BREAKOUT_BUFFER = 0.97
 MAX_DAILY_RISK = 0.03
-MAX_TOTAL_EXPOSURE = 0.40  # max %40 sermaye açık pozisyon
+MAX_TOTAL_EXPOSURE = 0.40
 TRADE_LOG = "trade_log.csv"
 
 WATCHLIST = [
@@ -18,13 +19,12 @@ WATCHLIST = [
     "ASELS.IS","TUPRS.IS","ISCTR.IS"
 ]
 
-# ================= SAFE VALUE =================
+# ================= HELPERS =================
 def last_value(series):
     if isinstance(series, pd.DataFrame):
         series = series.iloc[:, 0]
     return float(series.iloc[-1])
 
-# ================= RSI =================
 def rsi(close, period=14):
     delta = close.diff()
     gain = delta.clip(lower=0)
@@ -34,20 +34,39 @@ def rsi(close, period=14):
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-# ================= ATR =================
 def atr(df, period=14):
     high = df["High"]
     low = df["Low"]
     close = df["Close"]
-
     tr1 = high - low
     tr2 = abs(high - close.shift())
     tr3 = abs(low - close.shift())
-
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
-# ================= ACTIVE EXPOSURE =================
+# ================= VOLATILITY ADJUSTED RISK =================
+def dynamic_risk():
+
+    df = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
+    if df.empty:
+        return BASE_RISK
+
+    close = df["Close"]
+    atr_series = atr(df)
+
+    atr_value = last_value(atr_series)
+    price = last_value(close)
+
+    volatility_ratio = atr_value / price
+
+    if volatility_ratio > 0.03:
+        return BASE_RISK * 0.5
+    elif volatility_ratio > 0.02:
+        return BASE_RISK * 0.75
+    else:
+        return BASE_RISK * 1.2
+
+# ================= EXPOSURE =================
 def current_exposure():
 
     if not os.path.exists(TRADE_LOG):
@@ -63,7 +82,6 @@ def current_exposure():
 
     return exposure / ACCOUNT_SIZE
 
-# ================= OPEN SYMBOL CHECK =================
 def is_symbol_open(symbol):
 
     if not os.path.exists(TRADE_LOG):
@@ -77,44 +95,10 @@ def is_symbol_open(symbol):
 
     return False
 
-# ================= MARKET REGIME =================
-def market_regime():
-
-    df = yf.download("XU100.IS", period="6mo", interval="1d", progress=False)
-    if df.empty:
-        return "NEUTRAL", 0.005, 2
-
-    close = df["Close"]
-    ema200 = close.ewm(span=200).mean()
-    rsi_series = rsi(close)
-
-    score = 0
-    if last_value(close) > last_value(ema200):
-        score += 1
-    if last_value(rsi_series) > 50:
-        score += 1
-
-    if score == 2:
-        return "BULL", 0.01, 3
-    elif score == 1:
-        return "NEUTRAL", 0.005, 2
-    else:
-        return "BEAR", 0.0, 0
-
 # ================= SCAN =================
 def scan_trades():
 
-    regime, risk_per_trade, _ = market_regime()
-
-    if regime == "BEAR":
-        return {
-            "regime": {
-                "regime": regime,
-                "risk": risk_per_trade,
-                "daily_risk_used": 0
-            },
-            "trades": []
-        }
+    risk_per_trade = dynamic_risk()
 
     trades = []
     total_risk = 0
@@ -201,10 +185,9 @@ def scan_trades():
 
     return {
         "regime": {
-            "regime": regime,
-            "risk": risk_per_trade,
-            "daily_risk_used": round(total_risk * 100,2),
-            "current_exposure_%": round(exposure * 100,2)
+            "dynamic_risk_%": round(risk_per_trade * 100,2),
+            "daily_risk_used_%": round(total_risk * 100,2),
+            "exposure_%": round(exposure * 100,2)
         },
         "trades": trades
     }
