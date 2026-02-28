@@ -1,65 +1,89 @@
-import pandas as pd
+import json
 import os
 from datetime import datetime
 
-FILE_NAME = "portfolio_history.csv"
-
-def update_equity(current_value):
-
-    today = datetime.now().date()
-
-    if not os.path.exists(FILE_NAME):
-        df = pd.DataFrame(columns=["date","equity"])
-    else:
-        df = pd.read_csv(FILE_NAME)
-
-    df.loc[len(df)] = [today, current_value]
-    df.to_csv(FILE_NAME, index=False)
+TRADES_FILE = "trades.json"
 
 
-def calculate_stats():
+def load_trades():
+    if not os.path.exists(TRADES_FILE):
+        return []
+    with open(TRADES_FILE, "r") as f:
+        return json.load(f)
 
-    if not os.path.exists(FILE_NAME):
-        return None
 
-    df = pd.read_csv(FILE_NAME)
+def save_trades(trades):
+    with open(TRADES_FILE, "w") as f:
+        json.dump(trades, f, indent=4)
 
-    if len(df) < 2:
-        return None
 
-    df["returns"] = df["equity"].pct_change()
-    df = df.dropna()
+def log_trade(symbol, signal_type, entry_price, stop_loss=None, take_profit=None):
+    """
+    Yeni işlem kaydı oluşturur.
+    """
 
-    total_return = (df["equity"].iloc[-1] / df["equity"].iloc[0] - 1) * 100
-    sharpe = (df["returns"].mean() / df["returns"].std()) * (252**0.5)
-    max_dd = ((df["equity"] / df["equity"].cummax()) - 1).min() * 100
+    trades = load_trades()
 
-    daily_loss = df["returns"].iloc[-1] * 100
-
-    weekly_return = df["returns"].tail(5).sum() * 100
-
-    return {
-        "total_return_%": round(total_return,2),
-        "sharpe": round(sharpe,2),
-        "max_drawdown_%": round(max_dd,2),
-        "daily_%": round(daily_loss,2),
-        "weekly_%": round(weekly_return,2)
+    trade = {
+        "symbol": symbol,
+        "signal_type": signal_type,
+        "entry_price": entry_price,
+        "stop_loss": stop_loss,
+        "take_profit": take_profit,
+        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "open"
     }
 
+    trades.append(trade)
+    save_trades(trades)
 
-def risk_circuit_breaker():
+    return trade
 
-    stats = calculate_stats()
-    if stats is None:
-        return True
 
-    if stats["daily_%"] < -3:
-        return False
+def close_trade(symbol, exit_price):
+    """
+    Açık işlemi kapatır ve kâr/zarar hesaplar.
+    """
 
-    if stats["weekly_%"] < -6:
-        return False
+    trades = load_trades()
 
-    if stats["max_drawdown_%"] < -15:
-        return False
+    for trade in trades:
+        if trade["symbol"] == symbol and trade["status"] == "open":
 
-    return True
+            trade["exit_price"] = exit_price
+            trade["status"] = "closed"
+
+            if trade["signal_type"] == "BUY":
+                trade["pnl"] = round((exit_price - trade["entry_price"]) / trade["entry_price"] * 100, 2)
+            else:
+                trade["pnl"] = round((trade["entry_price"] - exit_price) / trade["entry_price"] * 100, 2)
+
+            save_trades(trades)
+            return trade
+
+    return None
+
+
+def get_performance():
+    """
+    Genel performans özeti döndürür.
+    """
+
+    trades = load_trades()
+    closed = [t for t in trades if t["status"] == "closed"]
+
+    if not closed:
+        return {
+            "total_trades": 0,
+            "win_rate": 0,
+            "avg_return": 0
+        }
+
+    wins = [t for t in closed if t["pnl"] > 0]
+    avg_return = sum(t["pnl"] for t in closed) / len(closed)
+
+    return {
+        "total_trades": len(closed),
+        "win_rate": round(len(wins) / len(closed) * 100, 2),
+        "avg_return": round(avg_return, 2)
+    }
