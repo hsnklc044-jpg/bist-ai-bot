@@ -1,8 +1,9 @@
 import os
 import io
+import numpy as np
 import pandas as pd
 import matplotlib
-matplotlib.use("Agg")  # 🚀 Railway headless fix
+matplotlib.use("Agg")  # Railway headless fix
 import matplotlib.pyplot as plt
 from sqlalchemy import create_engine
 
@@ -64,7 +65,6 @@ def generate_equity_chart():
 
     max_dd = round(abs(df["drawdown"].min()), 2)
 
-    # 🚀 Faster rendering
     plt.figure(figsize=(8, 4))
     plt.plot(df["equity"])
     plt.title("Equity Curve")
@@ -112,9 +112,9 @@ def get_risk_metrics():
 
     expectancy = (win_rate / 100 * avg_win) + ((1 - win_rate / 100) * avg_loss)
 
-    # Sharpe Ratio (simplified)
-    if df["return"].std() != 0:
-        sharpe = df["return"].mean() / df["return"].std() * (252 ** 0.5)
+    # Sharpe Ratio (stability fix)
+    if df["return"].std() > 1e-8:
+        sharpe = df["return"].mean() / df["return"].std() * np.sqrt(252)
     else:
         sharpe = 0
 
@@ -126,4 +126,60 @@ def get_risk_metrics():
         "avg_loss": round(avg_loss, 2),
         "expectancy": round(expectancy, 2),
         "sharpe": round(sharpe, 2),
+    }
+
+
+# =========================
+# MONTE CARLO SIMULATION
+# =========================
+
+def monte_carlo_simulation(simulations=1000):
+
+    with engine.connect() as conn:
+        df = pd.read_sql(
+            "SELECT profit FROM trades",
+            conn
+        )
+
+    if df.empty:
+        return None
+
+    profits = df["profit"].values
+    initial_equity = INITIAL_EQUITY
+
+    final_equities = []
+    max_drawdowns = []
+    ruin_count = 0
+
+    for _ in range(simulations):
+
+        sampled = np.random.choice(
+            profits,
+            size=len(profits),
+            replace=True
+        )
+
+        equity = initial_equity
+        peak = equity
+        max_dd = 0
+
+        for p in sampled:
+            equity += p
+            peak = max(peak, equity)
+            dd = (peak - equity) / peak * 100
+            max_dd = max(max_dd, dd)
+
+        final_equities.append(equity)
+        max_drawdowns.append(max_dd)
+
+        # Risk of ruin threshold (50% capital loss)
+        if equity <= initial_equity * 0.5:
+            ruin_count += 1
+
+    return {
+        "avg_final_equity": round(np.mean(final_equities), 2),
+        "worst_case_equity": round(np.min(final_equities), 2),
+        "avg_drawdown": round(np.mean(max_drawdowns), 2),
+        "worst_drawdown": round(np.max(max_drawdowns), 2),
+        "risk_of_ruin_%": round(ruin_count / simulations * 100, 2),
     }
