@@ -1,23 +1,82 @@
-from sqlalchemy import text
-from performance_tracker import engine
+import os
+from sqlalchemy import create_engine, text
+from performance_tracker import INITIAL_EQUITY
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
+
+RISK_PER_TRADE = 0.02  # %2 risk
+MAX_DRAWDOWN_LIMIT = 20  # %20 hard stop
+
+
+# =========================
+# CURRENT EQUITY
+# =========================
+
+def get_current_equity():
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT COALESCE(SUM(profit),0) FROM trades"))
+        total_profit = result.scalar()
+
+    return INITIAL_EQUITY + total_profit
+
+
+# =========================
+# CHECK MAX DRAWDOWN
+# =========================
+
+def check_drawdown():
+    with engine.connect() as conn:
+        df = conn.execute(text("""
+            SELECT profit FROM trades ORDER BY created_at ASC
+        """)).fetchall()
+
+    if not df:
+        return False
+
+    equity = INITIAL_EQUITY
+    peak = equity
+
+    for row in df:
+        equity += row[0]
+        peak = max(peak, equity)
+
+    drawdown = (peak - equity) / peak * 100
+
+    return drawdown >= MAX_DRAWDOWN_LIMIT
+
+
+# =========================
+# POSITION SIZE CALC
+# =========================
+
+def calculate_position_size(stop_distance):
+    equity = get_current_equity()
+
+    risk_amount = equity * RISK_PER_TRADE
+
+    if stop_distance <= 0:
+        return 0
+
+    position_size = risk_amount / stop_distance
+
+    return round(position_size, 2)
+
+
+# =========================
+# LOG TRADE
+# =========================
 
 def log_trade(symbol, side, entry_price, exit_price, quantity):
-    """
-    Trade'i DB'ye kaydeder ve profit hesaplar.
-    """
 
-    if side.lower() == "long":
-        profit = (exit_price - entry_price) * quantity
-    elif side.lower() == "short":
-        profit = (entry_price - exit_price) * quantity
-    else:
-        raise ValueError("Side must be 'long' or 'short'")
+    if check_drawdown():
+        raise Exception("❌ Max drawdown limit reached. Trading disabled.")
 
-    with engine.begin() as conn:
+    profit = (exit_price - entry_price) * quantity
+
+    with engine.connect() as conn:
         conn.execute(text("""
-            INSERT INTO trades 
-            (symbol, side, entry_price, exit_price, quantity, profit)
+            INSERT INTO trades (symbol, side, entry_price, exit_price, quantity, profit)
             VALUES (:symbol, :side, :entry_price, :exit_price, :quantity, :profit)
         """), {
             "symbol": symbol,
@@ -27,5 +86,6 @@ def log_trade(symbol, side, entry_price, exit_price, quantity):
             "quantity": quantity,
             "profit": profit
         })
+        conn.commit()
 
-    return profit
+    return round(profit, 2)
