@@ -4,7 +4,7 @@ import yfinance as yf
 
 RISK_FREE_RATE = 0.0
 INITIAL_CAPITAL = 100000
-RISK_PER_TRADE_PCT = 0.01   # %1 risk
+RISK_PER_TRADE_PCT = 0.01
 
 
 # ================= DATA =================
@@ -46,17 +46,37 @@ def get_atr(symbol, period="3mo", window=14):
         return None
 
 
+# ================= REGIME DETECTION =================
+
+def detect_regime():
+
+    try:
+        bist = yf.download("XU100.IS", period="3mo", auto_adjust=True)["Close"]
+
+        returns = bist.pct_change().dropna()
+        vol = returns.rolling(20).std().iloc[-1] * np.sqrt(252)
+
+        if vol < 0.15:
+            return "RISK_ON", 1.2
+        elif vol < 0.25:
+            return "NORMAL", 1.0
+        elif vol < 0.35:
+            return "RISK_OFF", 0.7
+        else:
+            return "PANIC", 0.4
+
+    except:
+        return "NORMAL", 1.0
+
+
 # ================= AI VIEW =================
 
 def build_ai_views():
     try:
         symbols = ["EREGL.IS", "SISE.IS", "KCHOL.IS"]
-
         P = np.eye(len(symbols))
         Q = np.array([0.05, 0.04, 0.06])
-
         return P, Q, symbols
-
     except:
         return None, None, []
 
@@ -91,7 +111,6 @@ def optimize(mu, cov):
     weights = inv_cov @ mu
 
     weights = weights / np.sum(np.abs(weights))
-
     weights = np.clip(weights, 0, 1)
 
     if np.sum(weights) == 0:
@@ -109,15 +128,15 @@ def fallback_portfolio():
     symbols = ["EREGL.IS", "SISE.IS", "KCHOL.IS"]
     weight = 1 / len(symbols)
 
-    trades = []
+    regime, leverage = detect_regime()
 
-    equity = INITIAL_CAPITAL
+    trades = []
+    equity = INITIAL_CAPITAL * leverage
     risk_per_trade = equity * RISK_PER_TRADE_PCT
 
     for s in symbols:
 
         atr = get_atr(s)
-
         if atr is None or atr == 0:
             continue
 
@@ -134,11 +153,11 @@ def fallback_portfolio():
 
     return {
         "portfolio": {
-            "model": "Fallback Equal Weight",
+            "model": f"Fallback Equal Weight ({regime})",
             "expected_return_%": 8.0,
             "volatility_%": 15.0,
             "sharpe_ratio": 0.8,
-            "leverage": 1.0
+            "leverage": leverage
         },
         "trades": trades
     }
@@ -149,13 +168,13 @@ def fallback_portfolio():
 def scan_trades():
 
     try:
-        P, Q, symbols = build_ai_views()
+        regime, leverage = detect_regime()
 
+        P, Q, symbols = build_ai_views()
         if P is None or len(symbols) == 0:
             return fallback_portfolio()
 
         returns = get_returns(symbols)
-
         if returns is None or returns.empty:
             return fallback_portfolio()
 
@@ -171,7 +190,7 @@ def scan_trades():
 
         trades = []
 
-        equity = INITIAL_CAPITAL
+        equity = INITIAL_CAPITAL * leverage
         risk_per_trade = equity * RISK_PER_TRADE_PCT
 
         for i, symbol in enumerate(symbols):
@@ -179,7 +198,6 @@ def scan_trades():
             if weights[i] > 0.02:
 
                 atr = get_atr(symbol)
-
                 if atr is None or atr == 0:
                     continue
 
@@ -199,11 +217,11 @@ def scan_trades():
 
         return {
             "portfolio": {
-                "model": "Black-Litterman AI (ATR Risk Engine)",
+                "model": f"Black-Litterman AI (ATR + Regime: {regime})",
                 "expected_return_%": round(portfolio_return * 100, 2),
                 "volatility_%": round(portfolio_vol * 100, 2),
                 "sharpe_ratio": round(sharpe, 2),
-                "leverage": 1.0
+                "leverage": leverage
             },
             "trades": trades
         }
