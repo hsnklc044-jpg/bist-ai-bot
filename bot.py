@@ -7,7 +7,8 @@ from performance_tracker import (
     log_trade,
     get_balance,
     generate_equity_graph,
-    performance_metrics
+    performance_metrics,
+    check_open_trades   # 🔥 ADIM 1 EKLENDİ
 )
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -24,6 +25,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ================= SCAN =================
 async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    # 🔥 ADIM 1: Açık trade'leri kontrol et
+    check_open_trades()
 
     await update.message.reply_text("📊 Institutional Scan başlatıldı...")
 
@@ -55,18 +59,6 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message += "📌 Trade Dağılımı:\n\n"
 
             for t in trades:
-
-                # 🔥 SAFE LOG TRADE (institutional format)
-                try:
-                    log_trade(
-                        symbol=t.get("symbol"),
-                        signal_type="BUY",
-                        entry_price=t.get("price", 0),
-                        stop_loss=t.get("stop_loss"),
-                        take_profit=t.get("target")
-                    )
-                except Exception as e:
-                    print("LOG ERROR:", e)
 
                 message += (
                     f"{t.get('symbol','-')}\n"
@@ -100,7 +92,6 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(message)
 
-        # 🔥 Grafik varsa gönder
         try:
             generate_equity_graph()
 
