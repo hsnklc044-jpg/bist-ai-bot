@@ -1,51 +1,4 @@
-import os
-from sqlalchemy import create_engine, text
-import pandas as pd
-import matplotlib.pyplot as plt
-from io import BytesIO
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
-
-INITIAL_EQUITY = 100000.0
-
-
-# =========================
-# REPORT FUNCTION
-# =========================
-
-def get_performance_report():
-    with engine.connect() as conn:
-        result = conn.execute(text("""
-            SELECT 
-                COUNT(*) as total_trades,
-                SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END) as wins,
-                SUM(CASE WHEN profit <= 0 THEN 1 ELSE 0 END) as losses,
-                COALESCE(SUM(profit), 0) as net_profit
-            FROM trades
-        """)).mappings().first()
-
-    total_trades = result["total_trades"] or 0
-    wins = result["wins"] or 0
-    losses = result["losses"] or 0
-    net_profit = float(result["net_profit"] or 0)
-
-    equity = INITIAL_EQUITY + net_profit
-
-    return {
-        "total_trades": total_trades,
-        "wins": wins,
-        "losses": losses,
-        "net_profit": net_profit,
-        "equity": equity
-    }
-
-
-# =========================
-# EQUITY + DRAWDOWN
-# =========================
-
-def get_equity_dataframe():
+def get_risk_metrics():
     with engine.connect() as conn:
         df = pd.read_sql("""
             SELECT created_at, profit
@@ -56,33 +9,37 @@ def get_equity_dataframe():
     if df.empty:
         return None
 
-    df["cumulative_profit"] = df["profit"].cumsum()
-    df["equity"] = INITIAL_EQUITY + df["cumulative_profit"]
-    df["peak"] = df["equity"].cummax()
-    df["drawdown"] = df["equity"] - df["peak"]
-    df["drawdown_pct"] = df["drawdown"] / df["peak"] * 100
+    df["return"] = df["profit"] / INITIAL_EQUITY
 
-    return df
+    # Basic stats
+    total_trades = len(df)
+    wins = df[df["profit"] > 0]
+    losses = df[df["profit"] <= 0]
 
+    win_rate = len(wins) / total_trades * 100 if total_trades > 0 else 0
 
-def generate_equity_chart():
-    df = get_equity_dataframe()
+    gross_profit = wins["profit"].sum()
+    gross_loss = abs(losses["profit"].sum())
 
-    if df is None:
-        return None, None
+    profit_factor = gross_profit / gross_loss if gross_loss != 0 else float("inf")
 
-    max_dd = df["drawdown_pct"].min()
+    avg_win = wins["profit"].mean() if not wins.empty else 0
+    avg_loss = losses["profit"].mean() if not losses.empty else 0
 
-    plt.figure(figsize=(8, 4))
-    plt.plot(df["created_at"], df["equity"])
-    plt.title("Equity Curve")
-    plt.xlabel("Time")
-    plt.ylabel("Equity")
-    plt.tight_layout()
+    expectancy = (win_rate/100 * avg_win) + ((1 - win_rate/100) * avg_loss)
 
-    buffer = BytesIO()
-    plt.savefig(buffer, format="png")
-    buffer.seek(0)
-    plt.close()
+    # Sharpe Ratio (simple version)
+    if df["return"].std() != 0:
+        sharpe = df["return"].mean() / df["return"].std() * (252 ** 0.5)
+    else:
+        sharpe = 0
 
-    return buffer, round(max_dd, 2)
+    return {
+        "total_trades": total_trades,
+        "win_rate": round(win_rate, 2),
+        "profit_factor": round(profit_factor, 2),
+        "avg_win": round(avg_win, 2),
+        "avg_loss": round(avg_loss, 2),
+        "expectancy": round(expectancy, 2),
+        "sharpe": round(sharpe, 2),
+    }
