@@ -1,96 +1,119 @@
 import os
-import yfinance as yf
+import logging
+import asyncio
+from datetime import datetime
+from sqlalchemy import create_engine, text
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-from performance_tracker import (
-    log_trade,
-    risk_check,
-    get_balance_summary
-)
+from risk_engine import risk_check_before_trade
+
+# ==========================
+# ENV VARIABLES
+# ==========================
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-SYMBOLS = ["EREGL.IS", "SISE.IS", "KCHOL.IS", "THYAO.IS", "BIMAS.IS"]
+# ==========================
+# LOGGING
+# ==========================
 
-# ===============================
-# SCAN COMMAND
-# ===============================
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
-async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+logger = logging.getLogger(__name__)
 
-    await update.message.reply_text("📊 Institutional Scan başlatıldı...")
+# ==========================
+# DATABASE
+# ==========================
 
-    new_trades = 0
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
 
-    for symbol in SYMBOLS:
+# ==========================
+# PORTFOLIO FUNCTIONS
+# ==========================
 
-        price_data = yf.download(symbol, period="1d", auto_adjust=True, progress=False)
+def get_portfolio_status():
+    with engine.connect() as conn:
+        equity = conn.execute(
+            text("SELECT equity FROM portfolio ORDER BY id DESC LIMIT 1")
+        ).scalar()
 
-        if price_data is None or price_data.empty:
-            continue
+        total_trades = conn.execute(
+            text("SELECT COUNT(*) FROM trades")
+        ).scalar()
 
-        close_series = price_data["Close"]
+        open_positions = conn.execute(
+            text("SELECT COUNT(*) FROM trades WHERE status='OPEN'")
+        ).scalar()
 
-        if hasattr(close_series, "iloc"):
-            price = float(close_series.iloc[-1])
-        else:
-            price = float(close_series)
+    return equity, total_trades, open_positions
 
-        allocation = 20000
-        lot = allocation / price
-        stop_distance = price * 0.02
 
-        # RISK CHECK
-        allowed, reason = risk_check(symbol, allocation)
-
-        if not allowed:
-            print(f"RISK BLOCKED: {symbol} -> {reason}")
-            continue
-
-        log_trade(
-            symbol=symbol,
-            entry_price=price,
-            stop_distance=stop_distance,
-            lot=lot
-        )
-
-        print(f"PRO TRADE AÇILDI: {symbol}")
-        new_trades += 1
-
-    await update.message.reply_text(f"✅ Scan tamamlandı.\nYeni açılan işlem: {new_trades}")
-
-# ===============================
-# BALANCE COMMAND
-# ===============================
+# ==========================
+# TELEGRAM COMMANDS
+# ==========================
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    summary = get_balance_summary()
+    equity, total_trades, open_positions = get_portfolio_status()
 
     message = (
         "📊 PORTFÖY DURUMU\n\n"
-        f"Toplam Equity: {summary['equity']} TL\n"
-        f"Toplam İşlem: {summary['total_trades']}\n"
-        f"Açık Pozisyon: {summary['open_positions']}\n"
-        f"Bağlanan Sermaye: {round(summary['used_capital'], 2)} TL"
+        f"Toplam Equity: {equity:.2f} TL\n"
+        f"Toplam İşlem: {total_trades}\n"
+        f"Açık Pozisyon: {open_positions}\n"
+        f"Bağlanan Sermaye: {equity:.2f} TL"
     )
 
     await update.message.reply_text(message)
 
-# ===============================
+
+async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    await update.message.reply_text("🔎 Institutional Scan başlatıldı...")
+
+    allowed, reason = risk_check_before_trade()
+
+    if not allowed:
+        await update.message.reply_text(f"🛑 Trade Engellendi: {reason}")
+        return
+
+    # ÖRNEK TRADE SİMÜLASYONU
+    with engine.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO trades (symbol, status, open_time, pnl)
+            VALUES ('EREGL.IS', 'OPEN', :open_time, 0)
+        """), {"open_time": datetime.utcnow()})
+
+    await update.message.reply_text("✅ Yeni işlem açıldı.")
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🤖 Institutional Portfolio Engine v2 aktif.")
+
+
+# ==========================
 # MAIN
-# ===============================
+# ==========================
 
 def main():
+
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN missing")
+
     app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    app.add_handler(CommandHandler("scan", scan))
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("balance", balance))
+    app.add_handler(CommandHandler("scan", scan))
 
-    print("Institutional Portfolio Engine v2 başlatıldı...")
+    logger.info("Institutional Portfolio Engine v2 başlatıldı...")
+    app.run_polling()
 
-    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
