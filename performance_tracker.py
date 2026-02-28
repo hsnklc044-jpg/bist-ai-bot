@@ -1,101 +1,85 @@
 import json
 import os
 from datetime import datetime
-import yfinance as yf
 
-DATA_FILE = "performance_data.json"
+TRADES_FILE = "trades.json"
+INITIAL_EQUITY = 100000
 
 
-# ================= STORAGE =================
+# ==============================
+# DOSYA KONTROL
+# ==============================
 
-def _load():
-    if not os.path.exists(DATA_FILE):
-        return {
-            "initial_capital": 100000,
-            "equity": 100000,
-            "open_trades": [],
-            "closed_trades": []
-        }
-    with open(DATA_FILE, "r") as f:
+def _ensure_file():
+    if not os.path.exists(TRADES_FILE):
+        with open(TRADES_FILE, "w") as f:
+            json.dump([], f)
+
+
+def _load_trades():
+    _ensure_file()
+    with open(TRADES_FILE, "r") as f:
         return json.load(f)
 
 
-def _save(data):
-    with open(DATA_FILE, "w") as f:
-        json.dump(data, f, indent=4)
+def _save_trades(trades):
+    with open(TRADES_FILE, "w") as f:
+        json.dump(trades, f, indent=4)
 
 
-# ================= OPEN TRADE =================
+# ==============================
+# TRADE LOG
+# ==============================
 
 def log_trade(symbol, entry_price, stop_distance, lot):
+    try:
+        trade = {
+            "symbol": str(symbol),
+            "entry_price": float(entry_price),
+            "stop_distance": float(stop_distance),
+            "lot": float(lot),
+            "open_time": datetime.now().isoformat(),
+            "status": "open"
+        }
 
-    data = _load()
+        trades = _load_trades()
+        trades.append(trade)
+        _save_trades(trades)
 
-    stop_price = entry_price - stop_distance
-    target_price = entry_price + (stop_distance * 2)
+        print("TRADE LOGGED:", symbol)
 
-    trade = {
-        "symbol": symbol,
-        "entry_price": entry_price,
-        "stop_price": stop_price,
-        "target_price": target_price,
-        "lot": lot,
-        "status": "OPEN",
-        "open_date": str(datetime.now())
-    }
-
-    data["open_trades"].append(trade)
-    _save(data)
+    except Exception as e:
+        print("TRADE LOG ERROR:", e)
 
 
-# ================= CHECK OPEN TRADES =================
+# ==============================
+# AÇIK POZİSYON KONTROL
+# ==============================
 
 def check_open_trades():
+    trades = _load_trades()
+    open_trades = [t for t in trades if t["status"] == "open"]
 
-    data = _load()
-    updated_open = []
-
-    for trade in data["open_trades"]:
-
-        symbol = trade["symbol"]
-
-        try:
-            price = yf.download(symbol, period="1d", auto_adjust=True)["Close"].iloc[-1]
-        except:
-            updated_open.append(trade)
-            continue
-
-        if price <= trade["stop_price"]:
-            pnl = (trade["stop_price"] - trade["entry_price"]) * trade["lot"]
-            data["equity"] += pnl
-            trade["status"] = "STOP_HIT"
-            trade["close_price"] = trade["stop_price"]
-            trade["pnl"] = pnl
-            data["closed_trades"].append(trade)
-
-        elif price >= trade["target_price"]:
-            pnl = (trade["target_price"] - trade["entry_price"]) * trade["lot"]
-            data["equity"] += pnl
-            trade["status"] = "TARGET_HIT"
-            trade["close_price"] = trade["target_price"]
-            trade["pnl"] = pnl
-            data["closed_trades"].append(trade)
-
-        else:
-            updated_open.append(trade)
-
-    data["open_trades"] = updated_open
-    _save(data)
+    print("AÇIK POZİSYON SAYISI:", len(open_trades))
+    return open_trades
 
 
-# ================= BALANCE =================
+# ==============================
+# BALANCE HESAPLAMA
+# ==============================
 
-def get_balance():
+def get_portfolio_status():
+    trades = _load_trades()
 
-    data = _load()
+    open_trades = [t for t in trades if t["status"] == "open"]
+
+    total_allocation = sum(t["entry_price"] * t["lot"] for t in open_trades)
+
+    equity = INITIAL_EQUITY
 
     return {
-        "equity": round(data["equity"], 2),
-        "total_trades": len(data["closed_trades"]),
-        "open_trades": len(data["open_trades"])
+        "equity": equity,
+        "total_trades": len(trades),
+        "open_positions": len(open_trades),
+        "allocated_capital": total_allocation
     }
