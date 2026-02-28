@@ -4,6 +4,7 @@ import yfinance as yf
 
 RISK_FREE_RATE = 0.0
 INITIAL_CAPITAL = 100000
+RISK_PER_TRADE_PCT = 0.01   # %1 risk
 
 
 # ================= DATA =================
@@ -19,15 +20,40 @@ def get_returns(symbols, period="3mo"):
         return None
 
 
-# ================= AI VIEW (SAFE) =================
+# ================= ATR =================
+
+def get_atr(symbol, period="3mo", window=14):
+    try:
+        df = yf.download(symbol, period=period, auto_adjust=True)
+
+        if df is None or df.empty:
+            return None
+
+        high = df["High"]
+        low = df["Low"]
+        close = df["Close"]
+
+        tr1 = high - low
+        tr2 = (high - close.shift()).abs()
+        tr3 = (low - close.shift()).abs()
+
+        tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+        atr = tr.rolling(window=window).mean()
+
+        return float(atr.iloc[-1])
+
+    except:
+        return None
+
+
+# ================= AI VIEW =================
 
 def build_ai_views():
-
     try:
         symbols = ["EREGL.IS", "SISE.IS", "KCHOL.IS"]
 
         P = np.eye(len(symbols))
-        Q = np.array([0.05, 0.04, 0.06])  # AI beklenti (örnek)
+        Q = np.array([0.05, 0.04, 0.06])
 
         return P, Q, symbols
 
@@ -59,9 +85,7 @@ def black_litterman(returns, P, Q):
 
 # ================= OPTIMIZER =================
 
-def optimize(mu, cov, returns):
-
-    n = len(mu)
+def optimize(mu, cov):
 
     inv_cov = np.linalg.pinv(cov)
     weights = inv_cov @ mu
@@ -71,7 +95,7 @@ def optimize(mu, cov, returns):
     weights = np.clip(weights, 0, 1)
 
     if np.sum(weights) == 0:
-        weights = np.ones(n) / n
+        weights = np.ones(len(mu)) / len(mu)
     else:
         weights = weights / np.sum(weights)
 
@@ -83,17 +107,29 @@ def optimize(mu, cov, returns):
 def fallback_portfolio():
 
     symbols = ["EREGL.IS", "SISE.IS", "KCHOL.IS"]
-
     weight = 1 / len(symbols)
 
     trades = []
 
+    equity = INITIAL_CAPITAL
+    risk_per_trade = equity * RISK_PER_TRADE_PCT
+
     for s in symbols:
+
+        atr = get_atr(s)
+
+        if atr is None or atr == 0:
+            continue
+
+        stop_distance = atr * 1.5
+        lot = risk_per_trade / stop_distance
+
         trades.append({
             "symbol": s,
             "weight_%": round(weight * 100, 2),
-            "allocation": round(weight * INITIAL_CAPITAL, 2),
-            "lot": round((weight * INITIAL_CAPITAL) / 100, 0)
+            "allocation": round(weight * equity, 2),
+            "lot": round(lot, 0),
+            "stop_distance": round(stop_distance, 2)
         })
 
     return {
@@ -124,7 +160,7 @@ def scan_trades():
             return fallback_portfolio()
 
         mu_bl, cov = black_litterman(returns, P, Q)
-        weights = optimize(mu_bl, cov, returns)
+        weights = optimize(mu_bl, cov)
 
         portfolio_return = float(np.sum(mu_bl * weights))
         portfolio_vol = float(np.sqrt(weights.T @ cov @ weights))
@@ -135,13 +171,27 @@ def scan_trades():
 
         trades = []
 
+        equity = INITIAL_CAPITAL
+        risk_per_trade = equity * RISK_PER_TRADE_PCT
+
         for i, symbol in enumerate(symbols):
+
             if weights[i] > 0.02:
+
+                atr = get_atr(symbol)
+
+                if atr is None or atr == 0:
+                    continue
+
+                stop_distance = atr * 1.5
+                lot = risk_per_trade / stop_distance
+
                 trades.append({
                     "symbol": symbol,
                     "weight_%": round(weights[i] * 100, 2),
-                    "allocation": round(weights[i] * INITIAL_CAPITAL, 2),
-                    "lot": round((weights[i] * INITIAL_CAPITAL) / 100, 0)
+                    "allocation": round(weights[i] * equity, 2),
+                    "lot": round(lot, 0),
+                    "stop_distance": round(stop_distance, 2)
                 })
 
         if not trades:
@@ -149,7 +199,7 @@ def scan_trades():
 
         return {
             "portfolio": {
-                "model": "Black-Litterman AI",
+                "model": "Black-Litterman AI (ATR Risk Engine)",
                 "expected_return_%": round(portfolio_return * 100, 2),
                 "volatility_%": round(portfolio_vol * 100, 2),
                 "sharpe_ratio": round(sharpe, 2),
