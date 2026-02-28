@@ -25,7 +25,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= SCAN =================
 async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    # 🔥 Açık trade kontrolü
+    # 🔥 Açık pozisyonları kontrol et
     check_open_trades()
 
     await update.message.reply_text("📊 Institutional Scan başlatıldı...")
@@ -55,11 +55,11 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             for t in trades:
 
-                print("DEBUG TRADE:", t)
-
                 symbol = t.get("symbol")
                 lot = t.get("lot")
                 stop_distance = t.get("stop_distance")
+
+                print("DEBUG TRADE:", t)
 
                 message += (
                     f"{symbol}\n"
@@ -68,23 +68,33 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"Tutar: {t.get('allocation',0)} TL\n\n"
                 )
 
-                # 🔥 Stop mesafesi kontrolü
                 if stop_distance is None:
                     print("STOP DISTANCE YOK:", symbol)
                     continue
 
                 try:
-                    price_data = yf.download(symbol, period="1d", auto_adjust=True)
+                    price_data = yf.download(
+                        symbol,
+                        period="1d",
+                        auto_adjust=True,
+                        progress=False
+                    )
 
                     if price_data is None or price_data.empty:
                         print("PRICE DATA YOK:", symbol)
                         continue
 
-                    price = price_data["Close"].iloc[-1]
+                    close_series = price_data["Close"]
+
+                    # 🔥 Series hatası fix
+                    if hasattr(close_series, "iloc"):
+                        price = float(close_series.iloc[-1])
+                    else:
+                        price = float(close_series)
 
                     log_trade(
                         symbol=symbol,
-                        entry_price=float(price),
+                        entry_price=price,
                         stop_distance=float(stop_distance),
                         lot=float(lot)
                     )
