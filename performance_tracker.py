@@ -1,125 +1,131 @@
-import json
 import os
-from datetime import datetime
-import yfinance as yf
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
 
-TRADES_FILE = "trades.json"
-INITIAL_EQUITY = 100000
+# ===============================
+# DATABASE CONNECTION (SUPABASE)
+# ===============================
 
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# ==============================
-# DOSYA KONTROL
-# ==============================
+if not DATABASE_URL:
+    raise ValueError("DATABASE_URL not found in environment variables")
 
-def _ensure_file():
-    if not os.path.exists(TRADES_FILE):
-        with open(TRADES_FILE, "w") as f:
-            json.dump([], f)
+engine = create_engine(DATABASE_URL, pool_pre_ping=True)
+SessionLocal = sessionmaker(bind=engine)
 
+# ===============================
+# TABLE SETUP
+# ===============================
 
-def _load_trades():
-    _ensure_file()
-    with open(TRADES_FILE, "r") as f:
-        return json.load(f)
+def init_db():
+    with engine.connect() as conn:
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS trades (
+            id SERIAL PRIMARY KEY,
+            symbol TEXT,
+            entry_price FLOAT,
+            lot FLOAT,
+            stop_distance FLOAT,
+            status TEXT DEFAULT 'OPEN',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """))
+        conn.commit()
 
-
-def _save_trades(trades):
-    with open(TRADES_FILE, "w") as f:
-        json.dump(trades, f, indent=4)
-
-
-# ==============================
-# TRADE LOG
-# ==============================
+# ===============================
+# TRADE FUNCTIONS
+# ===============================
 
 def log_trade(symbol, entry_price, stop_distance, lot):
-    trade = {
-        "symbol": str(symbol),
-        "entry_price": float(entry_price),
-        "stop_distance": float(stop_distance),
-        "lot": float(lot),
-        "open_time": datetime.now().isoformat(),
-        "status": "open"
-    }
+    with engine.connect() as conn:
+        conn.execute(
+            text("""
+            INSERT INTO trades (symbol, entry_price, stop_distance, lot, status)
+            VALUES (:symbol, :entry_price, :stop_distance, :lot, 'OPEN')
+            """),
+            {
+                "symbol": symbol,
+                "entry_price": entry_price,
+                "stop_distance": stop_distance,
+                "lot": lot
+            }
+        )
+        conn.commit()
 
-    trades = _load_trades()
-    trades.append(trade)
-    _save_trades(trades)
+def get_open_positions():
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT * FROM trades WHERE status='OPEN'")
+        )
+        return result.fetchall()
 
-    print("TRADE LOGGED:", symbol)
+def get_used_capital():
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT SUM(entry_price * lot) FROM trades WHERE status='OPEN'")
+        )
+        total = result.scalar()
+        return float(total) if total else 0.0
 
+def is_duplicate_trade(symbol):
+    with engine.connect() as conn:
+        result = conn.execute(
+            text("SELECT COUNT(*) FROM trades WHERE symbol=:symbol AND status='OPEN'"),
+            {"symbol": symbol}
+        )
+        return result.scalar() > 0
 
-# ==============================
-# OPEN TRADES
-# ==============================
+# ===============================
+# RISK ENGINE
+# ===============================
 
-def check_open_trades():
-    trades = _load_trades()
-    return [t for t in trades if t["status"] == "open"]
+MAX_OPEN_TRADES = 5
+MAX_CAPITAL_USAGE = 0.95
+MAX_DAILY_LOSS = 0.03
 
+def get_total_equity():
+    return 100000.0
 
-# ==============================
-# REAL-TIME PORTFOLIO ENGINE
-# ==============================
+def daily_loss_exceeded():
+    return False  # v1 placeholder
 
-def get_portfolio_status():
+def risk_check(symbol, allocation):
 
-    trades = _load_trades()
+    open_positions = get_open_positions()
+    used_capital = get_used_capital()
+    equity = get_total_equity()
 
-    equity = INITIAL_EQUITY
-    allocated_capital = 0
-    total_unrealized = 0
+    if len(open_positions) >= MAX_OPEN_TRADES:
+        return False, "Max open trade limit reached"
 
-    for trade in trades:
+    if (used_capital + allocation) > (equity * MAX_CAPITAL_USAGE):
+        return False, "Capital usage limit exceeded"
 
-        if trade["status"] != "open":
-            continue
+    if is_duplicate_trade(symbol):
+        return False, "Duplicate trade detected"
 
-        symbol = trade["symbol"]
-        entry = trade["entry_price"]
-        stop_distance = trade["stop_distance"]
-        lot = trade["lot"]
+    if daily_loss_exceeded():
+        return False, "Daily loss limit exceeded"
 
-        try:
-            ticker = yf.Ticker(symbol)
-            hist = ticker.history(period="1d")
+    return True, "Risk check passed"
 
-            if hist.empty:
-                continue
+# ===============================
+# BALANCE
+# ===============================
 
-            current_price = float(hist["Close"].iloc[-1])
+def get_balance_summary():
 
-            # ===== STOP CHECK =====
-            stop_price = entry - stop_distance
-
-            if current_price <= stop_price:
-                trade["status"] = "closed"
-                trade["close_price"] = current_price
-                trade["close_time"] = datetime.now().isoformat()
-
-                print("STOP HIT:", symbol)
-                continue
-
-            # ===== UNREALIZED PNL =====
-            unrealized = (current_price - entry) * lot
-            total_unrealized += unrealized
-
-            allocated_capital += current_price * lot
-
-        except Exception as e:
-            print("PRICE ERROR:", symbol, e)
-
-    # equity güncelle
-    equity = INITIAL_EQUITY + total_unrealized
-
-    _save_trades(trades)
-
-    open_trades = [t for t in trades if t["status"] == "open"]
+    equity = get_total_equity()
+    open_positions = get_open_positions()
+    used_capital = get_used_capital()
 
     return {
-        "equity": round(equity, 2),
-        "total_trades": len(trades),
-        "open_positions": len(open_trades),
-        "allocated_capital": round(allocated_capital, 2),
-        "unrealized_pnl": round(total_unrealized, 2)
+        "equity": equity,
+        "total_trades": len(open_positions),
+        "open_positions": len(open_positions),
+        "used_capital": used_capital
     }
+
+# INIT
+init_db()
