@@ -1,142 +1,101 @@
 import json
 import os
-import math
 from datetime import datetime
-import matplotlib.pyplot as plt
+import yfinance as yf
 
 DATA_FILE = "performance_data.json"
 
+
 # ================= STORAGE =================
 
-def _load_data():
+def _load():
     if not os.path.exists(DATA_FILE):
         return {
             "initial_capital": 100000,
-            "equity_curve": [],
-            "trades": []
+            "equity": 100000,
+            "open_trades": [],
+            "closed_trades": []
         }
     with open(DATA_FILE, "r") as f:
         return json.load(f)
 
 
-def _save_data(data):
+def _save(data):
     with open(DATA_FILE, "w") as f:
         json.dump(data, f, indent=4)
 
 
-# ================= TRADE LOG =================
+# ================= OPEN TRADE =================
 
-def log_trade(symbol, signal_type, entry_price, stop_loss=None, take_profit=None):
-    data = _load_data()
+def log_trade(symbol, entry_price, stop_distance, lot):
+
+    data = _load()
+
+    stop_price = entry_price - stop_distance
+    target_price = entry_price + (stop_distance * 2)
 
     trade = {
         "symbol": symbol,
-        "signal_type": signal_type,
         "entry_price": entry_price,
-        "stop_loss": stop_loss,
-        "take_profit": take_profit,
-        "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "pnl": 0
+        "stop_price": stop_price,
+        "target_price": target_price,
+        "lot": lot,
+        "status": "OPEN",
+        "open_date": str(datetime.now())
     }
 
-    data["trades"].append(trade)
+    data["open_trades"].append(trade)
+    _save(data)
 
-    # Simüle edilmiş PnL (örnek sistem için)
-    simulated_return = 0.02  # %2 varsayalım (engine'e bağlayabiliriz)
-    pnl = entry_price * simulated_return
 
-    last_equity = data["equity_curve"][-1] if data["equity_curve"] else data["initial_capital"]
-    new_equity = last_equity + pnl
+# ================= CHECK OPEN TRADES =================
 
-    data["equity_curve"].append(new_equity)
+def check_open_trades():
 
-    _save_data(data)
+    data = _load()
+    updated_open = []
+
+    for trade in data["open_trades"]:
+
+        symbol = trade["symbol"]
+
+        try:
+            price = yf.download(symbol, period="1d", auto_adjust=True)["Close"].iloc[-1]
+        except:
+            updated_open.append(trade)
+            continue
+
+        if price <= trade["stop_price"]:
+            pnl = (trade["stop_price"] - trade["entry_price"]) * trade["lot"]
+            data["equity"] += pnl
+            trade["status"] = "STOP_HIT"
+            trade["close_price"] = trade["stop_price"]
+            trade["pnl"] = pnl
+            data["closed_trades"].append(trade)
+
+        elif price >= trade["target_price"]:
+            pnl = (trade["target_price"] - trade["entry_price"]) * trade["lot"]
+            data["equity"] += pnl
+            trade["status"] = "TARGET_HIT"
+            trade["close_price"] = trade["target_price"]
+            trade["pnl"] = pnl
+            data["closed_trades"].append(trade)
+
+        else:
+            updated_open.append(trade)
+
+    data["open_trades"] = updated_open
+    _save(data)
 
 
 # ================= BALANCE =================
 
 def get_balance():
-    data = _load_data()
 
-    equity_curve = data["equity_curve"]
-    initial = data["initial_capital"]
-
-    if not equity_curve:
-        return {
-            "equity": initial,
-            "daily_pnl": 0,
-            "total_pnl": 0
-        }
-
-    current_equity = equity_curve[-1]
-    total_pnl = current_equity - initial
-
-    daily_pnl = 0
-    if len(equity_curve) > 1:
-        daily_pnl = equity_curve[-1] - equity_curve[-2]
+    data = _load()
 
     return {
-        "equity": round(current_equity, 2),
-        "daily_pnl": round(daily_pnl, 2),
-        "total_pnl": round(total_pnl, 2)
+        "equity": round(data["equity"], 2),
+        "total_trades": len(data["closed_trades"]),
+        "open_trades": len(data["open_trades"])
     }
-
-
-# ================= METRICS =================
-
-def performance_metrics():
-    data = _load_data()
-    equity = data["equity_curve"]
-
-    if len(equity) < 2:
-        return {
-            "max_drawdown": 0,
-            "sharpe": 0
-        }
-
-    returns = []
-    for i in range(1, len(equity)):
-        r = (equity[i] - equity[i - 1]) / equity[i - 1]
-        returns.append(r)
-
-    avg_return = sum(returns) / len(returns)
-    std_dev = math.sqrt(sum((r - avg_return) ** 2 for r in returns) / len(returns))
-
-    sharpe = 0
-    if std_dev != 0:
-        sharpe = (avg_return / std_dev) * math.sqrt(252)
-
-    # Max Drawdown
-    peak = equity[0]
-    max_dd = 0
-
-    for value in equity:
-        if value > peak:
-            peak = value
-        dd = (peak - value) / peak
-        if dd > max_dd:
-            max_dd = dd
-
-    return {
-        "max_drawdown": round(max_dd * 100, 2),
-        "sharpe": round(sharpe, 2)
-    }
-
-
-# ================= GRAPH =================
-
-def generate_equity_graph():
-    data = _load_data()
-    equity = data["equity_curve"]
-
-    if not equity:
-        return
-
-    plt.figure()
-    plt.plot(equity)
-    plt.title("Equity Curve")
-    plt.xlabel("Trade")
-    plt.ylabel("Equity")
-    plt.tight_layout()
-    plt.savefig("equity_curve.png")
-    plt.close()
