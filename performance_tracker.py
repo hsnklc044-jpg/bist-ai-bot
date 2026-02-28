@@ -10,6 +10,41 @@ engine = create_engine(DATABASE_URL)
 INITIAL_EQUITY = 100000.0
 
 
+# =========================
+# REPORT FUNCTION
+# =========================
+
+def get_performance_report():
+    with engine.connect() as conn:
+        result = conn.execute(text("""
+            SELECT 
+                COUNT(*) as total_trades,
+                SUM(CASE WHEN profit > 0 THEN 1 ELSE 0 END) as wins,
+                SUM(CASE WHEN profit <= 0 THEN 1 ELSE 0 END) as losses,
+                COALESCE(SUM(profit), 0) as net_profit
+            FROM trades
+        """)).mappings().first()
+
+    total_trades = result["total_trades"] or 0
+    wins = result["wins"] or 0
+    losses = result["losses"] or 0
+    net_profit = float(result["net_profit"] or 0)
+
+    equity = INITIAL_EQUITY + net_profit
+
+    return {
+        "total_trades": total_trades,
+        "wins": wins,
+        "losses": losses,
+        "net_profit": net_profit,
+        "equity": equity
+    }
+
+
+# =========================
+# EQUITY + DRAWDOWN
+# =========================
+
 def get_equity_dataframe():
     with engine.connect() as conn:
         df = pd.read_sql("""
