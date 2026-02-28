@@ -15,7 +15,7 @@ from performance_tracker import (
 
 from risk_engine import calculate_position_size
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
+TOKEN = os.getenv("BOT_TOKEN")
 
 
 # =========================
