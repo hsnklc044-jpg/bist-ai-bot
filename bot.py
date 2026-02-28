@@ -10,7 +10,9 @@ from telegram.ext import (
 from performance_tracker import (
     get_performance_report,
     generate_equity_chart,
+    get_risk_metrics,
 )
+
 from risk_engine import log_trade
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -29,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖 Institutional Portfolio Engine v2 aktif."
+        "🤖 Institutional Portfolio Engine v3 aktif."
     )
 
 
@@ -87,6 +89,31 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Grafik üretilemedi:\n{str(e)}")
 
 
+async def risk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        metrics = get_risk_metrics()
+
+        if metrics is None:
+            await update.message.reply_text("Henüz işlem yok.")
+            return
+
+        message = (
+            "📊 RISK METRICS PANEL\n\n"
+            f"Toplam İşlem: {metrics['total_trades']}\n"
+            f"Win Rate: {metrics['win_rate']}%\n"
+            f"Profit Factor: {metrics['profit_factor']}\n"
+            f"Avg Win: {metrics['avg_win']} TL\n"
+            f"Avg Loss: {metrics['avg_loss']} TL\n"
+            f"Expectancy: {metrics['expectancy']} TL\n"
+            f"Sharpe Ratio: {metrics['sharpe']}"
+        )
+
+        await update.message.reply_text(message)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Risk hesaplanamadı:\n{str(e)}")
+
+
 # =========================
 # MAIN
 # =========================
@@ -98,8 +125,9 @@ def main():
     app.add_handler(CommandHandler("report", report))
     app.add_handler(CommandHandler("testtrade", testtrade))
     app.add_handler(CommandHandler("equity", equity))
+    app.add_handler(CommandHandler("risk", risk))
 
-    logger.info("Institutional Portfolio Engine v2 başlatıldı...")
+    logger.info("Institutional Portfolio Engine v3 başlatıldı...")
 
     app.run_polling()
 
