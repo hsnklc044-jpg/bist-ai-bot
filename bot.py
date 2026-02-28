@@ -1,5 +1,4 @@
 import os
-from datetime import time
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -57,11 +56,17 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             for t in trades:
 
-                # trade log kaydı
+                # 🔥 SAFE LOG TRADE (institutional format)
                 try:
-                    log_trade(t)
-                except:
-                    pass
+                    log_trade(
+                        symbol=t.get("symbol"),
+                        signal_type="BUY",
+                        entry_price=t.get("price", 0),
+                        stop_loss=t.get("stop_loss"),
+                        take_profit=t.get("target")
+                    )
+                except Exception as e:
+                    print("LOG ERROR:", e)
 
                 message += (
                     f"{t.get('symbol','-')}\n"
@@ -95,16 +100,18 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(message)
 
-        # grafik varsa gönder
+        # 🔥 Grafik varsa gönder
         try:
             generate_equity_graph()
-            with open("equity_curve.png", "rb") as f:
-                await context.bot.send_photo(
-                    chat_id=update.effective_chat.id,
-                    photo=f
-                )
-        except:
-            pass
+
+            if os.path.exists("equity_curve.png"):
+                with open("equity_curve.png", "rb") as f:
+                    await context.bot.send_photo(
+                        chat_id=update.effective_chat.id,
+                        photo=f
+                    )
+        except Exception as e:
+            print("GRAPH ERROR:", e)
 
     except Exception as e:
         await update.message.reply_text(f"❌ BALANCE HATA: {str(e)}")
