@@ -1,6 +1,8 @@
 import os
 import io
 import pandas as pd
+import matplotlib
+matplotlib.use("Agg")  # 🚀 Railway headless fix
 import matplotlib.pyplot as plt
 from sqlalchemy import create_engine
 
@@ -43,7 +45,7 @@ def get_performance_report():
 
 
 # =========================
-# EQUITY CURVE
+# EQUITY CURVE + DRAWDOWN
 # =========================
 
 def generate_equity_chart():
@@ -62,14 +64,16 @@ def generate_equity_chart():
 
     max_dd = round(abs(df["drawdown"].min()), 2)
 
-    plt.figure()
-    plt.plot(df["created_at"], df["equity"])
+    # 🚀 Faster rendering
+    plt.figure(figsize=(8, 4))
+    plt.plot(df["equity"])
     plt.title("Equity Curve")
-    plt.xlabel("Time")
+    plt.xlabel("Trade #")
     plt.ylabel("Equity")
+    plt.tight_layout()
 
     buf = io.BytesIO()
-    plt.savefig(buf, format="png")
+    plt.savefig(buf, format="png", dpi=100)
     buf.seek(0)
     plt.close()
 
@@ -77,7 +81,7 @@ def generate_equity_chart():
 
 
 # =========================
-# RISK METRICS
+# RISK METRICS PANEL
 # =========================
 
 def get_risk_metrics():
@@ -96,7 +100,7 @@ def get_risk_metrics():
     wins = df[df["profit"] > 0]
     losses = df[df["profit"] <= 0]
 
-    win_rate = len(wins) / total_trades * 100 if total_trades else 0
+    win_rate = (len(wins) / total_trades * 100) if total_trades else 0
 
     gross_profit = wins["profit"].sum()
     gross_loss = abs(losses["profit"].sum())
@@ -106,8 +110,9 @@ def get_risk_metrics():
     avg_win = wins["profit"].mean() if not wins.empty else 0
     avg_loss = losses["profit"].mean() if not losses.empty else 0
 
-    expectancy = (win_rate/100 * avg_win) + ((1 - win_rate/100) * avg_loss)
+    expectancy = (win_rate / 100 * avg_win) + ((1 - win_rate / 100) * avg_loss)
 
+    # Sharpe Ratio (simplified)
     if df["return"].std() != 0:
         sharpe = df["return"].mean() / df["return"].std() * (252 ** 0.5)
     else:
