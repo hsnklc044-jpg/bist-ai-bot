@@ -13,7 +13,10 @@ from performance_tracker import (
     get_risk_metrics,
 )
 
-from risk_engine import log_trade
+from risk_engine import (
+    log_trade,
+    calculate_position_size,
+)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
@@ -31,9 +34,19 @@ logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖 Institutional Portfolio Engine v3 aktif."
+        "🤖 Institutional Portfolio Engine v4 aktif.\n"
+        "Komutlar:\n"
+        "/report\n"
+        "/equity\n"
+        "/risk\n"
+        "/testtrade\n"
+        "/position STOP_DISTANCE"
     )
 
+
+# -------------------------
+# PERFORMANCE REPORT
+# -------------------------
 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -51,8 +64,12 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(message)
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Hata oluştu:\n{str(e)}")
+        await update.message.reply_text(f"❌ Hata:\n{str(e)}")
 
+
+# -------------------------
+# TEST TRADE
+# -------------------------
 
 async def testtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -69,8 +86,12 @@ async def testtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     except Exception as e:
-        await update.message.reply_text(f"❌ Trade eklenemedi:\n{str(e)}")
+        await update.message.reply_text(str(e))
 
+
+# -------------------------
+# EQUITY CURVE
+# -------------------------
 
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -88,6 +109,10 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Grafik üretilemedi:\n{str(e)}")
 
+
+# -------------------------
+# RISK PANEL
+# -------------------------
 
 async def risk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -114,6 +139,33 @@ async def risk(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Risk hesaplanamadı:\n{str(e)}")
 
 
+# -------------------------
+# POSITION SIZE CALCULATOR
+# -------------------------
+
+async def position(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) != 1:
+        await update.message.reply_text("Kullanım: /position STOP_DISTANCE")
+        return
+
+    try:
+        stop_distance = float(context.args[0])
+
+        if stop_distance <= 0:
+            await update.message.reply_text("Stop mesafesi 0'dan büyük olmalı.")
+            return
+
+        size = calculate_position_size(stop_distance)
+
+        await update.message.reply_text(
+            f"📐 Position Size: {size} lot\n"
+            f"Risk per trade: %2"
+        )
+
+    except:
+        await update.message.reply_text("Geçersiz değer.")
+
+
 # =========================
 # MAIN
 # =========================
@@ -126,8 +178,9 @@ def main():
     app.add_handler(CommandHandler("testtrade", testtrade))
     app.add_handler(CommandHandler("equity", equity))
     app.add_handler(CommandHandler("risk", risk))
+    app.add_handler(CommandHandler("position", position))
 
-    logger.info("Institutional Portfolio Engine v3 başlatıldı...")
+    logger.info("Institutional Portfolio Engine v4 başlatıldı...")
 
     app.run_polling()
 
