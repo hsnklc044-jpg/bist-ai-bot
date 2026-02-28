@@ -7,7 +7,10 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from performance_tracker import get_performance_report
+from performance_tracker import (
+    get_performance_report,
+    generate_equity_chart,
+)
 from risk_engine import log_trade
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
@@ -67,6 +70,23 @@ async def testtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Trade eklenemedi:\n{str(e)}")
 
 
+async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        chart, max_dd = generate_equity_chart()
+
+        if chart is None:
+            await update.message.reply_text("Henüz işlem yok.")
+            return
+
+        await update.message.reply_photo(
+            photo=chart,
+            caption=f"📈 Equity Curve\nMax Drawdown: {max_dd}%"
+        )
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Grafik üretilemedi:\n{str(e)}")
+
+
 # =========================
 # MAIN
 # =========================
@@ -77,6 +97,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("report", report))
     app.add_handler(CommandHandler("testtrade", testtrade))
+    app.add_handler(CommandHandler("equity", equity))
 
     logger.info("Institutional Portfolio Engine v2 başlatıldı...")
 
