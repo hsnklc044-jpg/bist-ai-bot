@@ -6,9 +6,7 @@ from institutional_engine import scan_trades
 from performance_tracker import (
     log_trade,
     get_balance,
-    generate_equity_graph,
-    performance_metrics,
-    check_open_trades   # 🔥 ADIM 1 EKLENDİ
+    check_open_trades
 )
 
 TOKEN = os.getenv("BOT_TOKEN")
@@ -26,7 +24,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= SCAN =================
 async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    # 🔥 ADIM 1: Açık trade'leri kontrol et
     check_open_trades()
 
     await update.message.reply_text("📊 Institutional Scan başlatıldı...")
@@ -36,10 +33,6 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not result:
             await update.message.reply_text("Engine cevap vermedi.")
-            return
-
-        if "error" in result:
-            await update.message.reply_text(result["error"])
             return
 
         portfolio = result.get("portfolio", {})
@@ -59,7 +52,6 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message += "📌 Trade Dağılımı:\n\n"
 
             for t in trades:
-
                 message += (
                     f"{t.get('symbol','-')}\n"
                     f"Ağırlık: %{t.get('weight_%',0)}\n"
@@ -79,30 +71,15 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         balance_data = get_balance()
-        metrics = performance_metrics()
 
         message = (
             "📊 PORTFÖY DURUMU\n\n"
             f"Toplam Equity: {balance_data.get('equity',0)} TL\n"
-            f"Günlük PnL: {balance_data.get('daily_pnl',0)} TL\n"
-            f"Toplam PnL: {balance_data.get('total_pnl',0)} TL\n\n"
-            f"Max Drawdown: %{metrics.get('max_drawdown',0)}\n"
-            f"Sharpe: {metrics.get('sharpe',0)}\n"
+            f"Toplam İşlem: {balance_data.get('total_trades',0)}\n"
+            f"Açık Pozisyon: {balance_data.get('open_trades',0)}\n"
         )
 
         await update.message.reply_text(message)
-
-        try:
-            generate_equity_graph()
-
-            if os.path.exists("equity_curve.png"):
-                with open("equity_curve.png", "rb") as f:
-                    await context.bot.send_photo(
-                        chat_id=update.effective_chat.id,
-                        photo=f
-                    )
-        except Exception as e:
-            print("GRAPH ERROR:", e)
 
     except Exception as e:
         await update.message.reply_text(f"❌ BALANCE HATA: {str(e)}")
