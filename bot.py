@@ -1,4 +1,5 @@
 import os
+import yfinance as yf
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -24,6 +25,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ================= SCAN =================
 async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    # 🔥 Açık trade kontrolü
     check_open_trades()
 
     await update.message.reply_text("📊 Institutional Scan başlatıldı...")
@@ -52,12 +54,45 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
             message += "📌 Trade Dağılımı:\n\n"
 
             for t in trades:
+
+                print("DEBUG TRADE:", t)
+
+                symbol = t.get("symbol")
+                lot = t.get("lot")
+                stop_distance = t.get("stop_distance")
+
                 message += (
-                    f"{t.get('symbol','-')}\n"
+                    f"{symbol}\n"
                     f"Ağırlık: %{t.get('weight_%',0)}\n"
-                    f"Lot: {t.get('lot',0)}\n"
+                    f"Lot: {lot}\n"
                     f"Tutar: {t.get('allocation',0)} TL\n\n"
                 )
+
+                # 🔥 Stop mesafesi kontrolü
+                if stop_distance is None:
+                    print("STOP DISTANCE YOK:", symbol)
+                    continue
+
+                try:
+                    price_data = yf.download(symbol, period="1d", auto_adjust=True)
+
+                    if price_data is None or price_data.empty:
+                        print("PRICE DATA YOK:", symbol)
+                        continue
+
+                    price = price_data["Close"].iloc[-1]
+
+                    log_trade(
+                        symbol=symbol,
+                        entry_price=float(price),
+                        stop_distance=float(stop_distance),
+                        lot=float(lot)
+                    )
+
+                    print("TRADE AÇILDI:", symbol)
+
+                except Exception as e:
+                    print("TRADE LOG ERROR:", e)
 
         await update.message.reply_text(message)
 
