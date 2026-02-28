@@ -11,8 +11,11 @@ from performance_tracker import (
 
 TOKEN = os.getenv("BOT_TOKEN")
 
+# ===== STRATEGY SETTINGS =====
 MAX_OPEN_POSITIONS = 5
-RISK_PER_TRADE = 0.02
+RISK_PER_TRADE = 0.02        # %2 risk
+MAX_POSITION_PCT = 0.20      # Max %20 per position
+MAX_TOTAL_EXPOSURE = 1.0     # Max %100 exposure
 ATR_PERIOD = 14
 
 
@@ -22,7 +25,7 @@ ATR_PERIOD = 14
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🏦 Institutional Risk Engine Aktif\n\n"
+        "🏦 Institutional Portfolio Engine v2 Aktif\n\n"
         "/scan → Yeni fırsat tara\n"
         "/balance → Portföy durumu\n"
     )
@@ -36,11 +39,10 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("📊 Institutional Scan başlatıldı...")
 
-    # Equity al
     status = get_portfolio_status()
     equity = status["equity"]
+    current_allocation = status["allocated_capital"]
 
-    # Açık pozisyonları al
     open_trades = check_open_trades()
     open_symbols = [t["symbol"] for t in open_trades]
 
@@ -50,7 +52,6 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ Maksimum açık pozisyon limitine ulaşıldı.")
         return
 
-    # MODEL ÇIKTISI (gerçek model buraya bağlanabilir)
     model_output = [
         {"symbol": "EREGL.IS", "score": 0.92},
         {"symbol": "SISE.IS", "score": 0.87},
@@ -59,7 +60,6 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
         {"symbol": "BIMAS.IS", "score": 0.72},
     ]
 
-    # Skora göre sırala
     model_output = sorted(model_output, key=lambda x: x["score"], reverse=True)
 
     new_trades = 0
@@ -71,7 +71,6 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         symbol = item["symbol"]
 
-        # Duplicate engelle
         if symbol in open_symbols:
             continue
 
@@ -84,7 +83,7 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             price = float(hist["Close"].iloc[-1])
 
-            # ATR hesapla
+            # === ATR ===
             high_low = hist["High"] - hist["Low"]
             high_close = abs(hist["High"] - hist["Close"].shift())
             low_close = abs(hist["Low"] - hist["Close"].shift())
@@ -97,11 +96,26 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             stop_distance = float(atr)
 
-            # Risk TL
+            # === Risk Based Lot ===
             risk_amount = equity * RISK_PER_TRADE
-
-            # Lot
             lot = risk_amount / stop_distance
+
+            # === Allocation hesapla ===
+            allocation = lot * price
+
+            # === Max %20 per position kontrol ===
+            max_position_value = equity * MAX_POSITION_PCT
+            if allocation > max_position_value:
+                lot = max_position_value / price
+                allocation = lot * price
+
+            # === Max total exposure kontrol ===
+            if (current_allocation + allocation) > (equity * MAX_TOTAL_EXPOSURE):
+                remaining_capital = (equity * MAX_TOTAL_EXPOSURE) - current_allocation
+                if remaining_capital <= 0:
+                    break
+                lot = remaining_capital / price
+                allocation = lot * price
 
             if lot <= 0:
                 continue
@@ -113,7 +127,9 @@ async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 lot=float(lot)
             )
 
+            current_allocation += allocation
             new_trades += 1
+
             print("PRO TRADE AÇILDI:", symbol)
 
         except Exception as e:
@@ -148,7 +164,8 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==========================
 
 def main():
-    print("Institutional Bot başlatıldı...")
+
+    print("Institutional Portfolio Engine v2 başlatıldı...")
 
     if not TOKEN:
         print("BOT_TOKEN bulunamadı!")
