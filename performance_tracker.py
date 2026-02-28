@@ -6,16 +6,14 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL tanımlı değil!")
 
-# Supabase için SSL zorunlu
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
     connect_args={"sslmode": "require"}
 )
 
-# ==============================
-# TABLE INIT
-# ==============================
+STARTING_CAPITAL = 100000
+
 
 def init_db():
     with engine.begin() as conn:
@@ -32,12 +30,13 @@ def init_db():
             )
         """))
 
-# ==============================
-# TRADE LOG
-# ==============================
 
 def log_trade(symbol, side, entry_price, exit_price, quantity):
-    profit = (exit_price - entry_price) * quantity if side == "BUY" else (entry_price - exit_price) * quantity
+    profit = (
+        (exit_price - entry_price) * quantity
+        if side == "BUY"
+        else (entry_price - exit_price) * quantity
+    )
 
     with engine.begin() as conn:
         conn.execute(text("""
@@ -52,9 +51,6 @@ def log_trade(symbol, side, entry_price, exit_price, quantity):
             "profit": profit
         })
 
-# ==============================
-# PERFORMANCE SUMMARY
-# ==============================
 
 def get_performance_summary():
     with engine.begin() as conn:
@@ -67,4 +63,12 @@ def get_performance_summary():
             FROM trades
         """)).mappings().first()
 
-    return result
+    equity = STARTING_CAPITAL + result["net_profit"]
+
+    return {
+        "total_trades": result["total_trades"],
+        "wins": result["wins"],
+        "losses": result["losses"],
+        "net_profit": result["net_profit"],
+        "equity": equity
+    }
