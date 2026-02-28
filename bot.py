@@ -3,148 +3,93 @@ import yfinance as yf
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-from institutional_engine import scan_trades
 from performance_tracker import (
     log_trade,
-    get_balance,
-    check_open_trades
+    check_open_trades,
+    get_portfolio_status
 )
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 
-# ================= START =================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🏦 Institutional Trading Desk Aktif\n\n"
-        "/scan → Portfolio dağılımı\n"
-        "/balance → Performans durumu\n"
-    )
+# ==========================
+# /scan
+# ==========================
 
-
-# ================= SCAN =================
 async def scan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    # 🔥 Açık pozisyonları kontrol et
-    check_open_trades()
 
     await update.message.reply_text("📊 Institutional Scan başlatıldı...")
 
-    try:
-        result = scan_trades()
+    # Açık pozisyonları kontrol et
+    check_open_trades()
 
-        if not result:
-            await update.message.reply_text("Engine cevap vermedi.")
-            return
+    # Örnek dağılım (senin model çıktın buraya gelecek)
+    trades = [
+        {"symbol": "EREGL.IS", "lot": 641, "stop_distance": 1.56},
+        {"symbol": "SISE.IS", "lot": 399, "stop_distance": 2.51},
+        {"symbol": "KCHOL.IS", "lot": 88, "stop_distance": 11.41},
+    ]
 
-        portfolio = result.get("portfolio", {})
-        trades = result.get("trades", [])
+    for trade in trades:
+        symbol = trade["symbol"]
+        lot = trade["lot"]
+        stop_distance = trade["stop_distance"]
 
-        message = (
-            f"📈 MODEL: {portfolio.get('model','-')}\n"
-            f"Beklenen Getiri: %{portfolio.get('expected_return_%',0)}\n"
-            f"Volatilite: %{portfolio.get('volatility_%',0)}\n"
-            f"Sharpe: {portfolio.get('sharpe_ratio',0)}\n"
-            f"Leverage: {portfolio.get('leverage',0)}\n\n"
-        )
+        try:
+            ticker = yf.Ticker(symbol)
+            hist = ticker.history(period="1d")
 
-        if not trades:
-            message += "Uygun trade bulunamadı."
-        else:
-            message += "📌 Trade Dağılımı:\n\n"
+            if hist.empty:
+                print("PRICE DATA YOK:", symbol)
+                continue
 
-            for t in trades:
+            price = float(hist["Close"].iloc[-1])
 
-                symbol = t.get("symbol")
-                lot = t.get("lot")
-                stop_distance = t.get("stop_distance")
+            log_trade(
+                symbol=symbol,
+                entry_price=price,
+                stop_distance=float(stop_distance),
+                lot=float(lot)
+            )
 
-                print("DEBUG TRADE:", t)
+            print("TRADE AÇILDI:", symbol)
 
-                message += (
-                    f"{symbol}\n"
-                    f"Ağırlık: %{t.get('weight_%',0)}\n"
-                    f"Lot: {lot}\n"
-                    f"Tutar: {t.get('allocation',0)} TL\n\n"
-                )
+        except Exception as e:
+            print("TRADE LOG ERROR:", e)
 
-                if stop_distance is None:
-                    print("STOP DISTANCE YOK:", symbol)
-                    continue
-
-                try:
-                    price_data = yf.download(
-                        symbol,
-                        period="1d",
-                        auto_adjust=True,
-                        progress=False
-                    )
-
-                    if price_data is None or price_data.empty:
-                        print("PRICE DATA YOK:", symbol)
-                        continue
-
-                    close_series = price_data["Close"]
-
-                    # 🔥 Series hatası fix
-                    if hasattr(close_series, "iloc"):
-                        price = float(close_series.iloc[-1])
-                    else:
-                        price = float(close_series)
-
-                    log_trade(
-                        symbol=symbol,
-                        entry_price=price,
-                        stop_distance=float(stop_distance),
-                        lot=float(lot)
-                    )
-
-                    print("TRADE AÇILDI:", symbol)
-
-                except Exception as e:
-                    print("TRADE LOG ERROR:", e)
-
-        await update.message.reply_text(message)
-
-    except Exception as e:
-        await update.message.reply_text(f"❌ SCAN HATA: {str(e)}")
-        print("SCAN ERROR:", e)
+    await update.message.reply_text("✅ Scan tamamlandı ve işlemler kaydedildi.")
 
 
-# ================= BALANCE =================
+# ==========================
+# /balance
+# ==========================
+
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    try:
-        balance_data = get_balance()
+    status = get_portfolio_status()
 
-        message = (
-            "📊 PORTFÖY DURUMU\n\n"
-            f"Toplam Equity: {balance_data.get('equity',0)} TL\n"
-            f"Toplam İşlem: {balance_data.get('total_trades',0)}\n"
-            f"Açık Pozisyon: {balance_data.get('open_trades',0)}\n"
-        )
+    message = (
+        "📊 PORTFÖY DURUMU\n\n"
+        f"Toplam Equity: {status['equity']} TL\n"
+        f"Toplam İşlem: {status['total_trades']}\n"
+        f"Açık Pozisyon: {status['open_positions']}"
+    )
 
-        await update.message.reply_text(message)
-
-    except Exception as e:
-        await update.message.reply_text(f"❌ BALANCE HATA: {str(e)}")
-        print("BALANCE ERROR:", e)
+    await update.message.reply_text(message)
 
 
-# ================= MAIN =================
+# ==========================
+# MAIN
+# ==========================
+
 def main():
-
-    if not TOKEN:
-        print("BOT_TOKEN bulunamadı!")
-        return
+    print("Institutional Bot başlatıldı...")
 
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("scan", scan))
     app.add_handler(CommandHandler("balance", balance))
 
-    print("Institutional Bot başlatıldı...")
     app.run_polling()
 
 
