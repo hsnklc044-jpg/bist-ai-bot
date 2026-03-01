@@ -7,6 +7,10 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from io import BytesIO
 
+# =====================================================
+# DATABASE
+# =====================================================
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
@@ -31,7 +35,7 @@ def fetch_profits():
 
 
 # =====================================================
-# PERFORMANCE REPORT (BOT BUNU IMPORT EDİYOR)
+# PERFORMANCE REPORT
 # =====================================================
 
 def get_performance_report(initial_equity=100000):
@@ -86,6 +90,9 @@ def calculate_equity_curve(initial_equity=100000):
 def calculate_drawdown(initial_equity=100000):
     curve = calculate_equity_curve(initial_equity)
 
+    if len(curve) <= 1:
+        return 0, 0
+
     peak = curve[0]
     max_drawdown = 0
 
@@ -102,17 +109,45 @@ def calculate_drawdown(initial_equity=100000):
     return round(max_drawdown, 2), drawdown_percent
 
 
+# =====================================================
+# EQUITY CHART (INSTITUTIONAL VERSION)
+# =====================================================
+
 def generate_equity_chart(initial_equity=100000):
     curve = calculate_equity_curve(initial_equity)
 
     if len(curve) <= 1:
         return None
 
-    plt.figure(figsize=(8, 4))
-    plt.plot(curve, linewidth=2)
-    plt.title("Equity Curve")
+    peaks = []
+    peak = curve[0]
+
+    for value in curve:
+        if value >= peak:
+            peak = value
+        peaks.append(peak)
+
+    plt.figure(figsize=(9, 4))
+
+    # Equity line
+    plt.plot(curve, linewidth=2, label="Equity")
+
+    # Peak line
+    plt.plot(peaks, linestyle="--", linewidth=1, label="Peak")
+
+    # Drawdown shading
+    plt.fill_between(
+        range(len(curve)),
+        curve,
+        peaks,
+        where=[p > c for p, c in zip(peaks, curve)],
+        alpha=0.3
+    )
+
+    plt.title("Institutional Equity Curve")
     plt.xlabel("Trade #")
     plt.ylabel("Equity (TL)")
+    plt.legend()
     plt.grid(True)
 
     buffer = BytesIO()
