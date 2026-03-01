@@ -1,24 +1,15 @@
 import os
 import logging
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes,
-)
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 from performance_tracker import (
     get_performance_report,
     run_monte_carlo,
     generate_equity_chart,
     calculate_drawdown,
+    check_risk_level,
 )
-from risk_engine import get_risk_metrics
-
-
-# =====================================================
-# LOGGING
-# =====================================================
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -26,11 +17,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-
-# =====================================================
-# ENV VARIABLES
-# =====================================================
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
@@ -47,9 +33,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🚀 Institutional Portfolio Engine\n\n"
         "Komutlar:\n"
         "/report\n"
-        "/risk\n"
         "/montecarlo\n"
-        "/equity"
+        "/equity\n"
+        "/riskstatus"
     )
     await update.message.reply_text(message)
 
@@ -74,27 +60,6 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"Report error: {e}")
         await update.message.reply_text("❌ Report hesaplanamadı.")
-
-
-async def risk(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        data = get_risk_metrics()
-
-        message = (
-            "📈 RISK METRICS PANEL\n\n"
-            f"Win Rate: {data['win_rate']}%\n"
-            f"Profit Factor: {data['profit_factor']}\n"
-            f"Avg Win: {data['avg_win']} TL\n"
-            f"Avg Loss: {data['avg_loss']} TL\n"
-            f"Expectancy: {data['expectancy']} TL\n"
-            f"Sharpe Ratio: {data['sharpe_ratio']}"
-        )
-
-        await update.message.reply_text(message)
-
-    except Exception as e:
-        logger.error(f"Risk error: {e}")
-        await update.message.reply_text("❌ Risk hesaplanamadı.")
 
 
 async def montecarlo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -139,6 +104,26 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Equity grafiği üretilemedi.")
 
 
+async def riskstatus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        status, dd_percent = check_risk_level()
+
+        if status == "SAFE":
+            message = f"🟢 RISK STATUS: SAFE\nDrawdown: {dd_percent}%"
+        elif status == "WARNING":
+            message = f"⚠️ WARNING\nDrawdown: {dd_percent}%"
+        elif status == "RISK_MODE":
+            message = f"🔴 RISK MODE ACTIVE\nDrawdown: {dd_percent}%"
+        else:
+            message = f"🛑 EMERGENCY STOP\nDrawdown: {dd_percent}%"
+
+        await update.message.reply_text(message)
+
+    except Exception as e:
+        logger.error(f"Risk status error: {e}")
+        await update.message.reply_text("❌ Risk status hesaplanamadı.")
+
+
 # =====================================================
 # MAIN
 # =====================================================
@@ -148,9 +133,9 @@ def main():
 
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("report", report))
-    application.add_handler(CommandHandler("risk", risk))
     application.add_handler(CommandHandler("montecarlo", montecarlo))
     application.add_handler(CommandHandler("equity", equity))
+    application.add_handler(CommandHandler("riskstatus", riskstatus))
 
     logger.info("Institutional Portfolio Engine başlatıldı...")
     application.run_polling()
