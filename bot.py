@@ -1,10 +1,6 @@
 import os
 from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes,
-)
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 from performance_tracker import (
     get_performance_report,
@@ -13,7 +9,10 @@ from performance_tracker import (
     monte_carlo_simulation
 )
 
-from risk_engine import calculate_position_size
+from risk_engine import (
+    calculate_position_size,
+    log_trade
+)
 
 TOKEN = os.getenv("BOT_TOKEN")
 
@@ -24,14 +23,13 @@ TOKEN = os.getenv("BOT_TOKEN")
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = (
-        "🤖 Institutional Portfolio Engine v4 aktif.\n"
-        "Komutlar:\n"
+        "🤖 Institutional Portfolio Engine v6 aktif.\n\n"
         "/report\n"
         "/equity\n"
         "/risk\n"
         "/montecarlo\n"
-        "/testtrade\n"
-        "/position STOP_DISTANCE RISK_PERCENT"
+        "/position STOP VOL\n"
+        "/stresstest"
     )
     await update.message.reply_text(message)
 
@@ -41,7 +39,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     data = get_performance_report()
 
     message = (
@@ -61,7 +58,6 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     chart, max_dd = generate_equity_chart()
 
     if chart is None:
@@ -79,7 +75,6 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 
 async def risk(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     metrics = get_risk_metrics()
 
     if metrics is None:
@@ -105,7 +100,6 @@ async def risk(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 
 async def montecarlo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     result = monte_carlo_simulation()
 
     if result is None:
@@ -125,51 +119,47 @@ async def montecarlo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# TEST TRADE
-# =========================
-
-async def testtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    from sqlalchemy import create_engine
-    import pandas as pd
-    from datetime import datetime
-
-    DATABASE_URL = os.getenv("DATABASE_URL")
-    engine = create_engine(DATABASE_URL)
-
-    df = pd.DataFrame([{
-        "profit": 100,
-        "created_at": datetime.utcnow()
-    }])
-
-    df.to_sql("trades", engine, if_exists="append", index=False)
-
-    await update.message.reply_text("✅ Test trade eklendi.\nKar: 100 TL")
-
-
-# =========================
-# POSITION SIZING
+# POSITION SIZE
 # =========================
 
 async def position(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    if len(context.args) < 2:
+    if len(context.args) != 2:
         await update.message.reply_text(
-            "Kullanım: /position STOP_DISTANCE RISK_PERCENT\nÖrn: /position 5 2"
+            "Kullanım: /position STOP_DISTANCE VOLATILITY"
         )
         return
 
-    stop_distance = float(context.args[0])
-    risk_percent = float(context.args[1])
+    try:
+        stop_distance = float(context.args[0])
+        volatility = float(context.args[1])
 
-    lot = calculate_position_size(stop_distance, risk_percent)
+        size = calculate_position_size(stop_distance, volatility)
 
-    message = (
-        f"📐 Position Size: {round(lot,2)} lot\n"
-        f"Risk per trade: %{risk_percent}"
-    )
+        await update.message.reply_text(
+            f"📐 Position Size: {size} lot\n"
+            f"Volatility + Drawdown Adjusted Risk"
+        )
 
-    await update.message.reply_text(message)
+    except Exception as e:
+        await update.message.reply_text(str(e))
+
+
+# =========================
+# STRESS TEST
+# =========================
+
+async def stresstest(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    # 5 karlı trade
+    for _ in range(5):
+        log_trade("TEST", "long", 100, 110, 10)
+
+    # 5 zararlı trade
+    for _ in range(5):
+        log_trade("TEST", "long", 100, 90, 10)
+
+    await update.message.reply_text("✅ Stress test trade seti eklendi.")
 
 
 # =========================
@@ -177,7 +167,6 @@ async def position(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 
 def main():
-
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -185,10 +174,10 @@ def main():
     app.add_handler(CommandHandler("equity", equity))
     app.add_handler(CommandHandler("risk", risk))
     app.add_handler(CommandHandler("montecarlo", montecarlo))
-    app.add_handler(CommandHandler("testtrade", testtrade))
     app.add_handler(CommandHandler("position", position))
+    app.add_handler(CommandHandler("stresstest", stresstest))
 
-    print("Bot başlatıldı...")
+    print("Institutional Portfolio Engine v6 başlatıldı...")
     app.run_polling()
 
 
