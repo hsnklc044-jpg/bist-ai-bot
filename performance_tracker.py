@@ -3,14 +3,9 @@ import random
 import statistics
 import psycopg2
 import matplotlib
-matplotlib.use("Agg")  # Railway için headless backend
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from io import BytesIO
-
-
-# =====================================================
-# DATABASE
-# =====================================================
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -36,7 +31,44 @@ def fetch_profits():
 
 
 # =====================================================
-# EQUITY CURVE
+# PERFORMANCE REPORT (BOT BUNU IMPORT EDİYOR)
+# =====================================================
+
+def get_performance_report(initial_equity=100000):
+    profits = fetch_profits()
+
+    if not profits:
+        return {
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "net_profit": 0,
+            "current_equity": initial_equity,
+            "max_drawdown": 0,
+            "drawdown_percent": 0,
+        }
+
+    total_trades = len(profits)
+    wins = len([p for p in profits if p > 0])
+    losses = len([p for p in profits if p <= 0])
+    net_profit = round(sum(profits), 2)
+    current_equity = round(initial_equity + net_profit, 2)
+
+    max_dd, dd_percent = calculate_drawdown(initial_equity)
+
+    return {
+        "total_trades": total_trades,
+        "wins": wins,
+        "losses": losses,
+        "net_profit": net_profit,
+        "current_equity": current_equity,
+        "max_drawdown": max_dd,
+        "drawdown_percent": dd_percent,
+    }
+
+
+# =====================================================
+# EQUITY & DRAWDOWN
 # =====================================================
 
 def calculate_equity_curve(initial_equity=100000):
@@ -54,9 +86,6 @@ def calculate_equity_curve(initial_equity=100000):
 def calculate_drawdown(initial_equity=100000):
     curve = calculate_equity_curve(initial_equity)
 
-    if not curve:
-        return 0, 0
-
     peak = curve[0]
     max_drawdown = 0
 
@@ -69,18 +98,15 @@ def calculate_drawdown(initial_equity=100000):
             max_drawdown = drawdown
 
     drawdown_percent = round((max_drawdown / peak) * 100, 2) if peak != 0 else 0
+
     return round(max_drawdown, 2), drawdown_percent
 
-
-# =====================================================
-# EQUITY CHART (PNG)
-# =====================================================
 
 def generate_equity_chart(initial_equity=100000):
     curve = calculate_equity_curve(initial_equity)
 
     if len(curve) <= 1:
-        return None  # Veri yok
+        return None
 
     plt.figure(figsize=(8, 4))
     plt.plot(curve, linewidth=2)
