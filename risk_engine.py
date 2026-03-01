@@ -1,205 +1,164 @@
-import os
-from sqlalchemy import create_engine, text
-import pandas as pd
-from performance_tracker import INITIAL_EQUITY
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
-
-# =========================
-# CONFIG
-# =========================
-
-BASE_RISK_CAP = 0.03
-DEFAULT_RISK = 0.02
-VOLATILITY_REFERENCE = 0.01
-MAX_DRAWDOWN_LIMIT = 12
-EQUITY_MA_PERIOD = 20
+import math
+import statistics
 
 
-# =========================
-# EQUITY SERIES
-# =========================
+class RiskEngine:
+    def __init__(self,
+                 base_risk=0.02,
+                 max_risk_cap=0.03,
+                 half_kelly=True):
 
-def get_equity_data():
+        self.base_risk = base_risk
+        self.max_risk_cap = max_risk_cap
+        self.half_kelly = half_kelly
 
-    with engine.connect() as conn:
-        df = pd.read_sql(
-            "SELECT profit FROM trades ORDER BY created_at ASC",
-            conn
-        )
+    # --------------------------------------------------
+    # Kelly Calculation
+    # --------------------------------------------------
 
-    equity = INITIAL_EQUITY
-    equity_series = [equity]
+    def kelly_fraction(self, win_rate, avg_win, avg_loss):
 
-    for p in df["profit"]:
-        equity += p
-        equity_series.append(equity)
+        if avg_loss == 0:
+            return self.base_risk
 
-    equity_df = pd.DataFrame({"equity": equity_series})
+        b = abs(avg_win / avg_loss)
+        p = win_rate
+        q = 1 - p
 
-    peak = equity_df["equity"].cummax().iloc[-1]
-    current_equity = equity_df["equity"].iloc[-1]
-    drawdown = (peak - current_equity) / peak * 100 if peak > 0 else 0
+        kelly = (b * p - q) / b
 
-    return current_equity, peak, drawdown, equity_df
+        if self.half_kelly:
+            kelly *= 0.5
 
+        return max(0, min(kelly, self.max_risk_cap))
 
-# =========================
-# DRAWDOWN TIERS
-# =========================
+    # --------------------------------------------------
+    # Drawdown Tier Control
+    # --------------------------------------------------
 
-def drawdown_multiplier(drawdown):
+    def drawdown_multiplier(self, max_drawdown):
 
-    if drawdown < 1:
-        return 1.00
-    elif drawdown < 3:
-        return 0.85
-    elif drawdown < 5:
-        return 0.65
-    elif drawdown < 8:
-        return 0.45
-    elif drawdown < 12:
-        return 0.25
-    else:
-        return 0.0
+        if max_drawdown < 0.05:
+            return 1.0
+        elif max_drawdown < 0.10:
+            return 0.75
+        elif max_drawdown < 0.20:
+            return 0.5
+        else:
+            return 0.25
 
+    # --------------------------------------------------
+    # Recovery Smoothing
+    # --------------------------------------------------
 
-# =========================
-# EQUITY MOMENTUM FILTER
-# =========================
+    def recovery_factor(self, equity_curve):
 
-def equity_momentum_multiplier(equity_df):
+        if len(equity_curve) < 10:
+            return 1.0
 
-    if len(equity_df) < EQUITY_MA_PERIOD:
-        return 1.0
+        recent = equity_curve[-10:]
+        slope = recent[-1] - recent[0]
 
-    equity_df["ema"] = equity_df["equity"].ewm(
-        span=EQUITY_MA_PERIOD,
-        adjust=False
-    ).mean()
+        if slope > 0:
+            return 1.0
+        else:
+            return 0.7
 
-    current_equity = equity_df["equity"].iloc[-1]
-    current_ema = equity_df["ema"].iloc[-1]
+    # --------------------------------------------------
+    # Equity Momentum Filter
+    # --------------------------------------------------
 
-    if current_equity < current_ema:
-        return 0.5  # risk cut in half
-    else:
-        return 1.0
+    def equity_momentum(self, equity_curve):
 
+        if len(equity_curve) < 20:
+            return 1.0
 
-# =========================
-# KELLY
-# =========================
+        short_ma = sum(equity_curve[-5:]) / 5
+        long_ma = sum(equity_curve[-20:]) / 20
 
-def calculate_kelly(df):
+        if short_ma > long_ma:
+            return 1.0
+        else:
+            return 0.8
 
-    if df.empty:
-        return DEFAULT_RISK
+    # --------------------------------------------------
+    # Volatility Adjustment
+    # --------------------------------------------------
 
-    wins = df[df["profit"] > 0]
-    losses = df[df["profit"] <= 0]
+    def volatility_adjustment(self, returns):
 
-    if losses.empty:
-        return DEFAULT_RISK
+        if len(returns) < 10:
+            return 1.0
 
-    win_rate = len(wins) / len(df)
+        vol = statistics.stdev(returns)
 
-    avg_win = wins["profit"].mean()
-    avg_loss = abs(losses["profit"].mean())
+        if vol < 0.01:
+            return 1.0
+        elif vol < 0.02:
+            return 0.9
+        elif vol < 0.03:
+            return 0.8
+        else:
+            return 0.6
 
-    if avg_loss == 0:
-        return DEFAULT_RISK
+    # --------------------------------------------------
+    # Strategy Confidence Weighting (NEW)
+    # --------------------------------------------------
 
-    R = avg_win / avg_loss
-    kelly = win_rate - ((1 - win_rate) / R)
-    half_kelly = max(kelly / 2, 0)
+    def confidence_multiplier(self, recent_trades):
 
-    return min(half_kelly, BASE_RISK_CAP)
+        if len(recent_trades) < 20:
+            return 1.0
 
+        wins = [t for t in recent_trades[-20:] if t > 0]
+        win_rate = len(wins) / 20
 
-# =========================
-# POSITION SIZE
-# =========================
+        if win_rate > 0.65:
+            return 1.0
+        elif win_rate > 0.55:
+            return 0.8
+        elif win_rate > 0.50:
+            return 0.6
+        else:
+            return 0.4
 
-def calculate_position_size(stop_distance, volatility=0.01):
+    # --------------------------------------------------
+    # FINAL POSITION SIZE CALCULATION
+    # --------------------------------------------------
 
-    if stop_distance <= 0:
-        return 0
+    def calculate_position_size(self,
+                                equity,
+                                stop_distance,
+                                win_rate,
+                                avg_win,
+                                avg_loss,
+                                max_drawdown,
+                                equity_curve,
+                                returns,
+                                recent_trades):
 
-    equity, peak, drawdown, equity_df = get_equity_data()
+        base_kelly = self.kelly_fraction(win_rate, avg_win, avg_loss)
 
-    if drawdown >= MAX_DRAWDOWN_LIMIT:
-        raise Exception("❌ Trading frozen due to high drawdown.")
+        dd_mult = self.drawdown_multiplier(max_drawdown)
+        recovery_mult = self.recovery_factor(equity_curve)
+        momentum_mult = self.equity_momentum(equity_curve)
+        vol_mult = self.volatility_adjustment(returns)
+        confidence_mult = self.confidence_multiplier(recent_trades)
 
-    # Kelly
-    with engine.connect() as conn:
-        trade_df = pd.read_sql(
-            "SELECT profit FROM trades",
-            conn
-        )
+        final_risk = (base_kelly *
+                      dd_mult *
+                      recovery_mult *
+                      momentum_mult *
+                      vol_mult *
+                      confidence_mult)
 
-    kelly_risk = calculate_kelly(trade_df)
+        final_risk = min(final_risk, self.max_risk_cap)
 
-    # Drawdown
-    tier_factor = drawdown_multiplier(drawdown)
+        risk_amount = equity * final_risk
 
-    # Recovery smoothing
-    recovery_factor = equity / peak if peak > 0 else 1
+        if stop_distance == 0:
+            return 0
 
-    # Momentum filter
-    momentum_factor = equity_momentum_multiplier(equity_df)
+        position_size = risk_amount / stop_distance
 
-    dynamic_risk = (
-        kelly_risk *
-        tier_factor *
-        recovery_factor *
-        momentum_factor
-    )
-
-    # Volatility reduce only
-    vol_factor = volatility / VOLATILITY_REFERENCE
-    if vol_factor > 1:
-        dynamic_risk = dynamic_risk / vol_factor
-
-    dynamic_risk = min(dynamic_risk, BASE_RISK_CAP)
-
-    risk_amount = equity * dynamic_risk
-    position_size = risk_amount / stop_distance
-
-    return round(position_size, 2)
-
-
-# =========================
-# LOG TRADE
-# =========================
-
-def log_trade(symbol, side, entry_price, exit_price, quantity):
-
-    equity, peak, drawdown, _ = get_equity_data()
-
-    if drawdown >= MAX_DRAWDOWN_LIMIT:
-        raise Exception("❌ Trading frozen due to drawdown.")
-
-    if side.lower() == "long":
-        profit = (exit_price - entry_price) * quantity
-    else:
-        profit = (entry_price - exit_price) * quantity
-
-    with engine.connect() as conn:
-        conn.execute(text("""
-            INSERT INTO trades
-            (symbol, side, entry_price, exit_price, quantity, profit)
-            VALUES
-            (:symbol, :side, :entry_price, :exit_price, :quantity, :profit)
-        """), {
-            "symbol": symbol,
-            "side": side,
-            "entry_price": entry_price,
-            "exit_price": exit_price,
-            "quantity": quantity,
-            "profit": profit
-        })
-        conn.commit()
-
-    return round(profit, 2)
+        return round(position_size, 2)
