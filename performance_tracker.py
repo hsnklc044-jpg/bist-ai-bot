@@ -2,6 +2,8 @@ import os
 import random
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+import io
 from sqlalchemy import create_engine
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -10,9 +12,9 @@ engine = create_engine(DATABASE_URL)
 INITIAL_EQUITY = 100000
 
 
-# =========================
+# ==================================================
 # TRADE DATA
-# =========================
+# ==================================================
 
 def get_trade_data():
     with engine.connect() as conn:
@@ -23,9 +25,9 @@ def get_trade_data():
     return df
 
 
-# =========================
+# ==================================================
 # PERFORMANCE REPORT
-# =========================
+# ==================================================
 
 def get_performance_report():
 
@@ -56,9 +58,38 @@ def get_performance_report():
     }
 
 
-# =========================
-# MONTE CARLO ANALYSIS
-# =========================
+# ==================================================
+# EQUITY CHART
+# ==================================================
+
+def generate_equity_chart():
+
+    trade_df = get_trade_data()
+
+    equity = INITIAL_EQUITY
+    equity_series = [equity]
+
+    for p in trade_df["profit"]:
+        equity += p
+        equity_series.append(equity)
+
+    plt.figure()
+    plt.plot(equity_series)
+    plt.title("Equity Curve")
+    plt.xlabel("Trade #")
+    plt.ylabel("Equity")
+
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format="png")
+    buffer.seek(0)
+    plt.close()
+
+    return buffer
+
+
+# ==================================================
+# MONTE CARLO ANALYSIS (RAPOR)
+# ==================================================
 
 def monte_carlo_analysis(simulations=500):
 
@@ -110,9 +141,9 @@ def monte_carlo_analysis(simulations=500):
     }
 
 
-# =========================
-# LIVE RISK OF RUIN (ENGINE)
-# =========================
+# ==================================================
+# MONTE CARLO RISK (LIVE ENGINE)
+# ==================================================
 
 def monte_carlo_risk_of_ruin(trade_df, simulations=300, ruin_threshold=0.7):
 
