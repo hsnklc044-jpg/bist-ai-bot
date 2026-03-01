@@ -2,7 +2,7 @@ import os
 import random
 import numpy as np
 import pandas as pd
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
@@ -11,7 +11,7 @@ INITIAL_EQUITY = 100000
 
 
 # =========================
-# EQUITY + TRADE DATA
+# TRADE DATA
 # =========================
 
 def get_trade_data():
@@ -23,35 +23,41 @@ def get_trade_data():
     return df
 
 
-def get_equity_curve():
+# =========================
+# PERFORMANCE REPORT
+# =========================
+
+def get_performance_report():
+
     trade_df = get_trade_data()
 
-    equity = INITIAL_EQUITY
-    equity_series = [equity]
+    if trade_df.empty:
+        return {
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "net_profit": 0,
+            "equity": INITIAL_EQUITY
+        }
 
-    for p in trade_df["profit"]:
-        equity += p
-        equity_series.append(equity)
+    total_trades = len(trade_df)
+    wins = len(trade_df[trade_df["profit"] > 0])
+    losses = len(trade_df[trade_df["profit"] <= 0])
+    net_profit = trade_df["profit"].sum()
 
-    return equity_series
+    equity = INITIAL_EQUITY + net_profit
 
-
-def calculate_max_drawdown(equity_series):
-    peak = equity_series[0]
-    max_dd = 0
-
-    for value in equity_series:
-        if value > peak:
-            peak = value
-
-        dd = (peak - value) / peak
-        max_dd = max(max_dd, dd)
-
-    return round(max_dd * 100, 2)
+    return {
+        "total_trades": total_trades,
+        "wins": wins,
+        "losses": losses,
+        "net_profit": round(net_profit, 2),
+        "equity": round(equity, 2)
+    }
 
 
 # =========================
-# MONTE CARLO
+# MONTE CARLO ANALYSIS
 # =========================
 
 def monte_carlo_analysis(simulations=500):
@@ -103,6 +109,10 @@ def monte_carlo_analysis(simulations=500):
         "risk_of_ruin": round(ruin_count / simulations, 4)
     }
 
+
+# =========================
+# LIVE RISK OF RUIN (ENGINE)
+# =========================
 
 def monte_carlo_risk_of_ruin(trade_df, simulations=300, ruin_threshold=0.7):
 
