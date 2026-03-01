@@ -6,13 +6,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from io import BytesIO
+from datetime import date
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
 
 # =====================================================
 # DATABASE
 # =====================================================
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-
 
 def get_connection():
     if not DATABASE_URL:
@@ -29,8 +30,22 @@ def fetch_profits():
         cur.close()
         conn.close()
         return [float(r[0]) for r in rows if r[0] is not None]
-    except Exception as e:
-        print(f"Database error: {e}")
+    except:
+        return []
+
+
+def fetch_today_profits():
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT profit FROM trades WHERE DATE(created_at) = CURRENT_DATE;"
+        )
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [float(r[0]) for r in rows if r[0] is not None]
+    except:
         return []
 
 
@@ -195,6 +210,26 @@ def run_monte_carlo(initial_equity=100000, simulations=1000):
 
 
 # =====================================================
+# DAILY MAX LOSS ENGINE
+# =====================================================
+
+def check_daily_status(initial_equity=100000):
+    today_profits = fetch_today_profits()
+    daily_pnl = sum(today_profits)
+
+    daily_percent = round((daily_pnl / initial_equity) * 100, 2)
+
+    if daily_percent <= -5:
+        return "KILL_SWITCH", daily_percent
+    elif daily_percent <= -3:
+        return "RISK_MODE", daily_percent
+    elif daily_percent <= -2:
+        return "WARNING", daily_percent
+    else:
+        return "SAFE", daily_percent
+
+
+# =====================================================
 # RISK ENGINE
 # =====================================================
 
@@ -212,13 +247,18 @@ def check_risk_level(initial_equity=100000):
 
 
 def get_position_multiplier(initial_equity=100000):
-    status, _ = check_risk_level(initial_equity)
+    daily_status, _ = check_daily_status(initial_equity)
+    risk_status, _ = check_risk_level(initial_equity)
 
-    if status == "SAFE":
-        return 1.0
-    elif status == "WARNING":
-        return 0.75
-    elif status == "RISK_MODE":
-        return 0.5
-    elif status == "EMERGENCY":
+    # Daily kill switch overrides everything
+    if daily_status == "KILL_SWITCH":
         return 0.0
+
+    base_multiplier = {
+        "SAFE": 1.0,
+        "WARNING": 0.75,
+        "RISK_MODE": 0.5,
+        "EMERGENCY": 0.0,
+    }
+
+    return base_multiplier.get(risk_status, 1.0)
