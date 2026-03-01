@@ -1,19 +1,67 @@
-import os
-import random
 import statistics
-from sqlalchemy import create_engine, text
-import matplotlib.pyplot as plt
-from io import BytesIO
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
-
-INITIAL_CAPITAL = 100000
+import random
+from sqlalchemy import text
+from database import engine
 
 
-# ==================================================
-# EQUITY SERIES
-# ==================================================
+# ===============================
+# TRADE LOGGING
+# ===============================
+
+def log_trade(symbol, direction, entry, stop, profit):
+    with engine.begin() as conn:
+        conn.execute(
+            text("""
+                INSERT INTO trades (symbol, direction, entry, stop, profit)
+                VALUES (:symbol, :direction, :entry, :stop, :profit)
+            """),
+            {
+                "symbol": symbol,
+                "direction": direction,
+                "entry": entry,
+                "stop": stop,
+                "profit": profit
+            }
+        )
+
+
+# ===============================
+# PERFORMANCE REPORT
+# ===============================
+
+def get_performance_report():
+
+    with engine.connect() as conn:
+        result = conn.execute(text("SELECT profit FROM trades"))
+        profits = [row[0] for row in result.fetchall()]
+
+    if not profits:
+        return {
+            "total_trades": 0,
+            "wins": 0,
+            "losses": 0,
+            "net_profit": 0,
+            "current_equity": 100000
+        }
+
+    wins = [p for p in profits if p > 0]
+    losses = [p for p in profits if p < 0]
+
+    net_profit = sum(profits)
+    current_equity = 100000 + net_profit
+
+    return {
+        "total_trades": len(profits),
+        "wins": len(wins),
+        "losses": len(losses),
+        "net_profit": round(net_profit, 2),
+        "current_equity": round(current_equity, 2)
+    }
+
+
+# ===============================
+# EQUITY CURVE
+# ===============================
 
 def get_equity_curve():
 
@@ -21,7 +69,7 @@ def get_equity_curve():
         result = conn.execute(text("SELECT profit FROM trades"))
         profits = [row[0] for row in result.fetchall()]
 
-    equity = INITIAL_CAPITAL
+    equity = 100000
     curve = [equity]
 
     for p in profits:
@@ -31,57 +79,11 @@ def get_equity_curve():
     return curve
 
 
-# ==================================================
-# PERFORMANCE REPORT
-# ==================================================
-
-def get_performance_report():
-
-    curve = get_equity_curve()
-
-    total_trades = len(curve) - 1
-    equity = curve[-1]
-    peak_equity = max(curve)
-
-    with engine.connect() as conn:
-        result = conn.execute(text("SELECT profit FROM trades"))
-        profits = [row[0] for row in result.fetchall()]
-
-    wins = len([p for p in profits if p > 0])
-    losses = len([p for p in profits if p < 0])
-    net_profit = sum(profits)
-
-    return {
-        "total_trades": total_trades,
-        "wins": wins,
-        "losses": losses,
-        "net_profit": net_profit,
-        "equity": equity,
-        "peak_equity": peak_equity,
-    }
-
-
-# ==================================================
-# RISK METRICS
-# ==================================================
+# ===============================
+# RISK METRICS PANEL
+# ===============================
 
 def get_risk_metrics():
-
-    curve = get_equity_curve()
-
-    drawdowns = []
-    peak = curve[0]
-
-    for value in curve:
-        if value > peak:
-            peak = value
-        dd = (peak - value) / peak
-        drawdowns.append(dd)
-
-    max_dd = max(drawdowns) * 100
-
-    report = get_performance_report()
-    total_trades = report["total_trades"]
 
     with engine.connect() as conn:
         result = conn.execute(text("SELECT profit FROM trades"))
@@ -90,50 +92,51 @@ def get_risk_metrics():
     if not profits:
         return {}
 
-    win_rate = len([p for p in profits if p > 0]) / len(profits) * 100
-    avg_win = statistics.mean([p for p in profits if p > 0]) if wins := [p for p in profits if p > 0] else 0
-    avg_loss = statistics.mean([p for p in profits if p < 0]) if losses := [p for p in profits if p < 0] else 0
+    wins = [p for p in profits if p > 0]
+    losses = [p for p in profits if p < 0]
 
-    profit_factor = abs(sum(wins) / sum(losses)) if losses else 0
+    total = len(profits)
+    win_rate = (len(wins) / total) * 100 if total > 0 else 0
 
+    avg_win = statistics.mean(wins) if len(wins) > 0 else 0
+    avg_loss = statistics.mean(losses) if len(losses) > 0 else 0
+
+    profit_factor = abs(sum(wins) / sum(losses)) if len(losses) > 0 else 0
     expectancy = statistics.mean(profits)
-    sharpe = expectancy / statistics.stdev(profits) if len(profits) > 1 else 0
+
+    sharpe = 0
+    if len(profits) > 1:
+        stdev = statistics.stdev(profits)
+        if stdev != 0:
+            sharpe = expectancy / stdev
+
+    # Drawdown hesaplama
+    curve = get_equity_curve()
+    peak = curve[0]
+    max_dd = 0
+
+    for value in curve:
+        if value > peak:
+            peak = value
+        dd = (peak - value) / peak
+        if dd > max_dd:
+            max_dd = dd
 
     return {
-        "total_trades": total_trades,
+        "total_trades": total,
         "win_rate": round(win_rate, 2),
         "profit_factor": round(profit_factor, 2),
         "avg_win": round(avg_win, 2),
         "avg_loss": round(avg_loss, 2),
         "expectancy": round(expectancy, 2),
         "sharpe": round(sharpe, 2),
-        "max_drawdown": round(max_dd, 2),
+        "max_drawdown": round(max_dd * 100, 2)
     }
 
 
-# ==================================================
-# EQUITY CHART
-# ==================================================
-
-def generate_equity_chart():
-
-    curve = get_equity_curve()
-
-    plt.figure()
-    plt.plot(curve)
-    plt.title("Equity Curve")
-
-    buffer = BytesIO()
-    plt.savefig(buffer, format="png")
-    buffer.seek(0)
-    plt.close()
-
-    return buffer
-
-
-# ==================================================
-# MONTE CARLO
-# ==================================================
+# ===============================
+# MONTE CARLO SIMULATION
+# ===============================
 
 def monte_carlo_simulation(simulations=500):
 
@@ -145,32 +148,25 @@ def monte_carlo_simulation(simulations=500):
         return {}
 
     final_equities = []
-    max_drawdowns = []
 
     for _ in range(simulations):
 
-        sample = random.choices(profits, k=len(profits))
+        shuffled = profits[:]
+        random.shuffle(shuffled)
 
-        equity = INITIAL_CAPITAL
-        peak = equity
-        worst_dd = 0
+        equity = 100000
 
-        for p in sample:
+        for p in shuffled:
             equity += p
-            if equity > peak:
-                peak = equity
-            dd = (peak - equity) / peak
-            worst_dd = max(worst_dd, dd)
 
         final_equities.append(equity)
-        max_drawdowns.append(worst_dd)
 
-    risk_of_ruin = len([e for e in final_equities if e < INITIAL_CAPITAL * 0.5]) / simulations * 100
+    worst_case = min(final_equities)
+    best_case = max(final_equities)
+    average_case = statistics.mean(final_equities)
 
     return {
-        "avg_final_equity": round(statistics.mean(final_equities), 2),
-        "worst_equity": round(min(final_equities), 2),
-        "avg_drawdown": round(statistics.mean(max_drawdowns) * 100, 2),
-        "worst_drawdown": round(max(max_drawdowns) * 100, 2),
-        "risk_of_ruin": round(risk_of_ruin, 2),
+        "worst_case": round(worst_case, 2),
+        "best_case": round(best_case, 2),
+        "average_case": round(average_case, 2)
     }
