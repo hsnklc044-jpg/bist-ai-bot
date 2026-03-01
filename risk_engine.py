@@ -4,6 +4,7 @@ import pandas as pd
 from sqlalchemy import create_engine
 from performance_tracker import (
     get_trade_data,
+    get_risk_metrics,
     monte_carlo_risk_of_ruin
 )
 
@@ -11,6 +12,7 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 
 INITIAL_EQUITY = 100000
+BASE_PORTFOLIO_RISK = 5  # %5 base portfolio risk
 
 
 # ==================================================
@@ -19,15 +21,13 @@ INITIAL_EQUITY = 100000
 
 def get_current_equity():
     trade_df = get_trade_data()
-
     if trade_df.empty:
         return INITIAL_EQUITY
-
     return INITIAL_EQUITY + trade_df["profit"].sum()
 
 
 # ==================================================
-# MAX DRAWDOWN CALCULATION
+# MAX DRAWDOWN
 # ==================================================
 
 def calculate_max_drawdown():
@@ -47,6 +47,33 @@ def calculate_max_drawdown():
 
 
 # ==================================================
+# DYNAMIC PORTFOLIO RISK
+# ==================================================
+
+def calculate_dynamic_portfolio_risk():
+
+    drawdown = calculate_max_drawdown()
+    risk_metrics = get_risk_metrics()
+    sharpe = risk_metrics["sharpe"]
+
+    trade_df = get_trade_data()
+    mc_ruin = monte_carlo_risk_of_ruin(trade_df)
+
+    risk_multiplier = (
+        (1 - drawdown * 2)
+        * (1 + sharpe * 0.1)
+        * (1 - mc_ruin)
+    )
+
+    # clamp
+    risk_multiplier = min(max(risk_multiplier, 0.3), 1.5)
+
+    dynamic_risk = BASE_PORTFOLIO_RISK * risk_multiplier
+
+    return dynamic_risk
+
+
+# ==================================================
 # POSITION SIZE ENGINE
 # ==================================================
 
@@ -54,32 +81,21 @@ def calculate_position_size(stop_distance, risk_percent=1):
 
     equity = get_current_equity()
 
-    # Base risk
-    risk_amount = equity * (risk_percent / 100)
+    # Dinamik portfolio risk limiti
+    portfolio_risk = calculate_dynamic_portfolio_risk()
 
-    # Volatility + Drawdown Adjustment
-    current_dd = calculate_max_drawdown()
+    # Trade risk = min(user risk, portfolio risk)
+    effective_risk_percent = min(risk_percent, portfolio_risk)
 
-    # Drawdown scaling
-    dd_factor = 1 - (current_dd * 2)  # agresif scaling
-    dd_factor = max(0.3, dd_factor)   # minimum %30 risk
+    risk_amount = equity * (effective_risk_percent / 100)
 
-    # Monte Carlo risk scaling
-    trade_df = get_trade_data()
-    ruin_prob = monte_carlo_risk_of_ruin(trade_df)
-
-    mc_factor = 1 - ruin_prob
-    mc_factor = max(0.5, mc_factor)
-
-    adjusted_risk = risk_amount * dd_factor * mc_factor
-
-    position_size = adjusted_risk / stop_distance
+    position_size = risk_amount / stop_distance
 
     return round(position_size, 2)
 
 
 # ==================================================
-# TRADE LOGGER (BOT IMPORT FIX)
+# TRADE LOGGER
 # ==================================================
 
 def log_trade(profit):
