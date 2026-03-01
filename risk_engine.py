@@ -14,13 +14,14 @@ BASE_RISK_CAP = 0.03
 DEFAULT_RISK = 0.02
 VOLATILITY_REFERENCE = 0.01
 MAX_DRAWDOWN_LIMIT = 12
+EQUITY_MA_PERIOD = 20
 
 
 # =========================
-# EQUITY + DRAWDOWN
+# EQUITY SERIES
 # =========================
 
-def get_equity_and_drawdown():
+def get_equity_data():
 
     with engine.connect() as conn:
         df = pd.read_sql(
@@ -29,16 +30,19 @@ def get_equity_and_drawdown():
         )
 
     equity = INITIAL_EQUITY
-    peak = equity
+    equity_series = [equity]
 
-    if not df.empty:
-        for p in df["profit"]:
-            equity += p
-            peak = max(peak, equity)
+    for p in df["profit"]:
+        equity += p
+        equity_series.append(equity)
 
-    drawdown = (peak - equity) / peak * 100 if peak > 0 else 0
+    equity_df = pd.DataFrame({"equity": equity_series})
 
-    return equity, peak, drawdown, df
+    peak = equity_df["equity"].cummax().iloc[-1]
+    current_equity = equity_df["equity"].iloc[-1]
+    drawdown = (peak - current_equity) / peak * 100 if peak > 0 else 0
+
+    return current_equity, peak, drawdown, equity_df
 
 
 # =========================
@@ -59,6 +63,29 @@ def drawdown_multiplier(drawdown):
         return 0.25
     else:
         return 0.0
+
+
+# =========================
+# EQUITY MOMENTUM FILTER
+# =========================
+
+def equity_momentum_multiplier(equity_df):
+
+    if len(equity_df) < EQUITY_MA_PERIOD:
+        return 1.0
+
+    equity_df["ema"] = equity_df["equity"].ewm(
+        span=EQUITY_MA_PERIOD,
+        adjust=False
+    ).mean()
+
+    current_equity = equity_df["equity"].iloc[-1]
+    current_ema = equity_df["ema"].iloc[-1]
+
+    if current_equity < current_ema:
+        return 0.5  # risk cut in half
+    else:
+        return 1.0
 
 
 # =========================
@@ -85,7 +112,6 @@ def calculate_kelly(df):
         return DEFAULT_RISK
 
     R = avg_win / avg_loss
-
     kelly = win_rate - ((1 - win_rate) / R)
     half_kelly = max(kelly / 2, 0)
 
@@ -93,7 +119,7 @@ def calculate_kelly(df):
 
 
 # =========================
-# POSITION SIZE ENGINE
+# POSITION SIZE
 # =========================
 
 def calculate_position_size(stop_distance, volatility=0.01):
@@ -101,22 +127,35 @@ def calculate_position_size(stop_distance, volatility=0.01):
     if stop_distance <= 0:
         return 0
 
-    equity, peak, drawdown, df = get_equity_and_drawdown()
+    equity, peak, drawdown, equity_df = get_equity_data()
 
     if drawdown >= MAX_DRAWDOWN_LIMIT:
         raise Exception("❌ Trading frozen due to high drawdown.")
 
-    kelly_risk = calculate_kelly(df)
+    # Kelly
+    with engine.connect() as conn:
+        trade_df = pd.read_sql(
+            "SELECT profit FROM trades",
+            conn
+        )
 
-    # Tier multiplier
+    kelly_risk = calculate_kelly(trade_df)
+
+    # Drawdown
     tier_factor = drawdown_multiplier(drawdown)
 
-    # 🔥 Recovery smoothing
+    # Recovery smoothing
     recovery_factor = equity / peak if peak > 0 else 1
 
-    final_multiplier = tier_factor * recovery_factor
+    # Momentum filter
+    momentum_factor = equity_momentum_multiplier(equity_df)
 
-    dynamic_risk = kelly_risk * final_multiplier
+    dynamic_risk = (
+        kelly_risk *
+        tier_factor *
+        recovery_factor *
+        momentum_factor
+    )
 
     # Volatility reduce only
     vol_factor = volatility / VOLATILITY_REFERENCE
@@ -137,7 +176,7 @@ def calculate_position_size(stop_distance, volatility=0.01):
 
 def log_trade(symbol, side, entry_price, exit_price, quantity):
 
-    equity, peak, drawdown, _ = get_equity_and_drawdown()
+    equity, peak, drawdown, _ = get_equity_data()
 
     if drawdown >= MAX_DRAWDOWN_LIMIT:
         raise Exception("❌ Trading frozen due to drawdown.")
