@@ -7,10 +7,6 @@ from performance_tracker import INITIAL_EQUITY
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 
-# =========================
-# CONFIG
-# =========================
-
 BASE_RISK_CAP = 0.03
 DEFAULT_RISK = 0.02
 MAX_DRAWDOWN_LIMIT = 12
@@ -23,7 +19,6 @@ REGIME_LOOKBACK = 30
 # =========================
 
 def get_equity_data():
-
     with engine.connect() as conn:
         df = pd.read_sql(
             "SELECT profit FROM trades ORDER BY created_at ASC",
@@ -47,13 +42,12 @@ def get_equity_data():
 
 
 # =========================
-# DRAWDOWN TIERS
+# DRAWDOWN
 # =========================
 
 def drawdown_multiplier(drawdown):
-
     if drawdown < 1:
-        return 1.00
+        return 1.0
     elif drawdown < 3:
         return 0.85
     elif drawdown < 5:
@@ -91,13 +85,11 @@ def calculate_kelly(trade_df):
     R = avg_win / avg_loss
     kelly = win_rate - ((1 - win_rate) / R)
 
-    half_kelly = max(kelly / 2, 0)
-
-    return max(0, half_kelly)
+    return max(kelly / 2, 0)
 
 
 # =========================
-# EQUITY MOMENTUM
+# MOMENTUM
 # =========================
 
 def equity_momentum_multiplier(equity_df):
@@ -117,10 +109,10 @@ def equity_momentum_multiplier(equity_df):
 
 
 # =========================
-# VOLATILITY
+# INTERNAL VOLATILITY
 # =========================
 
-def volatility_multiplier(trade_df):
+def internal_volatility_multiplier(trade_df):
 
     if len(trade_df) < 10:
         return 1.0
@@ -143,7 +135,26 @@ def volatility_multiplier(trade_df):
 
 
 # =========================
-# REGIME DETECTION
+# EXTERNAL VOLATILITY
+# =========================
+
+def external_volatility_multiplier(external_vol):
+
+    if external_vol is None:
+        return 1.0
+
+    if external_vol < 0.01:
+        return 1.0
+    elif external_vol < 0.02:
+        return 0.9
+    elif external_vol < 0.03:
+        return 0.8
+    else:
+        return 0.6
+
+
+# =========================
+# REGIME
 # =========================
 
 def detect_regime(equity_df, trade_df):
@@ -169,12 +180,7 @@ def detect_regime(equity_df, trade_df):
     return "neutral"
 
 
-# =========================
-# DYNAMIC RISK CEILING
-# =========================
-
 def regime_risk_cap(regime):
-
     if regime == "trend":
         return 0.04
     elif regime == "neutral":
@@ -200,34 +206,25 @@ def calculate_position_size(stop_distance, external_volatility=None):
         raise Exception("❌ Trading frozen due to high drawdown.")
 
     regime = detect_regime(equity_df, trade_df)
-    dynamic_cap = regime_risk_cap(regime)
+    regime_cap = regime_risk_cap(regime)
 
-    kelly_risk = calculate_kelly(trade_df)
-    dd_factor = drawdown_multiplier(drawdown)
-    recovery_factor = equity / peak if peak > 0 else 1
-    momentum_factor = equity_momentum_multiplier(equity_df)
-    vol_factor = volatility_multiplier(trade_df)
+    kelly = calculate_kelly(trade_df)
+    dd_mult = drawdown_multiplier(drawdown)
+    recovery_mult = equity / peak if peak > 0 else 1
+    momentum_mult = equity_momentum_multiplier(equity_df)
+    int_vol_mult = internal_volatility_multiplier(trade_df)
+    ext_vol_mult = external_volatility_multiplier(external_volatility)
 
-    # External volatility
-    if external_volatility is not None:
-        if external_volatility < 0.01:
-            external_vol_mult = 1.0
-        elif external_volatility < 0.02:
-            external_vol_mult = 0.9
-        elif external_volatility < 0.03:
-            external_vol_mult = 0.8
-        else:
-            external_vol_mult = 0.6
-    else:
-        external_vol_mult = 1.0
+    # 🔥 Volatility-adjusted ceiling
+    dynamic_cap = regime_cap * int_vol_mult * ext_vol_mult
 
     dynamic_risk = (
-        kelly_risk *
-        dd_factor *
-        recovery_factor *
-        momentum_factor *
-        vol_factor *
-        external_vol_mult
+        kelly *
+        dd_mult *
+        recovery_mult *
+        momentum_mult *
+        int_vol_mult *
+        ext_vol_mult
     )
 
     dynamic_risk = min(dynamic_risk, dynamic_cap)
