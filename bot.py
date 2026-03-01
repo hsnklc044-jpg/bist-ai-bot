@@ -9,6 +9,7 @@ from performance_tracker import (
     generate_equity_chart,
     calculate_drawdown,
     check_risk_level,
+    get_position_multiplier,
 )
 
 logging.basicConfig(
@@ -35,7 +36,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/report\n"
         "/montecarlo\n"
         "/equity\n"
-        "/riskstatus"
+        "/riskstatus\n"
+        "/position"
     )
     await update.message.reply_text(message)
 
@@ -108,20 +110,32 @@ async def riskstatus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         status, dd_percent = check_risk_level()
 
-        if status == "SAFE":
-            message = f"🟢 RISK STATUS: SAFE\nDrawdown: {dd_percent}%"
-        elif status == "WARNING":
-            message = f"⚠️ WARNING\nDrawdown: {dd_percent}%"
-        elif status == "RISK_MODE":
-            message = f"🔴 RISK MODE ACTIVE\nDrawdown: {dd_percent}%"
-        else:
-            message = f"🛑 EMERGENCY STOP\nDrawdown: {dd_percent}%"
-
-        await update.message.reply_text(message)
+        await update.message.reply_text(
+            f"📊 RISK STATUS\n\nDurum: {status}\nDrawdown: {dd_percent}%"
+        )
 
     except Exception as e:
         logger.error(f"Risk status error: {e}")
         await update.message.reply_text("❌ Risk status hesaplanamadı.")
+
+
+async def position(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        multiplier = get_position_multiplier()
+        status, dd_percent = check_risk_level()
+
+        message = (
+            "📏 POSITION CONTROL\n\n"
+            f"Risk Status: {status}\n"
+            f"Drawdown: {dd_percent}%\n"
+            f"Position Multiplier: {multiplier}x"
+        )
+
+        await update.message.reply_text(message)
+
+    except Exception as e:
+        logger.error(f"Position error: {e}")
+        await update.message.reply_text("❌ Position kontrolü başarısız.")
 
 
 # =====================================================
@@ -136,6 +150,7 @@ def main():
     application.add_handler(CommandHandler("montecarlo", montecarlo))
     application.add_handler(CommandHandler("equity", equity))
     application.add_handler(CommandHandler("riskstatus", riskstatus))
+    application.add_handler(CommandHandler("position", position))
 
     logger.info("Institutional Portfolio Engine başlatıldı...")
     application.run_polling()
