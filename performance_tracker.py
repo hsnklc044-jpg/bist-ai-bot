@@ -7,6 +7,10 @@ import io
 import statistics
 from sqlalchemy import create_engine
 
+# ==================================================
+# DATABASE CONNECTION
+# ==================================================
+
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 
@@ -93,8 +97,8 @@ def get_risk_metrics():
 
     expectancy = (win_rate * avg_win) + ((1 - win_rate) * avg_loss)
 
-    returns = trade_df["profit"]
     sharpe = 0
+    returns = trade_df["profit"]
     if len(returns) > 1 and statistics.stdev(returns) != 0:
         sharpe = statistics.mean(returns) / statistics.stdev(returns)
 
@@ -193,7 +197,7 @@ def monte_carlo_analysis(simulations=500):
 
 
 # ==================================================
-# LIVE RISK OF RUIN
+# LIVE RISK OF RUIN (RISK ENGINE USE)
 # ==================================================
 
 def monte_carlo_risk_of_ruin(trade_df, simulations=300, ruin_threshold=0.7):
@@ -219,3 +223,11 @@ def monte_carlo_risk_of_ruin(trade_df, simulations=300, ruin_threshold=0.7):
                 break
 
     return ruin_count / simulations
+
+
+# ==================================================
+# BACKWARD COMPATIBILITY (BOT IMPORT FIX)
+# ==================================================
+
+def monte_carlo_simulation(simulations=500):
+    return monte_carlo_analysis(simulations)
