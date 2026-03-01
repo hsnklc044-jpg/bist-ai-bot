@@ -67,7 +67,7 @@ def drawdown_multiplier(drawdown):
 
 
 # =========================
-# KELLY
+# KELLY (Half Kelly)
 # =========================
 
 def calculate_kelly(trade_df):
@@ -97,7 +97,7 @@ def calculate_kelly(trade_df):
 
 
 # =========================
-# EQUITY MOMENTUM
+# EQUITY MOMENTUM (EMA)
 # =========================
 
 def equity_momentum_multiplier(equity_df):
@@ -117,7 +117,7 @@ def equity_momentum_multiplier(equity_df):
 
 
 # =========================
-# VOLATILITY ADJUSTMENT
+# INTERNAL VOLATILITY
 # =========================
 
 def volatility_multiplier(trade_df):
@@ -127,7 +127,7 @@ def volatility_multiplier(trade_df):
 
     returns = trade_df["profit"].pct_change().dropna()
 
-    if returns.empty:
+    if len(returns) < 2:
         return 1.0
 
     vol = statistics.stdev(returns)
@@ -143,7 +143,7 @@ def volatility_multiplier(trade_df):
 
 
 # =========================
-# REGIME DETECTION (NEW)
+# REGIME DETECTION
 # =========================
 
 def regime_multiplier(equity_df, trade_df):
@@ -152,22 +152,23 @@ def regime_multiplier(equity_df, trade_df):
         return 1.0
 
     recent_equity = equity_df["equity"].iloc[-REGIME_LOOKBACK:]
-
     slope = recent_equity.iloc[-1] - recent_equity.iloc[0]
 
     recent_trades = trade_df.iloc[-REGIME_LOOKBACK:]
 
+    if recent_trades.empty:
+        return 1.0
+
     win_rate = len(recent_trades[recent_trades["profit"] > 0]) / len(recent_trades)
 
     returns = recent_trades["profit"].pct_change().dropna()
-
     vol = statistics.stdev(returns) if len(returns) > 1 else 0
 
-    # Trend mode
+    # Trend Mode
     if slope > 0 and win_rate > 0.6 and vol < 0.02:
         return 1.1
 
-    # Defensive mode
+    # Defensive Mode
     if slope < 0 or win_rate < 0.5 or vol > 0.03:
         return 0.6
 
@@ -179,7 +180,7 @@ def regime_multiplier(equity_df, trade_df):
 # POSITION SIZE ENGINE
 # =========================
 
-def calculate_position_size(stop_distance):
+def calculate_position_size(stop_distance, external_volatility=None):
 
     if stop_distance <= 0:
         return 0
@@ -196,13 +197,27 @@ def calculate_position_size(stop_distance):
     vol_factor = volatility_multiplier(trade_df)
     regime_factor = regime_multiplier(equity_df, trade_df)
 
+    # External volatility param
+    if external_volatility is not None:
+        if external_volatility < 0.01:
+            external_vol_mult = 1.0
+        elif external_volatility < 0.02:
+            external_vol_mult = 0.9
+        elif external_volatility < 0.03:
+            external_vol_mult = 0.8
+        else:
+            external_vol_mult = 0.6
+    else:
+        external_vol_mult = 1.0
+
     dynamic_risk = (
         kelly_risk *
         dd_factor *
         recovery_factor *
         momentum_factor *
         vol_factor *
-        regime_factor
+        regime_factor *
+        external_vol_mult
     )
 
     dynamic_risk = min(dynamic_risk, BASE_RISK_CAP)
