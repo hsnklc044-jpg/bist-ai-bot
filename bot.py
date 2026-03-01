@@ -3,38 +3,39 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 from performance_tracker import (
-    check_consecutive_losses,
-    get_position_multiplier,
+    get_kelly_fraction,
+    get_loss_streak,
+    calculate_drawdown,
 )
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 
-async def lossstatus(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    status, streak = check_consecutive_losses()
-
-    message = (
-        "📉 LOSS STREAK STATUS\n\n"
-        f"Current Streak: {streak}\n"
-        f"Status: {status}"
-    )
-
-    await update.message.reply_text(message)
-
-
-async def position(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    multiplier = get_position_multiplier()
+async def kelly(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    fraction = get_kelly_fraction()
 
     await update.message.reply_text(
-        f"📏 POSITION MULTIPLIER\n\nMultiplier: {multiplier}x"
+        f"🧠 ADAPTIVE KELLY\n\n"
+        f"Recommended Risk Fraction: {fraction * 100}%"
+    )
+
+
+async def riskstatus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    dd, dd_percent = calculate_drawdown()
+    streak = get_loss_streak()
+
+    await update.message.reply_text(
+        f"📊 RISK STATUS\n\n"
+        f"Drawdown: {dd_percent}%\n"
+        f"Loss Streak: {streak}"
     )
 
 
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("lossstatus", lossstatus))
-    app.add_handler(CommandHandler("position", position))
+    app.add_handler(CommandHandler("kelly", kelly))
+    app.add_handler(CommandHandler("riskstatus", riskstatus))
 
     app.run_polling()
 
