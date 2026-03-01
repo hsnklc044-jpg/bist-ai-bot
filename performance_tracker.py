@@ -40,11 +40,34 @@ def get_trade_stats():
     wins = [p for p in profits if p > 0]
     losses = [abs(p) for p in profits if p <= 0]
 
-    win_rate = len(wins) / len(profits) if profits else 0
+    win_rate = len(wins) / len(profits)
     avg_win = statistics.mean(wins) if wins else 0
     avg_loss = statistics.mean(losses) if losses else 1
 
     return win_rate, avg_win, avg_loss
+
+
+# =====================================================
+# VOLATILITY REGIME DETECTION
+# =====================================================
+
+def get_volatility_regime():
+    profits = fetch_profits()
+
+    if len(profits) < 10:
+        return "INSUFFICIENT_DATA"
+
+    mean = statistics.mean(profits)
+    std = statistics.stdev(profits)
+
+    if std < abs(mean) * 0.5:
+        return "LOW"
+    elif std < abs(mean):
+        return "NORMAL"
+    elif std < abs(mean) * 2:
+        return "HIGH"
+    else:
+        return "EXTREME"
 
 
 # =====================================================
@@ -59,8 +82,7 @@ def calculate_drawdown(initial_equity=100000):
 
     for p in profits:
         equity += p
-        if equity > peak:
-            peak = equity
+        peak = max(peak, equity)
         dd = peak - equity
         max_dd = max(max_dd, dd)
 
@@ -86,10 +108,10 @@ def get_loss_streak():
 
 
 # =====================================================
-# ADAPTIVE KELLY ENGINE
+# ADAPTIVE KELLY + VOL REGIME
 # =====================================================
 
-def get_kelly_fraction():
+def get_position_multiplier():
     win_rate, avg_win, avg_loss = get_trade_stats()
 
     if avg_loss == 0:
@@ -97,10 +119,9 @@ def get_kelly_fraction():
 
     R = avg_win / avg_loss
     kelly = win_rate - ((1 - win_rate) / R)
-
     kelly = max(0, kelly)
 
-    # Half Kelly (institutional safety)
+    # Half Kelly
     kelly *= 0.5
 
     # Drawdown suppression
@@ -115,14 +136,13 @@ def get_kelly_fraction():
     if streak >= 5:
         kelly *= 0.5
     if streak >= 7:
-        kelly = 0
+        return 0.0
+
+    # Volatility regime suppression
+    regime = get_volatility_regime()
+    if regime == "HIGH":
+        kelly *= 0.5
+    elif regime == "EXTREME":
+        return 0.0
 
     return round(kelly, 4)
-
-
-# =====================================================
-# FINAL POSITION SIZE
-# =====================================================
-
-def get_position_multiplier():
-    return get_kelly_fraction()
