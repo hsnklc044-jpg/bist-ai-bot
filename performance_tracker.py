@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import io
+import statistics
 from sqlalchemy import create_engine
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -46,7 +47,6 @@ def get_performance_report():
     wins = len(trade_df[trade_df["profit"] > 0])
     losses = len(trade_df[trade_df["profit"] <= 0])
     net_profit = trade_df["profit"].sum()
-
     equity = INITIAL_EQUITY + net_profit
 
     return {
@@ -55,6 +55,57 @@ def get_performance_report():
         "losses": losses,
         "net_profit": round(net_profit, 2),
         "equity": round(equity, 2)
+    }
+
+
+# ==================================================
+# RISK METRICS PANEL
+# ==================================================
+
+def get_risk_metrics():
+
+    trade_df = get_trade_data()
+
+    if trade_df.empty:
+        return {
+            "total_trades": 0,
+            "win_rate": 0,
+            "profit_factor": 0,
+            "avg_win": 0,
+            "avg_loss": 0,
+            "expectancy": 0,
+            "sharpe": 0
+        }
+
+    wins = trade_df[trade_df["profit"] > 0]
+    losses = trade_df[trade_df["profit"] <= 0]
+
+    total_trades = len(trade_df)
+    win_rate = len(wins) / total_trades if total_trades > 0 else 0
+
+    gross_profit = wins["profit"].sum()
+    gross_loss = abs(losses["profit"].sum())
+
+    profit_factor = gross_profit / gross_loss if gross_loss > 0 else float("inf")
+
+    avg_win = wins["profit"].mean() if not wins.empty else 0
+    avg_loss = losses["profit"].mean() if not losses.empty else 0
+
+    expectancy = (win_rate * avg_win) + ((1 - win_rate) * avg_loss)
+
+    returns = trade_df["profit"]
+    sharpe = 0
+    if len(returns) > 1 and statistics.stdev(returns) != 0:
+        sharpe = statistics.mean(returns) / statistics.stdev(returns)
+
+    return {
+        "total_trades": total_trades,
+        "win_rate": round(win_rate * 100, 2),
+        "profit_factor": round(profit_factor, 2),
+        "avg_win": round(avg_win, 2),
+        "avg_loss": round(avg_loss, 2),
+        "expectancy": round(expectancy, 2),
+        "sharpe": round(sharpe, 2)
     }
 
 
@@ -88,7 +139,7 @@ def generate_equity_chart():
 
 
 # ==================================================
-# MONTE CARLO ANALYSIS (RAPOR)
+# MONTE CARLO ANALYSIS
 # ==================================================
 
 def monte_carlo_analysis(simulations=500):
@@ -142,7 +193,7 @@ def monte_carlo_analysis(simulations=500):
 
 
 # ==================================================
-# MONTE CARLO RISK (LIVE ENGINE)
+# LIVE RISK OF RUIN
 # ==================================================
 
 def monte_carlo_risk_of_ruin(trade_df, simulations=300, ruin_threshold=0.7):
