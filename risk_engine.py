@@ -1,8 +1,12 @@
 import os
-from sqlalchemy import create_engine, text
-import pandas as pd
 import statistics
-from performance_tracker import INITIAL_EQUITY
+import pandas as pd
+from sqlalchemy import create_engine, text
+
+from performance_tracker import (
+    INITIAL_EQUITY,
+    monte_carlo_risk_of_ruin
+)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
@@ -19,8 +23,9 @@ REGIME_LOOKBACK = 30
 # =========================
 
 def get_equity_data():
+
     with engine.connect() as conn:
-        df = pd.read_sql(
+        trade_df = pd.read_sql(
             "SELECT profit FROM trades ORDER BY created_at ASC",
             conn
         )
@@ -28,7 +33,7 @@ def get_equity_data():
     equity = INITIAL_EQUITY
     equity_series = [equity]
 
-    for p in df["profit"]:
+    for p in trade_df["profit"]:
         equity += p
         equity_series.append(equity)
 
@@ -38,11 +43,11 @@ def get_equity_data():
     current_equity = equity_df["equity"].iloc[-1]
     drawdown = (peak - current_equity) / peak * 100 if peak > 0 else 0
 
-    return current_equity, peak, drawdown, equity_df, df
+    return current_equity, peak, drawdown, equity_df, trade_df
 
 
 # =========================
-# DRAWDOWN
+# MULTIPLIERS
 # =========================
 
 def drawdown_multiplier(drawdown):
@@ -59,10 +64,6 @@ def drawdown_multiplier(drawdown):
     else:
         return 0.0
 
-
-# =========================
-# KELLY
-# =========================
 
 def calculate_kelly(trade_df):
 
@@ -88,10 +89,6 @@ def calculate_kelly(trade_df):
     return max(kelly / 2, 0)
 
 
-# =========================
-# MOMENTUM
-# =========================
-
 def equity_momentum_multiplier(equity_df):
 
     if len(equity_df) < EQUITY_MA_PERIOD:
@@ -102,15 +99,8 @@ def equity_momentum_multiplier(equity_df):
         adjust=False
     ).mean()
 
-    current_equity = equity_df["equity"].iloc[-1]
-    current_ema = equity_df["ema"].iloc[-1]
+    return 1.0 if equity_df["equity"].iloc[-1] >= equity_df["ema"].iloc[-1] else 0.5
 
-    return 1.0 if current_equity >= current_ema else 0.5
-
-
-# =========================
-# INTERNAL VOLATILITY
-# =========================
 
 def internal_volatility_multiplier(trade_df):
 
@@ -134,10 +124,6 @@ def internal_volatility_multiplier(trade_df):
         return 0.6
 
 
-# =========================
-# EXTERNAL VOLATILITY
-# =========================
-
 def external_volatility_multiplier(external_vol):
 
     if external_vol is None:
@@ -152,10 +138,6 @@ def external_volatility_multiplier(external_vol):
     else:
         return 0.6
 
-
-# =========================
-# REGIME
-# =========================
 
 def detect_regime(equity_df, trade_df):
 
@@ -215,8 +197,21 @@ def calculate_position_size(stop_distance, external_volatility=None):
     int_vol_mult = internal_volatility_multiplier(trade_df)
     ext_vol_mult = external_volatility_multiplier(external_volatility)
 
-    # 🔥 Volatility-adjusted ceiling
-    dynamic_cap = regime_cap * int_vol_mult * ext_vol_mult
+    # Monte Carlo Risk Control
+    mc_risk = monte_carlo_risk_of_ruin(trade_df)
+
+    if mc_risk < 0.01:
+        mc_mult = 1.0
+    elif mc_risk < 0.03:
+        mc_mult = 0.85
+    elif mc_risk < 0.05:
+        mc_mult = 0.65
+    elif mc_risk < 0.10:
+        mc_mult = 0.40
+    else:
+        mc_mult = 0.20
+
+    dynamic_cap = regime_cap * int_vol_mult * ext_vol_mult * mc_mult
 
     dynamic_risk = (
         kelly *
@@ -224,7 +219,8 @@ def calculate_position_size(stop_distance, external_volatility=None):
         recovery_mult *
         momentum_mult *
         int_vol_mult *
-        ext_vol_mult
+        ext_vol_mult *
+        mc_mult
     )
 
     dynamic_risk = min(dynamic_risk, dynamic_cap)
@@ -233,38 +229,3 @@ def calculate_position_size(stop_distance, external_volatility=None):
     position_size = risk_amount / stop_distance
 
     return round(position_size, 2)
-
-
-# =========================
-# TRADE LOGGER
-# =========================
-
-def log_trade(symbol, side, entry_price, exit_price, quantity):
-
-    equity, peak, drawdown, _, _ = get_equity_data()
-
-    if drawdown >= MAX_DRAWDOWN_LIMIT:
-        raise Exception("❌ Trading frozen due to drawdown.")
-
-    if side.lower() == "long":
-        profit = (exit_price - entry_price) * quantity
-    else:
-        profit = (entry_price - exit_price) * quantity
-
-    with engine.connect() as conn:
-        conn.execute(text("""
-            INSERT INTO trades
-            (symbol, side, entry_price, exit_price, quantity, profit)
-            VALUES
-            (:symbol, :side, :entry_price, :exit_price, :quantity, :profit)
-        """), {
-            "symbol": symbol,
-            "side": side,
-            "entry_price": entry_price,
-            "exit_price": exit_price,
-            "quantity": quantity,
-            "profit": profit
-        })
-        conn.commit()
-
-    return round(profit, 2)
