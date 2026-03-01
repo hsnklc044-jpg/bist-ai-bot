@@ -110,7 +110,7 @@ def calculate_drawdown(initial_equity=100000):
 
 
 # =====================================================
-# EQUITY CHART (INSTITUTIONAL STYLE)
+# EQUITY CHART
 # =====================================================
 
 def generate_equity_chart(initial_equity=100000):
@@ -128,7 +128,6 @@ def generate_equity_chart(initial_equity=100000):
         peaks.append(peak)
 
     plt.figure(figsize=(9, 4))
-
     plt.plot(curve, linewidth=2, label="Equity")
     plt.plot(peaks, linestyle="--", linewidth=1, label="Peak")
 
@@ -196,7 +195,7 @@ def run_monte_carlo(initial_equity=100000, simulations=1000):
 
 
 # =====================================================
-# RISK LEVEL DETECTION
+# RISK ENGINE
 # =====================================================
 
 def check_risk_level(initial_equity=100000):
@@ -210,3 +209,16 @@ def check_risk_level(initial_equity=100000):
         return "WARNING", dd_percent
     else:
         return "SAFE", dd_percent
+
+
+def get_position_multiplier(initial_equity=100000):
+    status, _ = check_risk_level(initial_equity)
+
+    if status == "SAFE":
+        return 1.0
+    elif status == "WARNING":
+        return 0.75
+    elif status == "RISK_MODE":
+        return 0.5
+    elif status == "EMERGENCY":
+        return 0.0
