@@ -10,9 +10,10 @@ engine = create_engine(DATABASE_URL)
 # RISK CONFIG
 # =========================
 
-BASE_RISK_CAP = 0.03          # 🔒 MAX %3 risk cap
-VOLATILITY_REFERENCE = 0.01   # baseline volatility
-MAX_DRAWDOWN_LIMIT = 25       # kill switch
+BASE_RISK_CAP = 0.03          # 🔒 MAX %3 risk
+DEFAULT_RISK = 0.02           # fallback risk
+VOLATILITY_REFERENCE = 0.01
+MAX_DRAWDOWN_LIMIT = 25
 
 
 # =========================
@@ -47,13 +48,13 @@ def get_equity_and_drawdown():
 def calculate_kelly(df):
 
     if df.empty:
-        return 0.02  # default risk %2
+        return DEFAULT_RISK
 
     wins = df[df["profit"] > 0]
     losses = df[df["profit"] <= 0]
 
     if losses.empty:
-        return 0.02
+        return DEFAULT_RISK
 
     win_rate = len(wins) / len(df)
 
@@ -61,16 +62,16 @@ def calculate_kelly(df):
     avg_loss = abs(losses["profit"].mean()) if not losses.empty else 0
 
     if avg_loss == 0:
-        return 0.02
+        return DEFAULT_RISK
 
     R = avg_win / avg_loss
 
     kelly = win_rate - ((1 - win_rate) / R)
 
-    # Half Kelly (professional safer version)
+    # Half Kelly (safer)
     half_kelly = max(kelly / 2, 0)
 
-    # Cap Kelly itself
+    # Hard cap
     return min(half_kelly, BASE_RISK_CAP)
 
 
@@ -89,26 +90,25 @@ def calculate_position_size(stop_distance, volatility=0.01):
     if drawdown >= MAX_DRAWDOWN_LIMIT:
         raise Exception("❌ Trading stopped due to max drawdown.")
 
-    # 1️⃣ Kelly risk
+    # 1️⃣ Kelly base
     kelly_risk = calculate_kelly(df)
 
-    # 2️⃣ Drawdown scaling
-    dd_factor = max(1 - drawdown / 100, 0.25)
+    # 2️⃣ Drawdown scaling (reduces risk only)
+    dd_factor = max(1 - drawdown / 100, 0.3)
 
     dynamic_risk = kelly_risk * dd_factor
 
-    # 🔒 Final hard cap protection
+    # 3️⃣ Volatility scaling (ONLY reduce risk)
+    vol_factor = volatility / VOLATILITY_REFERENCE
+
+    if vol_factor > 1:
+        dynamic_risk = dynamic_risk / vol_factor
+
+    # 🔒 Final hard cap enforcement
     dynamic_risk = min(dynamic_risk, BASE_RISK_CAP)
 
-    # 3️⃣ Volatility normalization
-    vol_factor = volatility / VOLATILITY_REFERENCE
-    if vol_factor <= 0:
-        vol_factor = 1
-
-    adjusted_risk = dynamic_risk / vol_factor
-
-    # 4️⃣ Position size calculation
-    risk_amount = equity * adjusted_risk
+    # 4️⃣ Risk amount
+    risk_amount = equity * dynamic_risk
     position_size = risk_amount / stop_distance
 
     return round(position_size, 2)
