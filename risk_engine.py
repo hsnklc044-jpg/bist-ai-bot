@@ -1,6 +1,15 @@
-from sqlalchemy import text
-from database import engine
+import os
+from sqlalchemy import create_engine, text
 from performance_tracker import get_performance_report
+
+
+# ==================================================
+# DATABASE ENGINE
+# ==================================================
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+engine = create_engine(DATABASE_URL)
 
 
 # ==================================================
@@ -12,15 +21,16 @@ def calculate_position_size(stop_distance, risk_percent):
     report = get_performance_report()
     equity = report["equity"]
 
-    # Drawdown based dynamic risk reduction
     peak_equity = report.get("peak_equity", equity)
-    drawdown = 0
 
+    drawdown = 0
     if peak_equity > 0:
         drawdown = (peak_equity - equity) / peak_equity
 
-    # Eğer %10'dan fazla drawdown varsa risk yarıya düşer
-    if drawdown > 0.10:
+    # Drawdown based risk reduction
+    if drawdown > 0.20:
+        risk_percent *= 0.3
+    elif drawdown > 0.10:
         risk_percent *= 0.5
 
     risk_amount = equity * (risk_percent / 100)
@@ -48,7 +58,7 @@ def log_trade(profit):
 
 
 # ==================================================
-# OPTIONAL: ADVANCED RISK CONTROL
+# OPTIONAL: DYNAMIC RISK MULTIPLIER
 # ==================================================
 
 def get_dynamic_risk_multiplier():
