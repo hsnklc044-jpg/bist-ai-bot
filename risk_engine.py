@@ -13,11 +13,11 @@ engine = create_engine(DATABASE_URL)
 BASE_RISK_CAP = 0.03
 DEFAULT_RISK = 0.02
 VOLATILITY_REFERENCE = 0.01
-MAX_DRAWDOWN_LIMIT = 20  # Freeze above 20%
+MAX_DRAWDOWN_LIMIT = 12  # 🔒 Freeze above 12%
 
 
 # =========================
-# EQUITY + DD
+# EQUITY + DRAWDOWN
 # =========================
 
 def get_equity_and_drawdown():
@@ -42,25 +42,27 @@ def get_equity_and_drawdown():
 
 
 # =========================
-# DRAWDOWN TIERS
+# EARLY DEFENSIVE DRAWDOWN TIERS
 # =========================
 
 def drawdown_multiplier(drawdown):
 
-    if drawdown < 5:
-        return 1.0
-    elif drawdown < 10:
-        return 0.75
-    elif drawdown < 15:
-        return 0.50
-    elif drawdown < 20:
+    if drawdown < 1:
+        return 1.00
+    elif drawdown < 3:
+        return 0.85
+    elif drawdown < 5:
+        return 0.65
+    elif drawdown < 8:
+        return 0.45
+    elif drawdown < 12:
         return 0.25
     else:
         return 0.0
 
 
 # =========================
-# KELLY
+# KELLY CALCULATION
 # =========================
 
 def calculate_kelly(df):
@@ -86,13 +88,14 @@ def calculate_kelly(df):
 
     kelly = win_rate - ((1 - win_rate) / R)
 
+    # Half Kelly
     half_kelly = max(kelly / 2, 0)
 
     return min(half_kelly, BASE_RISK_CAP)
 
 
 # =========================
-# POSITION SIZE
+# POSITION SIZE ENGINE
 # =========================
 
 def calculate_position_size(stop_distance, volatility=0.01):
@@ -102,22 +105,24 @@ def calculate_position_size(stop_distance, volatility=0.01):
 
     equity, drawdown, df = get_equity_and_drawdown()
 
-    # Hard freeze
+    # 🔴 Hard freeze
     if drawdown >= MAX_DRAWDOWN_LIMIT:
         raise Exception("❌ Trading frozen due to high drawdown.")
 
+    # 1️⃣ Kelly base
     kelly_risk = calculate_kelly(df)
 
-    # Tier multiplier
+    # 2️⃣ Defensive drawdown tier
     tier_factor = drawdown_multiplier(drawdown)
 
     dynamic_risk = kelly_risk * tier_factor
 
-    # Volatility reduce only
+    # 3️⃣ Volatility scaling (reduce only)
     vol_factor = volatility / VOLATILITY_REFERENCE
     if vol_factor > 1:
         dynamic_risk = dynamic_risk / vol_factor
 
+    # 🔒 Final hard cap
     dynamic_risk = min(dynamic_risk, BASE_RISK_CAP)
 
     risk_amount = equity * dynamic_risk
@@ -127,7 +132,7 @@ def calculate_position_size(stop_distance, volatility=0.01):
 
 
 # =========================
-# LOG TRADE
+# TRADE LOGGER
 # =========================
 
 def log_trade(symbol, side, entry_price, exit_price, quantity):
