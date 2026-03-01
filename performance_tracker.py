@@ -6,7 +6,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from io import BytesIO
-from datetime import date
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -16,8 +15,6 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 # =====================================================
 
 def get_connection():
-    if not DATABASE_URL:
-        raise ValueError("DATABASE_URL environment variable not set.")
     return psycopg2.connect(DATABASE_URL)
 
 
@@ -29,236 +26,50 @@ def fetch_profits():
         rows = cur.fetchall()
         cur.close()
         conn.close()
-        return [float(r[0]) for r in rows if r[0] is not None]
-    except:
-        return []
-
-
-def fetch_today_profits():
-    try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT profit FROM trades WHERE DATE(created_at) = CURRENT_DATE;"
-        )
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
-        return [float(r[0]) for r in rows if r[0] is not None]
+        return [float(r[0]) for r in rows]
     except:
         return []
 
 
 # =====================================================
-# PERFORMANCE REPORT
+# LOSS STREAK DETECTION
 # =====================================================
 
-def get_performance_report(initial_equity=100000):
+def check_consecutive_losses():
     profits = fetch_profits()
 
-    if not profits:
-        return {
-            "total_trades": 0,
-            "wins": 0,
-            "losses": 0,
-            "net_profit": 0,
-            "current_equity": initial_equity,
-            "max_drawdown": 0,
-            "drawdown_percent": 0,
-        }
-
-    total_trades = len(profits)
-    wins = len([p for p in profits if p > 0])
-    losses = len([p for p in profits if p <= 0])
-    net_profit = round(sum(profits), 2)
-    current_equity = round(initial_equity + net_profit, 2)
-
-    max_dd, dd_percent = calculate_drawdown(initial_equity)
-
-    return {
-        "total_trades": total_trades,
-        "wins": wins,
-        "losses": losses,
-        "net_profit": net_profit,
-        "current_equity": current_equity,
-        "max_drawdown": max_dd,
-        "drawdown_percent": dd_percent,
-    }
-
-
-# =====================================================
-# EQUITY & DRAWDOWN
-# =====================================================
-
-def calculate_equity_curve(initial_equity=100000):
-    profits = fetch_profits()
-    equity = initial_equity
-    curve = [equity]
+    streak = 0
+    max_streak = 0
 
     for p in profits:
-        equity += p
-        curve.append(round(equity, 2))
+        if p <= 0:
+            streak += 1
+            max_streak = max(max_streak, streak)
+        else:
+            streak = 0
 
-    return curve
-
-
-def calculate_drawdown(initial_equity=100000):
-    curve = calculate_equity_curve(initial_equity)
-
-    if len(curve) <= 1:
-        return 0, 0
-
-    peak = curve[0]
-    max_drawdown = 0
-
-    for value in curve:
-        if value > peak:
-            peak = value
-
-        drawdown = peak - value
-        if drawdown > max_drawdown:
-            max_drawdown = drawdown
-
-    drawdown_percent = round((max_drawdown / peak) * 100, 2) if peak != 0 else 0
-
-    return round(max_drawdown, 2), drawdown_percent
-
-
-# =====================================================
-# EQUITY CHART
-# =====================================================
-
-def generate_equity_chart(initial_equity=100000):
-    curve = calculate_equity_curve(initial_equity)
-
-    if len(curve) <= 1:
-        return None
-
-    peaks = []
-    peak = curve[0]
-
-    for value in curve:
-        if value >= peak:
-            peak = value
-        peaks.append(peak)
-
-    plt.figure(figsize=(9, 4))
-    plt.plot(curve, linewidth=2, label="Equity")
-    plt.plot(peaks, linestyle="--", linewidth=1, label="Peak")
-
-    plt.fill_between(
-        range(len(curve)),
-        curve,
-        peaks,
-        where=[p > c for p, c in zip(peaks, curve)],
-        alpha=0.3
-    )
-
-    plt.title("Institutional Equity Curve")
-    plt.xlabel("Trade #")
-    plt.ylabel("Equity (TL)")
-    plt.legend()
-    plt.grid(True)
-
-    buffer = BytesIO()
-    plt.tight_layout()
-    plt.savefig(buffer, format="png")
-    buffer.seek(0)
-    plt.close()
-
-    return buffer
-
-
-# =====================================================
-# MONTE CARLO
-# =====================================================
-
-def run_monte_carlo(initial_equity=100000, simulations=1000):
-    profits = fetch_profits()
-
-    if not profits:
-        return {
-            "mean_equity": initial_equity,
-            "best_case": initial_equity,
-            "worst_case": initial_equity,
-            "ruin_probability": 0,
-        }
-
-    trades = len(profits)
-    results = []
-
-    for _ in range(simulations):
-        equity = initial_equity
-        for _ in range(trades):
-            equity += random.choice(profits)
-        results.append(equity)
-
-    mean_equity = round(statistics.mean(results), 2)
-    best_case = round(max(results), 2)
-    worst_case = round(min(results), 2)
-
-    ruin_threshold = initial_equity * 0.5
-    ruin_count = sum(1 for r in results if r <= ruin_threshold)
-    ruin_probability = round((ruin_count / simulations) * 100, 2)
-
-    return {
-        "mean_equity": mean_equity,
-        "best_case": best_case,
-        "worst_case": worst_case,
-        "ruin_probability": ruin_probability,
-    }
-
-
-# =====================================================
-# DAILY MAX LOSS ENGINE
-# =====================================================
-
-def check_daily_status(initial_equity=100000):
-    today_profits = fetch_today_profits()
-    daily_pnl = sum(today_profits)
-
-    daily_percent = round((daily_pnl / initial_equity) * 100, 2)
-
-    if daily_percent <= -5:
-        return "KILL_SWITCH", daily_percent
-    elif daily_percent <= -3:
-        return "RISK_MODE", daily_percent
-    elif daily_percent <= -2:
-        return "WARNING", daily_percent
+    if max_streak >= 7:
+        return "TRADE_STOP", max_streak
+    elif max_streak >= 5:
+        return "RISK_MODE", max_streak
+    elif max_streak >= 3:
+        return "WARNING", max_streak
     else:
-        return "SAFE", daily_percent
+        return "SAFE", max_streak
 
 
 # =====================================================
-# RISK ENGINE
+# POSITION MULTIPLIER (FINAL ENGINE)
 # =====================================================
-
-def check_risk_level(initial_equity=100000):
-    max_dd, dd_percent = calculate_drawdown(initial_equity)
-
-    if dd_percent >= 15:
-        return "EMERGENCY", dd_percent
-    elif dd_percent >= 10:
-        return "RISK_MODE", dd_percent
-    elif dd_percent >= 5:
-        return "WARNING", dd_percent
-    else:
-        return "SAFE", dd_percent
-
 
 def get_position_multiplier(initial_equity=100000):
-    daily_status, _ = check_daily_status(initial_equity)
-    risk_status, _ = check_risk_level(initial_equity)
+    loss_status, _ = check_consecutive_losses()
 
-    # Daily kill switch overrides everything
-    if daily_status == "KILL_SWITCH":
+    if loss_status == "TRADE_STOP":
         return 0.0
-
-    base_multiplier = {
-        "SAFE": 1.0,
-        "WARNING": 0.75,
-        "RISK_MODE": 0.5,
-        "EMERGENCY": 0.0,
-    }
-
-    return base_multiplier.get(risk_status, 1.0)
+    elif loss_status == "RISK_MODE":
+        return 0.5
+    elif loss_status == "WARNING":
+        return 0.75
+    else:
+        return 1.0
