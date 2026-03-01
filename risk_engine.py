@@ -11,11 +11,11 @@ engine = create_engine(DATABASE_URL)
 # CONFIG
 # =========================
 
-BASE_RISK_CAP = 0.03          # Max %3 risk per trade
+BASE_RISK_CAP = 0.03
 DEFAULT_RISK = 0.02
-VOLATILITY_REFERENCE = 0.01
-MAX_DRAWDOWN_LIMIT = 12       # Freeze trading above 12% DD
-EQUITY_MA_PERIOD = 20         # Momentum filter period
+MAX_DRAWDOWN_LIMIT = 12
+EQUITY_MA_PERIOD = 20
+REGIME_LOOKBACK = 30
 
 
 # =========================
@@ -67,7 +67,7 @@ def drawdown_multiplier(drawdown):
 
 
 # =========================
-# KELLY CALCULATION
+# KELLY
 # =========================
 
 def calculate_kelly(trade_df):
@@ -82,7 +82,6 @@ def calculate_kelly(trade_df):
         return DEFAULT_RISK
 
     win_rate = len(wins) / len(trade_df)
-
     avg_win = wins["profit"].mean()
     avg_loss = abs(losses["profit"].mean())
 
@@ -98,7 +97,7 @@ def calculate_kelly(trade_df):
 
 
 # =========================
-# EQUITY MOMENTUM FILTER
+# EQUITY MOMENTUM
 # =========================
 
 def equity_momentum_multiplier(equity_df):
@@ -114,17 +113,14 @@ def equity_momentum_multiplier(equity_df):
     current_equity = equity_df["equity"].iloc[-1]
     current_ema = equity_df["ema"].iloc[-1]
 
-    if current_equity < current_ema:
-        return 0.5
-    else:
-        return 1.0
+    return 1.0 if current_equity >= current_ema else 0.5
 
 
 # =========================
 # VOLATILITY ADJUSTMENT
 # =========================
 
-def volatility_adjustment(trade_df):
+def volatility_multiplier(trade_df):
 
     if len(trade_df) < 10:
         return 1.0
@@ -147,6 +143,39 @@ def volatility_adjustment(trade_df):
 
 
 # =========================
+# REGIME DETECTION (NEW)
+# =========================
+
+def regime_multiplier(equity_df, trade_df):
+
+    if len(equity_df) < REGIME_LOOKBACK:
+        return 1.0
+
+    recent_equity = equity_df["equity"].iloc[-REGIME_LOOKBACK:]
+
+    slope = recent_equity.iloc[-1] - recent_equity.iloc[0]
+
+    recent_trades = trade_df.iloc[-REGIME_LOOKBACK:]
+
+    win_rate = len(recent_trades[recent_trades["profit"] > 0]) / len(recent_trades)
+
+    returns = recent_trades["profit"].pct_change().dropna()
+
+    vol = statistics.stdev(returns) if len(returns) > 1 else 0
+
+    # Trend mode
+    if slope > 0 and win_rate > 0.6 and vol < 0.02:
+        return 1.1
+
+    # Defensive mode
+    if slope < 0 or win_rate < 0.5 or vol > 0.03:
+        return 0.6
+
+    # Neutral
+    return 1.0
+
+
+# =========================
 # POSITION SIZE ENGINE
 # =========================
 
@@ -160,27 +189,20 @@ def calculate_position_size(stop_distance):
     if drawdown >= MAX_DRAWDOWN_LIMIT:
         raise Exception("❌ Trading frozen due to high drawdown.")
 
-    # Kelly
     kelly_risk = calculate_kelly(trade_df)
-
-    # Drawdown
     dd_factor = drawdown_multiplier(drawdown)
-
-    # Recovery smoothing
     recovery_factor = equity / peak if peak > 0 else 1
-
-    # Momentum
     momentum_factor = equity_momentum_multiplier(equity_df)
-
-    # Volatility
-    vol_factor = volatility_adjustment(trade_df)
+    vol_factor = volatility_multiplier(trade_df)
+    regime_factor = regime_multiplier(equity_df, trade_df)
 
     dynamic_risk = (
         kelly_risk *
         dd_factor *
         recovery_factor *
         momentum_factor *
-        vol_factor
+        vol_factor *
+        regime_factor
     )
 
     dynamic_risk = min(dynamic_risk, BASE_RISK_CAP)
