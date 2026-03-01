@@ -2,10 +2,6 @@ import os
 import random
 import statistics
 import psycopg2
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
-from io import BytesIO
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -32,44 +28,101 @@ def fetch_profits():
 
 
 # =====================================================
-# LOSS STREAK DETECTION
+# BASIC STATS
 # =====================================================
 
-def check_consecutive_losses():
+def get_trade_stats():
     profits = fetch_profits()
 
-    streak = 0
-    max_streak = 0
+    if not profits:
+        return 0, 0, 0
+
+    wins = [p for p in profits if p > 0]
+    losses = [abs(p) for p in profits if p <= 0]
+
+    win_rate = len(wins) / len(profits) if profits else 0
+    avg_win = statistics.mean(wins) if wins else 0
+    avg_loss = statistics.mean(losses) if losses else 1
+
+    return win_rate, avg_win, avg_loss
+
+
+# =====================================================
+# DRAWNDOWN
+# =====================================================
+
+def calculate_drawdown(initial_equity=100000):
+    profits = fetch_profits()
+    equity = initial_equity
+    peak = equity
+    max_dd = 0
 
     for p in profits:
+        equity += p
+        if equity > peak:
+            peak = equity
+        dd = peak - equity
+        max_dd = max(max_dd, dd)
+
+    dd_percent = (max_dd / peak) * 100 if peak != 0 else 0
+    return max_dd, round(dd_percent, 2)
+
+
+# =====================================================
+# LOSS STREAK
+# =====================================================
+
+def get_loss_streak():
+    profits = fetch_profits()
+    streak = 0
+
+    for p in reversed(profits):
         if p <= 0:
             streak += 1
-            max_streak = max(max_streak, streak)
         else:
-            streak = 0
+            break
 
-    if max_streak >= 7:
-        return "TRADE_STOP", max_streak
-    elif max_streak >= 5:
-        return "RISK_MODE", max_streak
-    elif max_streak >= 3:
-        return "WARNING", max_streak
-    else:
-        return "SAFE", max_streak
+    return streak
 
 
 # =====================================================
-# POSITION MULTIPLIER (FINAL ENGINE)
+# ADAPTIVE KELLY ENGINE
 # =====================================================
 
-def get_position_multiplier(initial_equity=100000):
-    loss_status, _ = check_consecutive_losses()
+def get_kelly_fraction():
+    win_rate, avg_win, avg_loss = get_trade_stats()
 
-    if loss_status == "TRADE_STOP":
+    if avg_loss == 0:
         return 0.0
-    elif loss_status == "RISK_MODE":
-        return 0.5
-    elif loss_status == "WARNING":
-        return 0.75
-    else:
-        return 1.0
+
+    R = avg_win / avg_loss
+    kelly = win_rate - ((1 - win_rate) / R)
+
+    kelly = max(0, kelly)
+
+    # Half Kelly (institutional safety)
+    kelly *= 0.5
+
+    # Drawdown suppression
+    _, dd_percent = calculate_drawdown()
+    if dd_percent > 10:
+        kelly *= 0.5
+
+    # Loss streak suppression
+    streak = get_loss_streak()
+    if streak >= 3:
+        kelly *= 0.7
+    if streak >= 5:
+        kelly *= 0.5
+    if streak >= 7:
+        kelly = 0
+
+    return round(kelly, 4)
+
+
+# =====================================================
+# FINAL POSITION SIZE
+# =====================================================
+
+def get_position_multiplier():
+    return get_kelly_fraction()
