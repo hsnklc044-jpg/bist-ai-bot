@@ -1,91 +1,55 @@
+import random
 import statistics
-from datetime import datetime
-from database import engine
-from sqlalchemy import text
-
-
-INITIAL_CAPITAL = 100000.0
-
-
-def get_all_profits():
-    try:
-        with engine.connect() as conn:
-            result = conn.execute(text("SELECT profit FROM trades"))
-            profits = [row[0] for row in result]
-        return profits
-    except Exception as e:
-        print("Database error:", e)
-        return []
-
-
-def calculate_equity_curve(profits):
-    equity = INITIAL_CAPITAL
-    curve = []
-
-    for p in profits:
-        equity += p
-        curve.append(equity)
-
-    return curve
 
 
 def get_performance_report():
-    profits = get_all_profits()
-
-    total_trades = len(profits)
-    wins = [p for p in profits if p > 0]
-    losses = [p for p in profits if p < 0]
-
-    total_profit = sum(profits)
-    current_equity = INITIAL_CAPITAL + total_profit
+    # Demo sabit değerler (DB bağlantısız stabil sürüm)
+    total_trades = 89
+    wins = 44
+    losses = 45
+    net_profit = -100.0
+    current_equity = 99900.0
 
     return {
         "total_trades": total_trades,
-        "wins": len(wins),
-        "losses": len(losses),
-        "net_profit": round(total_profit, 2),
-        "equity": round(current_equity, 2)
+        "wins": wins,
+        "losses": losses,
+        "net_profit": net_profit,
+        "current_equity": current_equity,
     }
 
 
-def get_risk_metrics():
-    profits = get_all_profits()
+def run_monte_carlo(
+    initial_equity=100000,
+    win_rate=0.4944,
+    avg_win=100,
+    avg_loss=-100,
+    trades=89,
+    simulations=1000,
+):
+    results = []
 
-    if not profits:
-        return {
-            "win_rate": 0,
-            "profit_factor": 0,
-            "avg_win": 0,
-            "avg_loss": 0,
-            "expectancy": 0,
-            "sharpe": 0
-        }
+    for _ in range(simulations):
+        equity = initial_equity
 
-    wins = [p for p in profits if p > 0]
-    losses = [p for p in profits if p < 0]
+        for _ in range(trades):
+            if random.random() < win_rate:
+                equity += avg_win
+            else:
+                equity += avg_loss
 
-    total_trades = len(profits)
+        results.append(equity)
 
-    win_rate = (len(wins) / total_trades) * 100 if total_trades > 0 else 0
+    mean_equity = round(statistics.mean(results), 2)
+    best_case = round(max(results), 2)
+    worst_case = round(min(results), 2)
 
-    gross_profit = sum(wins)
-    gross_loss = abs(sum(losses))
-
-    profit_factor = gross_profit / gross_loss if gross_loss != 0 else 0
-
-    avg_win = statistics.mean(wins) if wins else 0
-    avg_loss = statistics.mean(losses) if losses else 0
-
-    expectancy = statistics.mean(profits)
-
-    std_dev = statistics.stdev(profits) if len(profits) > 1 else 0
-    sharpe = expectancy / std_dev if std_dev != 0 else 0
+    ruin_count = sum(1 for r in results if r <= initial_equity * 0.5)
+    ruin_probability = round((ruin_count / simulations) * 100, 2)
 
     return {
-        "win_rate": round(win_rate, 2),
-        "profit_factor": round(profit_factor, 2),
-        "avg_win": round(avg_win, 2),
-        "avg_loss": round(avg_loss, 2),
-        "expectancy": round(expectancy, 2),
-        "sharpe": round(sharpe, 2)
+        "mean_equity": mean_equity,
+        "best_case": best_case,
+        "worst_case": worst_case,
+        "ruin_probability": ruin_probability,
     }
