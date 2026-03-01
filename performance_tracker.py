@@ -37,22 +37,19 @@ def get_performance_report(start_equity=100000):
         result = conn.execute(text("SELECT profit FROM trades"))
         profits = [row[0] for row in result]
 
-    total_trades = len(profits)
+    total = len(profits)
     wins = [p for p in profits if p > 0]
     losses = [p for p in profits if p <= 0]
 
-    win_count = len(wins)
-    loss_count = len(losses)
-
     net_profit = sum(profits)
-    current_equity = start_equity + net_profit
+    equity = start_equity + net_profit
 
     return {
-        "total_trades": total_trades,
-        "wins": win_count,
-        "losses": loss_count,
+        "total": total,
+        "wins": len(wins),
+        "losses": len(losses),
         "net_profit": net_profit,
-        "current_equity": current_equity
+        "equity": equity
     }
 
 
@@ -69,45 +66,41 @@ def get_risk_metrics():
     if not profits:
         return None
 
-    total_trades = len(profits)
+    total = len(profits)
     wins = [p for p in profits if p > 0]
     losses = [p for p in profits if p <= 0]
 
-    win_rate = len(wins) / total_trades if total_trades > 0 else 0
+    win_rate = len(wins) / total if total > 0 else 0
 
     avg_win = statistics.mean(wins) if wins else 0
     avg_loss = statistics.mean(losses) if losses else 0
 
-    gross_profit = sum(wins) if wins else 0
-    gross_loss = abs(sum(losses)) if losses else 0
+    gross_profit = sum(wins)
+    gross_loss = abs(sum(losses))
 
-    profit_factor = (
-        gross_profit / gross_loss if gross_loss != 0 else 0
-    )
+    profit_factor = gross_profit / gross_loss if gross_loss != 0 else 0
 
-    expectancy = (
-        (win_rate * avg_win) + ((1 - win_rate) * avg_loss)
-    )
+    expectancy = (win_rate * avg_win) + ((1 - win_rate) * avg_loss)
 
-    sharpe_ratio = (
+    sharpe = (
         statistics.mean(profits) / statistics.stdev(profits)
         if len(profits) > 1 and statistics.stdev(profits) != 0
         else 0
     )
 
     return {
-        "total_trades": total_trades,
+        "total": total,
         "win_rate": win_rate,
         "profit_factor": profit_factor,
         "avg_win": avg_win,
         "avg_loss": avg_loss,
         "expectancy": expectancy,
-        "sharpe_ratio": sharpe_ratio
+        "sharpe": sharpe
     }
 
 
 # ================================
-# MONTE CARLO SIMULATION
+# MONTE CARLO
 # ================================
 
 def monte_carlo_simulation(iterations=1000, start_equity=100000):
@@ -132,19 +125,15 @@ def monte_carlo_simulation(iterations=1000, start_equity=100000):
 
         final_equities.append(equity)
 
-    worst_case = min(final_equities)
-    best_case = max(final_equities)
-    average_case = statistics.mean(final_equities)
-
     return {
-        "worst_case": worst_case,
-        "best_case": best_case,
-        "average_case": average_case
+        "worst_equity": min(final_equities),
+        "best_equity": max(final_equities),
+        "avg_final_equity": statistics.mean(final_equities)
     }
 
 
 # ================================
-# EQUITY CHART (FIXED)
+# EQUITY CHART
 # ================================
 
 def generate_equity_chart():
