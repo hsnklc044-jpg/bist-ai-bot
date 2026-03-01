@@ -7,17 +7,17 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 
 # =========================
-# RISK CONFIG
+# CONFIG
 # =========================
 
-BASE_RISK_CAP = 0.03          # 🔒 MAX %3 risk
-DEFAULT_RISK = 0.02           # fallback risk
+BASE_RISK_CAP = 0.03
+DEFAULT_RISK = 0.02
 VOLATILITY_REFERENCE = 0.01
-MAX_DRAWDOWN_LIMIT = 25
+MAX_DRAWDOWN_LIMIT = 20  # Freeze above 20%
 
 
 # =========================
-# EQUITY + DRAWDOWN
+# EQUITY + DD
 # =========================
 
 def get_equity_and_drawdown():
@@ -42,7 +42,25 @@ def get_equity_and_drawdown():
 
 
 # =========================
-# KELLY CALCULATION
+# DRAWDOWN TIERS
+# =========================
+
+def drawdown_multiplier(drawdown):
+
+    if drawdown < 5:
+        return 1.0
+    elif drawdown < 10:
+        return 0.75
+    elif drawdown < 15:
+        return 0.50
+    elif drawdown < 20:
+        return 0.25
+    else:
+        return 0.0
+
+
+# =========================
+# KELLY
 # =========================
 
 def calculate_kelly(df):
@@ -58,8 +76,8 @@ def calculate_kelly(df):
 
     win_rate = len(wins) / len(df)
 
-    avg_win = wins["profit"].mean() if not wins.empty else 0
-    avg_loss = abs(losses["profit"].mean()) if not losses.empty else 0
+    avg_win = wins["profit"].mean()
+    avg_loss = abs(losses["profit"].mean())
 
     if avg_loss == 0:
         return DEFAULT_RISK
@@ -68,15 +86,13 @@ def calculate_kelly(df):
 
     kelly = win_rate - ((1 - win_rate) / R)
 
-    # Half Kelly (safer)
     half_kelly = max(kelly / 2, 0)
 
-    # Hard cap
     return min(half_kelly, BASE_RISK_CAP)
 
 
 # =========================
-# POSITION SIZE ENGINE
+# POSITION SIZE
 # =========================
 
 def calculate_position_size(stop_distance, volatility=0.01):
@@ -86,28 +102,24 @@ def calculate_position_size(stop_distance, volatility=0.01):
 
     equity, drawdown, df = get_equity_and_drawdown()
 
-    # 🔴 Kill switch
+    # Hard freeze
     if drawdown >= MAX_DRAWDOWN_LIMIT:
-        raise Exception("❌ Trading stopped due to max drawdown.")
+        raise Exception("❌ Trading frozen due to high drawdown.")
 
-    # 1️⃣ Kelly base
     kelly_risk = calculate_kelly(df)
 
-    # 2️⃣ Drawdown scaling (reduces risk only)
-    dd_factor = max(1 - drawdown / 100, 0.3)
+    # Tier multiplier
+    tier_factor = drawdown_multiplier(drawdown)
 
-    dynamic_risk = kelly_risk * dd_factor
+    dynamic_risk = kelly_risk * tier_factor
 
-    # 3️⃣ Volatility scaling (ONLY reduce risk)
+    # Volatility reduce only
     vol_factor = volatility / VOLATILITY_REFERENCE
-
     if vol_factor > 1:
         dynamic_risk = dynamic_risk / vol_factor
 
-    # 🔒 Final hard cap enforcement
     dynamic_risk = min(dynamic_risk, BASE_RISK_CAP)
 
-    # 4️⃣ Risk amount
     risk_amount = equity * dynamic_risk
     position_size = risk_amount / stop_distance
 
@@ -115,7 +127,7 @@ def calculate_position_size(stop_distance, volatility=0.01):
 
 
 # =========================
-# TRADE LOGGER
+# LOG TRADE
 # =========================
 
 def log_trade(symbol, side, entry_price, exit_price, quantity):
@@ -123,7 +135,7 @@ def log_trade(symbol, side, entry_price, exit_price, quantity):
     equity, drawdown, _ = get_equity_and_drawdown()
 
     if drawdown >= MAX_DRAWDOWN_LIMIT:
-        raise Exception("❌ Trading disabled due to drawdown.")
+        raise Exception("❌ Trading frozen due to drawdown.")
 
     if side.lower() == "long":
         profit = (exit_price - entry_price) * quantity
