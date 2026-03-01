@@ -13,7 +13,7 @@ engine = create_engine(DATABASE_URL)
 BASE_RISK_CAP = 0.03
 DEFAULT_RISK = 0.02
 VOLATILITY_REFERENCE = 0.01
-MAX_DRAWDOWN_LIMIT = 12  # 🔒 Freeze above 12%
+MAX_DRAWDOWN_LIMIT = 12
 
 
 # =========================
@@ -38,11 +38,11 @@ def get_equity_and_drawdown():
 
     drawdown = (peak - equity) / peak * 100 if peak > 0 else 0
 
-    return equity, drawdown, df
+    return equity, peak, drawdown, df
 
 
 # =========================
-# EARLY DEFENSIVE DRAWDOWN TIERS
+# DRAWDOWN TIERS
 # =========================
 
 def drawdown_multiplier(drawdown):
@@ -62,7 +62,7 @@ def drawdown_multiplier(drawdown):
 
 
 # =========================
-# KELLY CALCULATION
+# KELLY
 # =========================
 
 def calculate_kelly(df):
@@ -87,8 +87,6 @@ def calculate_kelly(df):
     R = avg_win / avg_loss
 
     kelly = win_rate - ((1 - win_rate) / R)
-
-    # Half Kelly
     half_kelly = max(kelly / 2, 0)
 
     return min(half_kelly, BASE_RISK_CAP)
@@ -103,26 +101,28 @@ def calculate_position_size(stop_distance, volatility=0.01):
     if stop_distance <= 0:
         return 0
 
-    equity, drawdown, df = get_equity_and_drawdown()
+    equity, peak, drawdown, df = get_equity_and_drawdown()
 
-    # 🔴 Hard freeze
     if drawdown >= MAX_DRAWDOWN_LIMIT:
         raise Exception("❌ Trading frozen due to high drawdown.")
 
-    # 1️⃣ Kelly base
     kelly_risk = calculate_kelly(df)
 
-    # 2️⃣ Defensive drawdown tier
+    # Tier multiplier
     tier_factor = drawdown_multiplier(drawdown)
 
-    dynamic_risk = kelly_risk * tier_factor
+    # 🔥 Recovery smoothing
+    recovery_factor = equity / peak if peak > 0 else 1
 
-    # 3️⃣ Volatility scaling (reduce only)
+    final_multiplier = tier_factor * recovery_factor
+
+    dynamic_risk = kelly_risk * final_multiplier
+
+    # Volatility reduce only
     vol_factor = volatility / VOLATILITY_REFERENCE
     if vol_factor > 1:
         dynamic_risk = dynamic_risk / vol_factor
 
-    # 🔒 Final hard cap
     dynamic_risk = min(dynamic_risk, BASE_RISK_CAP)
 
     risk_amount = equity * dynamic_risk
@@ -132,12 +132,12 @@ def calculate_position_size(stop_distance, volatility=0.01):
 
 
 # =========================
-# TRADE LOGGER
+# LOG TRADE
 # =========================
 
 def log_trade(symbol, side, entry_price, exit_price, quantity):
 
-    equity, drawdown, _ = get_equity_and_drawdown()
+    equity, peak, drawdown, _ = get_equity_and_drawdown()
 
     if drawdown >= MAX_DRAWDOWN_LIMIT:
         raise Exception("❌ Trading frozen due to drawdown.")
