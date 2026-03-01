@@ -4,9 +4,9 @@ import statistics
 import psycopg2
 
 
-# -------------------------------
+# =====================================================
 # DATABASE CONNECTION
-# -------------------------------
+# =====================================================
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -19,13 +19,13 @@ def get_connection():
 
 def fetch_profits():
     """
-    Trades tablosundan tüm profit değerlerini çeker.
+    Trades tablosundan profit değerlerini zaman sıralı çeker.
     """
     try:
         conn = get_connection()
         cur = conn.cursor()
 
-        cur.execute("SELECT profit FROM trades;")
+        cur.execute("SELECT profit FROM trades ORDER BY created_at ASC;")
         rows = cur.fetchall()
 
         cur.close()
@@ -34,13 +34,57 @@ def fetch_profits():
         return [float(r[0]) for r in rows if r[0] is not None]
 
     except Exception as e:
-        print(f"Database fetch error: {e}")
+        print(f"Database error: {e}")
         return []
 
 
-# -------------------------------
+# =====================================================
+# EQUITY CURVE
+# =====================================================
+
+def calculate_equity_curve(initial_equity=100000):
+    profits = fetch_profits()
+
+    equity = initial_equity
+    curve = [equity]
+
+    for p in profits:
+        equity += p
+        curve.append(round(equity, 2))
+
+    return curve
+
+
+# =====================================================
+# MAX DRAWDOWN
+# =====================================================
+
+def calculate_drawdown(initial_equity=100000):
+    curve = calculate_equity_curve(initial_equity)
+
+    if not curve:
+        return 0, 0
+
+    peak = curve[0]
+    max_drawdown = 0
+
+    for value in curve:
+        if value > peak:
+            peak = value
+
+        drawdown = peak - value
+
+        if drawdown > max_drawdown:
+            max_drawdown = drawdown
+
+    drawdown_percent = round((max_drawdown / peak) * 100, 2) if peak != 0 else 0
+
+    return round(max_drawdown, 2), drawdown_percent
+
+
+# =====================================================
 # PERFORMANCE REPORT
-# -------------------------------
+# =====================================================
 
 def get_performance_report(initial_equity=100000):
     profits = fetch_profits()
@@ -52,6 +96,8 @@ def get_performance_report(initial_equity=100000):
             "losses": 0,
             "net_profit": 0,
             "current_equity": initial_equity,
+            "max_drawdown": 0,
+            "drawdown_percent": 0,
         }
 
     total_trades = len(profits)
@@ -60,18 +106,22 @@ def get_performance_report(initial_equity=100000):
     net_profit = round(sum(profits), 2)
     current_equity = round(initial_equity + net_profit, 2)
 
+    max_dd, dd_percent = calculate_drawdown(initial_equity)
+
     return {
         "total_trades": total_trades,
         "wins": wins,
         "losses": losses,
         "net_profit": net_profit,
         "current_equity": current_equity,
+        "max_drawdown": max_dd,
+        "drawdown_percent": dd_percent,
     }
 
 
-# -------------------------------
+# =====================================================
 # MONTE CARLO (REAL DATA DRIVEN)
-# -------------------------------
+# =====================================================
 
 def run_monte_carlo(initial_equity=100000, simulations=1000):
     profits = fetch_profits()
@@ -111,9 +161,9 @@ def run_monte_carlo(initial_equity=100000, simulations=1000):
     }
 
 
-# -------------------------------
-# ADVANCED METRICS (OPTIONAL)
-# -------------------------------
+# =====================================================
+# ADVANCED RISK METRICS
+# =====================================================
 
 def calculate_advanced_metrics(initial_equity=100000):
     profits = fetch_profits()
