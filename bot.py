@@ -28,7 +28,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     message = (
-        "🤖 Institutional Portfolio Engine v6 aktif.\n\n"
+        "🤖 Institutional Portfolio Engine v7 aktif.\n\n"
         "Komutlar:\n"
         "/report\n"
         "/equity\n"
@@ -47,18 +47,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    data = get_performance_report()
+    try:
+        data = get_performance_report()
 
-    text = (
-        "📊 PERFORMANS RAPORU\n\n"
-        f"Toplam İşlem: {data['total_trades']}\n"
-        f"Kazanan: {data['wins']}\n"
-        f"Kaybeden: {data['losses']}\n"
-        f"Net Kar: {data['net_profit']} TL\n"
-        f"Güncel Equity: {data['equity']} TL"
-    )
+        text = (
+            "📊 PERFORMANS RAPORU\n\n"
+            f"Toplam İşlem: {data['total_trades']}\n"
+            f"Kazanan: {data['wins']}\n"
+            f"Kaybeden: {data['losses']}\n"
+            f"Net Kar: {data['net_profit']} TL\n"
+            f"Güncel Equity: {data['equity']} TL"
+        )
 
-    await update.message.reply_text(text)
+        await update.message.reply_text(text)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Report hata: {str(e)}")
 
 
 # ==================================================
@@ -67,8 +71,12 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    chart = generate_equity_chart()
-    await update.message.reply_photo(chart)
+    try:
+        chart = generate_equity_chart()
+        await update.message.reply_photo(chart)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Equity hata: {str(e)}")
 
 
 # ==================================================
@@ -77,20 +85,24 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def risk(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    data = get_risk_metrics()
+    try:
+        data = get_risk_metrics()
 
-    text = (
-        "📊 RISK METRICS PANEL\n\n"
-        f"Toplam İşlem: {data['total_trades']}\n"
-        f"Win Rate: {data['win_rate']}%\n"
-        f"Profit Factor: {data['profit_factor']}\n"
-        f"Avg Win: {data['avg_win']} TL\n"
-        f"Avg Loss: {data['avg_loss']} TL\n"
-        f"Expectancy: {data['expectancy']} TL\n"
-        f"Sharpe Ratio: {data['sharpe']}"
-    )
+        text = (
+            "📊 RISK METRICS PANEL\n\n"
+            f"Toplam İşlem: {data['total_trades']}\n"
+            f"Win Rate: {data['win_rate']}%\n"
+            f"Profit Factor: {data['profit_factor']}\n"
+            f"Avg Win: {data['avg_win']} TL\n"
+            f"Avg Loss: {data['avg_loss']} TL\n"
+            f"Expectancy: {data['expectancy']} TL\n"
+            f"Sharpe Ratio: {data['sharpe']}"
+        )
 
-    await update.message.reply_text(text)
+        await update.message.reply_text(text)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Risk hata: {str(e)}")
 
 
 # ==================================================
@@ -99,18 +111,22 @@ async def risk(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def montecarlo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    data = monte_carlo_simulation()
+    try:
+        data = monte_carlo_simulation()
 
-    text = (
-        "🎲 MONTE CARLO ANALYSIS\n\n"
-        f"Ortalama Final Equity: {data['avg_final_equity']} TL\n"
-        f"En Kötü Senaryo Equity: {data['worst_equity']} TL\n"
-        f"Ortalama Drawdown: {data['avg_drawdown']}%\n"
-        f"En Kötü Drawdown: {data['worst_drawdown']}%\n"
-        f"Risk of Ruin: {data['risk_of_ruin']}"
-    )
+        text = (
+            "🎲 MONTE CARLO ANALYSIS\n\n"
+            f"Ortalama Final Equity: {data['avg_final_equity']} TL\n"
+            f"En Kötü Senaryo Equity: {data['worst_equity']} TL\n"
+            f"Ortalama Drawdown: {data['avg_drawdown']}%\n"
+            f"En Kötü Drawdown: {data['worst_drawdown']}%\n"
+            f"Risk of Ruin: {data['risk_of_ruin']}"
+        )
 
-    await update.message.reply_text(text)
+        await update.message.reply_text(text)
+
+    except Exception as e:
+        await update.message.reply_text(f"❌ Monte Carlo hata: {str(e)}")
 
 
 # ==================================================
@@ -122,17 +138,18 @@ async def position(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         stop_distance = float(context.args[0])
         risk_percent = float(context.args[1])
+
+        size = calculate_position_size(stop_distance, risk_percent)
+
+        await update.message.reply_text(
+            f"📐 Position Size: {size} lot\n"
+            "Adaptive Portfolio Risk Engine aktif."
+        )
+
     except:
         await update.message.reply_text(
             "Kullanım: /position STOP_DISTANCE RISK_PERCENT"
         )
-        return
-
-    size = calculate_position_size(stop_distance, risk_percent)
-
-    await update.message.reply_text(
-        f"📐 Position Size: {size} lot\nAdaptive Portfolio Risk Engine aktif."
-    )
 
 
 # ==================================================
@@ -141,12 +158,20 @@ async def position(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def stresstest(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    stress_sequence = [-100] * 10 + [100] * 5
+    try:
+        stress_sequence = [-100] * 10 + [100] * 5
 
-    for p in stress_sequence:
-        log_trade(p)
+        for p in stress_sequence:
+            log_trade(p)
 
-    await update.message.reply_text("✅ Stress test trade seti eklendi.")
+        await update.message.reply_text(
+            "✅ Stress test trade seti eklendi. (+15 işlem)"
+        )
+
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Stress test hata: {str(e)}"
+        )
 
 
 # ==================================================
@@ -165,7 +190,7 @@ def main():
     app.add_handler(CommandHandler("position", position))
     app.add_handler(CommandHandler("stresstest", stresstest))
 
-    print("Institutional Portfolio Engine v6 başlatıldı...")
+    print("Institutional Portfolio Engine v7 başlatıldı...")
     app.run_polling()
 
 
