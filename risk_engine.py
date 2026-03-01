@@ -1,58 +1,72 @@
 import os
 from sqlalchemy import create_engine, text
+import pandas as pd
 from performance_tracker import INITIAL_EQUITY
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 
-BASE_RISK = 0.02
+BASE_RISK_CAP = 0.05  # max risk cap %5
 VOLATILITY_REFERENCE = 0.01
-MAX_DRAWDOWN_LIMIT = 25  # Hard kill switch
+MAX_DRAWDOWN_LIMIT = 25
 
 
 # =========================
-# CURRENT EQUITY + DRAWDOWN
+# EQUITY + DRAWDOWN
 # =========================
 
 def get_equity_and_drawdown():
 
     with engine.connect() as conn:
-        rows = conn.execute(
-            text("SELECT profit FROM trades ORDER BY created_at ASC")
-        ).fetchall()
+        df = pd.read_sql(
+            "SELECT profit FROM trades ORDER BY created_at ASC",
+            conn
+        )
 
     equity = INITIAL_EQUITY
     peak = equity
 
-    for row in rows:
-        equity += row[0]
+    for p in df["profit"]:
+        equity += p
         peak = max(peak, equity)
 
-    drawdown = 0
-    if peak > 0:
-        drawdown = (peak - equity) / peak * 100
+    drawdown = (peak - equity) / peak * 100 if peak > 0 else 0
 
-    return equity, drawdown
+    return equity, drawdown, df
 
 
 # =========================
-# DYNAMIC RISK SCALER
+# KELLY CALCULATION
 # =========================
 
-def get_dynamic_risk(drawdown):
+def calculate_kelly(df):
 
-    if drawdown < 5:
-        return BASE_RISK
-    elif drawdown < 10:
-        return BASE_RISK * 0.75
-    elif drawdown < 15:
-        return BASE_RISK * 0.5
-    else:
-        return BASE_RISK * 0.25
+    if df.empty:
+        return 0.02  # default %2
+
+    wins = df[df["profit"] > 0]
+    losses = df[df["profit"] <= 0]
+
+    if losses.empty:
+        return 0.02
+
+    win_rate = len(wins) / len(df)
+    avg_win = wins["profit"].mean()
+    avg_loss = abs(losses["profit"].mean())
+
+    if avg_loss == 0:
+        return 0.02
+
+    R = avg_win / avg_loss
+    kelly = win_rate - ((1 - win_rate) / R)
+
+    half_kelly = max(kelly / 2, 0)
+
+    return min(half_kelly, BASE_RISK_CAP)
 
 
 # =========================
-# VOL ADJUSTED POSITION
+# DYNAMIC POSITION SIZE
 # =========================
 
 def calculate_position_size(stop_distance, volatility=0.01):
@@ -60,20 +74,26 @@ def calculate_position_size(stop_distance, volatility=0.01):
     if stop_distance <= 0:
         return 0
 
-    equity, drawdown = get_equity_and_drawdown()
+    equity, drawdown, df = get_equity_and_drawdown()
 
     if drawdown >= MAX_DRAWDOWN_LIMIT:
-        raise Exception("❌ Max drawdown limit reached. Trading disabled.")
+        raise Exception("❌ Trading stopped due to max drawdown.")
 
-    dynamic_risk = get_dynamic_risk(drawdown)
+    kelly_risk = calculate_kelly(df)
 
+    # Drawdown scaler
+    dd_factor = max(1 - drawdown / 100, 0.25)
+
+    dynamic_risk = kelly_risk * dd_factor
+
+    # Volatility normalization
     vol_factor = volatility / VOLATILITY_REFERENCE
     if vol_factor <= 0:
         vol_factor = 1
 
     adjusted_risk = dynamic_risk / vol_factor
-    risk_amount = equity * adjusted_risk
 
+    risk_amount = equity * adjusted_risk
     position_size = risk_amount / stop_distance
 
     return round(position_size, 2)
@@ -85,10 +105,10 @@ def calculate_position_size(stop_distance, volatility=0.01):
 
 def log_trade(symbol, side, entry_price, exit_price, quantity):
 
-    equity, drawdown = get_equity_and_drawdown()
+    equity, drawdown, _ = get_equity_and_drawdown()
 
     if drawdown >= MAX_DRAWDOWN_LIMIT:
-        raise Exception("❌ Trading stopped due to max drawdown.")
+        raise Exception("❌ Trading disabled due to drawdown.")
 
     if side.lower() == "long":
         profit = (exit_price - entry_price) * quantity
