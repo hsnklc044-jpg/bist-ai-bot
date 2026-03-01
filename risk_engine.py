@@ -67,7 +67,7 @@ def drawdown_multiplier(drawdown):
 
 
 # =========================
-# KELLY (Half Kelly)
+# KELLY
 # =========================
 
 def calculate_kelly(trade_df):
@@ -93,11 +93,11 @@ def calculate_kelly(trade_df):
 
     half_kelly = max(kelly / 2, 0)
 
-    return min(half_kelly, BASE_RISK_CAP)
+    return max(0, half_kelly)
 
 
 # =========================
-# EQUITY MOMENTUM (EMA)
+# EQUITY MOMENTUM
 # =========================
 
 def equity_momentum_multiplier(equity_df):
@@ -117,7 +117,7 @@ def equity_momentum_multiplier(equity_df):
 
 
 # =========================
-# INTERNAL VOLATILITY
+# VOLATILITY
 # =========================
 
 def volatility_multiplier(trade_df):
@@ -146,34 +146,43 @@ def volatility_multiplier(trade_df):
 # REGIME DETECTION
 # =========================
 
-def regime_multiplier(equity_df, trade_df):
+def detect_regime(equity_df, trade_df):
 
     if len(equity_df) < REGIME_LOOKBACK:
-        return 1.0
+        return "neutral"
 
     recent_equity = equity_df["equity"].iloc[-REGIME_LOOKBACK:]
     slope = recent_equity.iloc[-1] - recent_equity.iloc[0]
 
     recent_trades = trade_df.iloc[-REGIME_LOOKBACK:]
-
-    if recent_trades.empty:
-        return 1.0
-
-    win_rate = len(recent_trades[recent_trades["profit"] > 0]) / len(recent_trades)
+    win_rate = len(recent_trades[recent_trades["profit"] > 0]) / len(recent_trades) if len(recent_trades) > 0 else 0
 
     returns = recent_trades["profit"].pct_change().dropna()
     vol = statistics.stdev(returns) if len(returns) > 1 else 0
 
-    # Trend Mode
     if slope > 0 and win_rate > 0.6 and vol < 0.02:
-        return 1.1
+        return "trend"
 
-    # Defensive Mode
     if slope < 0 or win_rate < 0.5 or vol > 0.03:
-        return 0.6
+        return "defensive"
 
-    # Neutral
-    return 1.0
+    return "neutral"
+
+
+# =========================
+# DYNAMIC RISK CEILING
+# =========================
+
+def regime_risk_cap(regime):
+
+    if regime == "trend":
+        return 0.04
+    elif regime == "neutral":
+        return 0.03
+    elif regime == "defensive":
+        return 0.015
+    else:
+        return BASE_RISK_CAP
 
 
 # =========================
@@ -190,14 +199,16 @@ def calculate_position_size(stop_distance, external_volatility=None):
     if drawdown >= MAX_DRAWDOWN_LIMIT:
         raise Exception("❌ Trading frozen due to high drawdown.")
 
+    regime = detect_regime(equity_df, trade_df)
+    dynamic_cap = regime_risk_cap(regime)
+
     kelly_risk = calculate_kelly(trade_df)
     dd_factor = drawdown_multiplier(drawdown)
     recovery_factor = equity / peak if peak > 0 else 1
     momentum_factor = equity_momentum_multiplier(equity_df)
     vol_factor = volatility_multiplier(trade_df)
-    regime_factor = regime_multiplier(equity_df, trade_df)
 
-    # External volatility param
+    # External volatility
     if external_volatility is not None:
         if external_volatility < 0.01:
             external_vol_mult = 1.0
@@ -216,11 +227,10 @@ def calculate_position_size(stop_distance, external_volatility=None):
         recovery_factor *
         momentum_factor *
         vol_factor *
-        regime_factor *
         external_vol_mult
     )
 
-    dynamic_risk = min(dynamic_risk, BASE_RISK_CAP)
+    dynamic_risk = min(dynamic_risk, dynamic_cap)
 
     risk_amount = equity * dynamic_risk
     position_size = risk_amount / stop_distance
