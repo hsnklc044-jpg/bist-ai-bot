@@ -7,10 +7,19 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from performance_tracker import get_performance_report, run_monte_carlo
+from performance_tracker import (
+    get_performance_report,
+    run_monte_carlo,
+    generate_equity_chart,
+    calculate_drawdown,
+)
 from risk_engine import get_risk_metrics
 
-# Logging
+
+# =====================================================
+# LOGGING
+# =====================================================
+
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
@@ -18,21 +27,29 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+
+# =====================================================
+# ENV VARIABLES
+# =====================================================
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 
 if not TELEGRAM_TOKEN:
     raise ValueError("TELEGRAM_TOKEN environment variable not set.")
 
 
-# ---------------- COMMANDS ---------------- #
+# =====================================================
+# COMMANDS
+# =====================================================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message = (
-        "🚀 Institutional Portfolio Engine (Stable Core) aktif.\n\n"
+        "🚀 Institutional Portfolio Engine\n\n"
         "Komutlar:\n"
         "/report\n"
         "/risk\n"
-        "/montecarlo"
+        "/montecarlo\n"
+        "/equity"
     )
     await update.message.reply_text(message)
 
@@ -47,7 +64,9 @@ async def report(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"Kazanan: {data['wins']}\n"
             f"Kaybeden: {data['losses']}\n"
             f"Net Kar: {data['net_profit']} TL\n"
-            f"Güncel Equity: {data['current_equity']} TL"
+            f"Güncel Equity: {data['current_equity']} TL\n"
+            f"Max Drawdown: {data['max_drawdown']} TL\n"
+            f"Drawdown %: {data['drawdown_percent']}%"
         )
 
         await update.message.reply_text(message)
@@ -97,7 +116,32 @@ async def montecarlo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Monte Carlo hesaplanamadı.")
 
 
-# ---------------- MAIN ---------------- #
+async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        chart = generate_equity_chart()
+
+        if chart is None:
+            await update.message.reply_text("📭 Henüz trade verisi yok.")
+            return
+
+        max_dd, dd_percent = calculate_drawdown()
+
+        caption = (
+            "📈 EQUITY CURVE\n\n"
+            f"Max Drawdown: {max_dd} TL\n"
+            f"Drawdown %: {dd_percent}%"
+        )
+
+        await update.message.reply_photo(photo=chart, caption=caption)
+
+    except Exception as e:
+        logger.error(f"Equity error: {e}")
+        await update.message.reply_text("❌ Equity grafiği üretilemedi.")
+
+
+# =====================================================
+# MAIN
+# =====================================================
 
 def main():
     application = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
@@ -106,8 +150,9 @@ def main():
     application.add_handler(CommandHandler("report", report))
     application.add_handler(CommandHandler("risk", risk))
     application.add_handler(CommandHandler("montecarlo", montecarlo))
+    application.add_handler(CommandHandler("equity", equity))
 
-    logger.info("Institutional Portfolio Engine Stable Core başlatıldı...")
+    logger.info("Institutional Portfolio Engine başlatıldı...")
     application.run_polling()
 
 
