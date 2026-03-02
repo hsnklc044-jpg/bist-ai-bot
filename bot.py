@@ -48,7 +48,9 @@ def init_db():
             symbol TEXT,
             side TEXT,
             entry FLOAT,
-            target FLOAT
+            target FLOAT,
+            pnl FLOAT DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
         """)
 
@@ -65,9 +67,9 @@ def init_db():
 # -------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("BIST AI Bot aktif 🚀")
+    await update.message.reply_text("BIST AI Performance Engine aktif 🚀")
 
-# 🔥 GÜÇLENDİRİLMİŞ ADDTRADE
+# 🔥 ADDTRADE + PNL HESABI
 async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         text = update.message.text.strip()
@@ -84,44 +86,75 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         entry = float(entry)
         target = float(target)
 
+        # PNL hesap
+        if side.lower() == "long":
+            pnl = target - entry
+        else:
+            pnl = entry - target
+
         conn = get_connection()
         cur = conn.cursor()
 
         cur.execute(
-            "INSERT INTO trades (symbol, side, entry, target) VALUES (%s, %s, %s, %s)",
-            (symbol.upper(), side.lower(), entry, target)
+            "INSERT INTO trades (symbol, side, entry, target, pnl) VALUES (%s, %s, %s, %s, %s)",
+            (symbol.upper(), side.lower(), entry, target, pnl)
         )
 
         conn.commit()
         cur.close()
         conn.close()
 
-        await update.message.reply_text("✅ Trade kaydedildi.")
+        await update.message.reply_text(f"✅ Trade kaydedildi. PnL: {round(pnl,2)}")
 
     except Exception as e:
         logger.error(f"ADDTRADE ERROR: {e}")
         await update.message.reply_text("❌ Sistem hatası.")
 
+# 🔥 PROFESYONEL EQUITY
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         conn = get_connection()
         cur = conn.cursor()
 
-        cur.execute("SELECT entry, target FROM trades")
+        cur.execute("SELECT pnl FROM trades;")
         rows = cur.fetchall()
 
         if not rows:
             await update.message.reply_text("Henüz trade yok.")
             return
 
-        equity = 0
-        for entry, target in rows:
-            equity += (target - entry)
+        pnls = [r[0] for r in rows]
+
+        total_trades = len(pnls)
+        wins = len([p for p in pnls if p > 0])
+        losses = len([p for p in pnls if p < 0])
+
+        win_rate = round((wins / total_trades) * 100, 2) if total_trades > 0 else 0
+        net_pnl = round(sum(pnls), 2)
+
+        avg_win = round(sum([p for p in pnls if p > 0]) / wins, 2) if wins > 0 else 0
+        avg_loss = round(sum([p for p in pnls if p < 0]) / losses, 2) if losses > 0 else 0
+
+        rr = round(abs(avg_win / avg_loss), 2) if avg_loss != 0 else 0
+
+        msg = f"""
+📊 TRADE PERFORMANS
+
+Toplam Trade: {total_trades}
+Kazanan: {wins}
+Kaybeden: {losses}
+Win Rate: %{win_rate}
+
+💰 Net PnL: {net_pnl}
+📈 Ortalama Kazanç: {avg_win}
+📉 Ortalama Zarar: {avg_loss}
+⚖️ Risk/Reward: {rr}
+"""
+
+        await update.message.reply_text(msg)
 
         cur.close()
         conn.close()
-
-        await update.message.reply_text(f"📈 Güncel Equity: {round(equity, 2)}")
 
     except Exception as e:
         logger.error(f"EQUITY ERROR: {e}")
@@ -148,10 +181,8 @@ def main():
     application.add_handler(CommandHandler("addtrade", addtrade))
     application.add_handler(CommandHandler("equity", equity))
 
-    # 🔥 Conflict fix
-    application.run_polling(
-        drop_pending_updates=True
-    )
+    # Conflict önleyici
+    application.run_polling(drop_pending_updates=True)
 
 # -------------------------
 
