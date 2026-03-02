@@ -17,10 +17,6 @@ def get_connection():
 
 
 def fetch_symbol_profits():
-    """
-    trades table must contain:
-    symbol | profit | created_at
-    """
     try:
         conn = get_connection()
         cur = conn.cursor()
@@ -39,6 +35,43 @@ def fetch_profits():
 
 
 # =====================================================
+# RISK PARITY PER SYMBOL
+# =====================================================
+
+def get_symbol_volatility():
+    rows = fetch_symbol_profits()
+
+    symbol_data = defaultdict(list)
+
+    for symbol, profit in rows:
+        symbol_data[symbol].append(float(profit))
+
+    vol_dict = {}
+
+    for symbol, profits in symbol_data.items():
+        if len(profits) > 5:
+            vol_dict[symbol] = statistics.stdev(profits)
+        else:
+            vol_dict[symbol] = 1  # fallback
+
+    return vol_dict
+
+
+def get_risk_parity_weights():
+    vol_dict = get_symbol_volatility()
+
+    if not vol_dict:
+        return {}
+
+    inv_vol = {s: 1/v if v != 0 else 0 for s, v in vol_dict.items()}
+    total = sum(inv_vol.values())
+
+    weights = {s: round(inv_vol[s]/total, 3) for s in inv_vol}
+
+    return weights
+
+
+# =====================================================
 # CORRELATION ENGINE
 # =====================================================
 
@@ -46,18 +79,16 @@ def get_average_correlation():
     rows = fetch_symbol_profits()
 
     if len(rows) < 20:
-        return 0  # not enough data
+        return 0
 
     symbol_data = defaultdict(list)
 
     for symbol, profit in rows:
         symbol_data[symbol].append(float(profit))
 
-    # Need at least 2 symbols
     if len(symbol_data) < 2:
         return 0
 
-    # Align lengths
     min_len = min(len(v) for v in symbol_data.values())
 
     matrix = []
@@ -65,10 +96,8 @@ def get_average_correlation():
         matrix.append(profits[-min_len:])
 
     matrix = np.array(matrix)
-
     corr_matrix = np.corrcoef(matrix)
 
-    # Extract upper triangle without diagonal
     correlations = []
     n = corr_matrix.shape[0]
 
@@ -83,7 +112,7 @@ def get_average_correlation():
 
 
 # =====================================================
-# BAYESIAN WIN RATE
+# BAYESIAN EDGE
 # =====================================================
 
 def get_bayesian_winrate():
@@ -100,10 +129,6 @@ def get_bayesian_winrate():
 
     return alpha / (alpha + beta)
 
-
-# =====================================================
-# RISK REWARD
-# =====================================================
 
 def get_avg_rr():
     profits = fetch_profits()
@@ -141,7 +166,7 @@ def monte_carlo_tail_risk(initial_equity=100000, simulations=300):
 
 
 # =====================================================
-# DRAWNDOWN
+# DRAWNDOWN & LOSS
 # =====================================================
 
 def calculate_drawdown(initial_equity=100000):
@@ -159,10 +184,6 @@ def calculate_drawdown(initial_equity=100000):
     return (max_dd / peak) * 100 if peak != 0 else 0
 
 
-# =====================================================
-# LOSS STREAK
-# =====================================================
-
 def get_loss_streak():
     profits = fetch_profits()
     streak = 0
@@ -177,7 +198,7 @@ def get_loss_streak():
 
 
 # =====================================================
-# FINAL POSITION ENGINE (FULL INSTITUTIONAL STACK)
+# FINAL MULTIPLIER
 # =====================================================
 
 def get_position_multiplier():
@@ -189,9 +210,8 @@ def get_position_multiplier():
 
     kelly = win_rate - ((1 - win_rate) / R)
     kelly = max(0, kelly)
-    kelly *= 0.5  # half Kelly
+    kelly *= 0.5
 
-    # Monte Carlo tail
     mc_ratio = monte_carlo_tail_risk()
 
     if mc_ratio < 0.7:
@@ -201,12 +221,10 @@ def get_position_multiplier():
     elif mc_ratio < 0.9:
         kelly *= 0.5
 
-    # Drawdown
     dd_percent = calculate_drawdown()
     if dd_percent > 10:
         kelly *= 0.5
 
-    # Loss streak
     streak = get_loss_streak()
     if streak >= 3:
         kelly *= 0.7
@@ -215,7 +233,6 @@ def get_position_multiplier():
     if streak >= 7:
         return 0.0
 
-    # Correlation suppression
     avg_corr = get_average_correlation()
 
     if avg_corr > 0.8:
