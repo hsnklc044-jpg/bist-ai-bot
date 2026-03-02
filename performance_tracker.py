@@ -1,7 +1,7 @@
 import os
 import statistics
+import random
 import psycopg2
-from math import sqrt
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -28,19 +28,18 @@ def fetch_profits():
 
 
 # =====================================================
-# BAYESIAN EDGE UPDATE
+# BAYESIAN WIN RATE
 # =====================================================
 
 def get_bayesian_winrate():
     profits = fetch_profits()
 
     if not profits:
-        return 0.5  # neutral prior
+        return 0.5
 
     wins = len([p for p in profits if p > 0])
     losses = len([p for p in profits if p <= 0])
 
-    # Beta(2,2) prior
     alpha = wins + 2
     beta = losses + 2
 
@@ -48,7 +47,7 @@ def get_bayesian_winrate():
 
 
 # =====================================================
-# RISK/REWARD
+# RISK REWARD
 # =====================================================
 
 def get_avg_rr():
@@ -60,19 +59,39 @@ def get_avg_rr():
     if not wins or not losses:
         return 1
 
-    avg_win = statistics.mean(wins)
-    avg_loss = statistics.mean(losses)
-
-    return avg_win / avg_loss if avg_loss != 0 else 1
+    return statistics.mean(wins) / statistics.mean(losses)
 
 
 # =====================================================
-# DRAWNDOWN
+# MONTE CARLO CONFIDENCE
+# =====================================================
+
+def monte_carlo_tail_risk(initial_equity=100000, simulations=500):
+    profits = fetch_profits()
+
+    if not profits:
+        return 1.0
+
+    results = []
+
+    for _ in range(simulations):
+        equity = initial_equity
+        for _ in profits:
+            equity += random.choice(profits)
+        results.append(equity)
+
+    results.sort()
+    worst_5_percent = results[int(0.05 * len(results))]
+
+    return worst_5_percent / initial_equity
+
+
+# =====================================================
+# DRAWDOWN
 # =====================================================
 
 def calculate_drawdown(initial_equity=100000):
     profits = fetch_profits()
-
     equity = initial_equity
     peak = equity
     max_dd = 0
@@ -83,8 +102,7 @@ def calculate_drawdown(initial_equity=100000):
         dd = peak - equity
         max_dd = max(max_dd, dd)
 
-    dd_percent = (max_dd / peak) * 100 if peak != 0 else 0
-    return max_dd, round(dd_percent, 2)
+    return (max_dd / peak) * 100 if peak != 0 else 0
 
 
 # =====================================================
@@ -105,7 +123,7 @@ def get_loss_streak():
 
 
 # =====================================================
-# VOLATILITY REGIME
+# VOL REGIME
 # =====================================================
 
 def get_volatility_regime():
@@ -128,7 +146,7 @@ def get_volatility_regime():
 
 
 # =====================================================
-# BAYESIAN KELLY ENGINE
+# FINAL POSITION ENGINE
 # =====================================================
 
 def get_position_multiplier():
@@ -138,15 +156,22 @@ def get_position_multiplier():
     if R <= 0:
         return 0.0
 
-    # Kelly formula
     kelly = win_rate - ((1 - win_rate) / R)
     kelly = max(0, kelly)
+    kelly *= 0.5  # half Kelly
 
-    # Half Kelly institutional safety
-    kelly *= 0.5
+    # Monte Carlo tail risk adjustment
+    mc_ratio = monte_carlo_tail_risk()
+
+    if mc_ratio < 0.7:
+        return 0.0
+    elif mc_ratio < 0.8:
+        kelly *= 0.3
+    elif mc_ratio < 0.9:
+        kelly *= 0.5
 
     # Drawdown suppression
-    _, dd_percent = calculate_drawdown()
+    dd_percent = calculate_drawdown()
     if dd_percent > 10:
         kelly *= 0.5
 
@@ -159,7 +184,7 @@ def get_position_multiplier():
     if streak >= 7:
         return 0.0
 
-    # Volatility suppression
+    # Volatility regime
     regime = get_volatility_regime()
     if regime == "HIGH":
         kelly *= 0.5
