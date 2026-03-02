@@ -1,7 +1,7 @@
 import os
-import random
 import statistics
 import psycopg2
+from math import sqrt
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -28,46 +28,42 @@ def fetch_profits():
 
 
 # =====================================================
-# BASIC STATS
+# BAYESIAN EDGE UPDATE
 # =====================================================
 
-def get_trade_stats():
+def get_bayesian_winrate():
     profits = fetch_profits()
 
     if not profits:
-        return 0, 0, 0
+        return 0.5  # neutral prior
+
+    wins = len([p for p in profits if p > 0])
+    losses = len([p for p in profits if p <= 0])
+
+    # Beta(2,2) prior
+    alpha = wins + 2
+    beta = losses + 2
+
+    return alpha / (alpha + beta)
+
+
+# =====================================================
+# RISK/REWARD
+# =====================================================
+
+def get_avg_rr():
+    profits = fetch_profits()
 
     wins = [p for p in profits if p > 0]
     losses = [abs(p) for p in profits if p <= 0]
 
-    win_rate = len(wins) / len(profits)
-    avg_win = statistics.mean(wins) if wins else 0
-    avg_loss = statistics.mean(losses) if losses else 1
+    if not wins or not losses:
+        return 1
 
-    return win_rate, avg_win, avg_loss
+    avg_win = statistics.mean(wins)
+    avg_loss = statistics.mean(losses)
 
-
-# =====================================================
-# VOLATILITY REGIME DETECTION
-# =====================================================
-
-def get_volatility_regime():
-    profits = fetch_profits()
-
-    if len(profits) < 10:
-        return "INSUFFICIENT_DATA"
-
-    mean = statistics.mean(profits)
-    std = statistics.stdev(profits)
-
-    if std < abs(mean) * 0.5:
-        return "LOW"
-    elif std < abs(mean):
-        return "NORMAL"
-    elif std < abs(mean) * 2:
-        return "HIGH"
-    else:
-        return "EXTREME"
+    return avg_win / avg_loss if avg_loss != 0 else 1
 
 
 # =====================================================
@@ -76,6 +72,7 @@ def get_volatility_regime():
 
 def calculate_drawdown(initial_equity=100000):
     profits = fetch_profits()
+
     equity = initial_equity
     peak = equity
     max_dd = 0
@@ -108,20 +105,44 @@ def get_loss_streak():
 
 
 # =====================================================
-# ADAPTIVE KELLY + VOL REGIME
+# VOLATILITY REGIME
+# =====================================================
+
+def get_volatility_regime():
+    profits = fetch_profits()
+
+    if len(profits) < 10:
+        return "INSUFFICIENT"
+
+    mean = statistics.mean(profits)
+    std = statistics.stdev(profits)
+
+    if std < abs(mean) * 0.5:
+        return "LOW"
+    elif std < abs(mean):
+        return "NORMAL"
+    elif std < abs(mean) * 2:
+        return "HIGH"
+    else:
+        return "EXTREME"
+
+
+# =====================================================
+# BAYESIAN KELLY ENGINE
 # =====================================================
 
 def get_position_multiplier():
-    win_rate, avg_win, avg_loss = get_trade_stats()
+    win_rate = get_bayesian_winrate()
+    R = get_avg_rr()
 
-    if avg_loss == 0:
+    if R <= 0:
         return 0.0
 
-    R = avg_win / avg_loss
+    # Kelly formula
     kelly = win_rate - ((1 - win_rate) / R)
     kelly = max(0, kelly)
 
-    # Half Kelly
+    # Half Kelly institutional safety
     kelly *= 0.5
 
     # Drawdown suppression
@@ -138,11 +159,11 @@ def get_position_multiplier():
     if streak >= 7:
         return 0.0
 
-    # Volatility regime suppression
+    # Volatility suppression
     regime = get_volatility_regime()
     if regime == "HIGH":
         kelly *= 0.5
-    elif regime == "EXTREME":
+    if regime == "EXTREME":
         return 0.0
 
     return round(kelly, 4)
