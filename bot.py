@@ -74,7 +74,7 @@ def init_db():
 # -------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 Performance Engine + Risk Engine aktif")
+    await update.message.reply_text("🚀 Performance + Risk Engine aktif")
 
 # -------------------------
 # ADD TRADE
@@ -100,9 +100,10 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             pnl = entry - target
 
-        # Günlük zarar kontrolü
         conn = get_connection()
         cur = conn.cursor()
+
+        # Günlük zarar kontrolü
         cur.execute("SELECT SUM(pnl) FROM trades WHERE created_at::date = CURRENT_DATE;")
         today_pnl = cur.fetchone()[0] or 0
 
@@ -158,7 +159,6 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         avg_loss = round(sum([p for p in pnls if p < 0]) / losses, 2) if losses > 0 else 0
         rr = round(abs(avg_win / avg_loss), 2) if avg_loss != 0 else 0
 
-        # Equity curve + drawdown
         cumulative = 0
         peak = 0
         max_drawdown = 0
@@ -197,7 +197,7 @@ Win Rate: %{win_rate}
         await update.message.reply_text("❌ Equity hesaplanamadı.")
 
 # -------------------------
-# RISK COMMANDS
+# RISK SETTINGS
 # -------------------------
 
 async def setcapital(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -231,6 +231,53 @@ async def risk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 # -------------------------
+# POSITION SIZE
+# -------------------------
+
+async def position(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global USER_CAPITAL, RISK_PERCENT
+
+    try:
+        if USER_CAPITAL == 0:
+            await update.message.reply_text("Önce /setcapital ile sermaye gir.")
+            return
+
+        if len(context.args) != 2:
+            await update.message.reply_text("❌ Kullanım: /position 50 48")
+            return
+
+        entry = float(context.args[0])
+        stop = float(context.args[1])
+
+        stop_distance = abs(entry - stop)
+        if stop_distance == 0:
+            await update.message.reply_text("Stop mesafesi 0 olamaz.")
+            return
+
+        risk_amount = USER_CAPITAL * (RISK_PERCENT / 100)
+        position_size = risk_amount / stop_distance
+
+        msg = f"""
+📊 POZİSYON HESABI
+
+💰 Sermaye: {USER_CAPITAL}
+🎯 Risk: %{RISK_PERCENT}
+📉 Maks Risk: {round(risk_amount,2)}
+
+📍 Entry: {entry}
+🛑 Stop: {stop}
+📏 Stop Mesafesi: {round(stop_distance,2)}
+
+📦 Önerilen Lot: {round(position_size,2)}
+"""
+
+        await update.message.reply_text(msg)
+
+    except Exception as e:
+        logger.error(f"POSITION ERROR: {e}")
+        await update.message.reply_text("❌ Hesaplama hatası.")
+
+# -------------------------
 # MAIN
 # -------------------------
 
@@ -249,6 +296,7 @@ def main():
     app.add_handler(CommandHandler("setcapital", setcapital))
     app.add_handler(CommandHandler("setrisk", setrisk))
     app.add_handler(CommandHandler("risk", risk))
+    app.add_handler(CommandHandler("position", position))
 
     app.run_polling(drop_pending_updates=True)
 
