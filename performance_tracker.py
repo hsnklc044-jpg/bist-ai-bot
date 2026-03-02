@@ -8,9 +8,7 @@ import numpy as np
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
-# =====================================================
-# DATABASE
-# =====================================================
+# ================= DATABASE =================
 
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
@@ -34,86 +32,56 @@ def fetch_profits():
     return [float(r[1]) for r in rows]
 
 
-# =====================================================
-# RISK PARITY PER SYMBOL
-# =====================================================
+# ================= VOLATILITY REGIME =================
 
-def get_symbol_volatility():
-    rows = fetch_symbol_profits()
+def get_volatility_regime():
+    profits = fetch_profits()
 
-    symbol_data = defaultdict(list)
+    if len(profits) < 20:
+        return "NORMAL"
 
-    for symbol, profit in rows:
-        symbol_data[symbol].append(float(profit))
+    vol = statistics.stdev(profits)
 
-    vol_dict = {}
+    if vol < 50:
+        return "LOW_VOL"
+    elif vol > 200:
+        return "HIGH_VOL"
+    else:
+        return "NORMAL"
 
-    for symbol, profits in symbol_data.items():
-        if len(profits) > 5:
-            vol_dict[symbol] = statistics.stdev(profits)
+
+# ================= REGIME CHANGE =================
+
+def detect_regime_change():
+    profits = fetch_profits()
+
+    if len(profits) < 30:
+        return "STABLE"
+
+    split = int(len(profits) * 0.7)
+
+    past = profits[:split]
+    recent = profits[split:]
+
+    mean_past = statistics.mean(past)
+    mean_recent = statistics.mean(recent)
+    std_past = statistics.stdev(past) if len(past) > 1 else 0
+
+    if std_past == 0:
+        return "STABLE"
+
+    diff = abs(mean_recent - mean_past)
+
+    if diff > 1.5 * std_past:
+        if mean_recent < mean_past:
+            return "NEGATIVE_SHIFT"
         else:
-            vol_dict[symbol] = 1  # fallback
+            return "POSITIVE_SHIFT"
 
-    return vol_dict
-
-
-def get_risk_parity_weights():
-    vol_dict = get_symbol_volatility()
-
-    if not vol_dict:
-        return {}
-
-    inv_vol = {s: 1/v if v != 0 else 0 for s, v in vol_dict.items()}
-    total = sum(inv_vol.values())
-
-    weights = {s: round(inv_vol[s]/total, 3) for s in inv_vol}
-
-    return weights
+    return "STABLE"
 
 
-# =====================================================
-# CORRELATION ENGINE
-# =====================================================
-
-def get_average_correlation():
-    rows = fetch_symbol_profits()
-
-    if len(rows) < 20:
-        return 0
-
-    symbol_data = defaultdict(list)
-
-    for symbol, profit in rows:
-        symbol_data[symbol].append(float(profit))
-
-    if len(symbol_data) < 2:
-        return 0
-
-    min_len = min(len(v) for v in symbol_data.values())
-
-    matrix = []
-    for profits in symbol_data.values():
-        matrix.append(profits[-min_len:])
-
-    matrix = np.array(matrix)
-    corr_matrix = np.corrcoef(matrix)
-
-    correlations = []
-    n = corr_matrix.shape[0]
-
-    for i in range(n):
-        for j in range(i+1, n):
-            correlations.append(abs(corr_matrix[i, j]))
-
-    if not correlations:
-        return 0
-
-    return round(statistics.mean(correlations), 3)
-
-
-# =====================================================
-# BAYESIAN EDGE
-# =====================================================
+# ================= BAYESIAN EDGE =================
 
 def get_bayesian_winrate():
     profits = fetch_profits()
@@ -142,9 +110,7 @@ def get_avg_rr():
     return statistics.mean(wins) / statistics.mean(losses)
 
 
-# =====================================================
-# MONTE CARLO
-# =====================================================
+# ================= MONTE CARLO =================
 
 def monte_carlo_tail_risk(initial_equity=100000, simulations=300):
     profits = fetch_profits()
@@ -165,9 +131,7 @@ def monte_carlo_tail_risk(initial_equity=100000, simulations=300):
     return worst / initial_equity
 
 
-# =====================================================
-# DRAWNDOWN & LOSS
-# =====================================================
+# ================= DRAWDOWN =================
 
 def calculate_drawdown(initial_equity=100000):
     profits = fetch_profits()
@@ -197,9 +161,7 @@ def get_loss_streak():
     return streak
 
 
-# =====================================================
-# FINAL MULTIPLIER
-# =====================================================
+# ================= FINAL MULTIPLIER =================
 
 def get_position_multiplier():
     win_rate = get_bayesian_winrate()
@@ -212,6 +174,7 @@ def get_position_multiplier():
     kelly = max(0, kelly)
     kelly *= 0.5
 
+    # Monte Carlo
     mc_ratio = monte_carlo_tail_risk()
 
     if mc_ratio < 0.7:
@@ -221,25 +184,31 @@ def get_position_multiplier():
     elif mc_ratio < 0.9:
         kelly *= 0.5
 
-    dd_percent = calculate_drawdown()
-    if dd_percent > 10:
+    # Drawdown
+    if calculate_drawdown() > 10:
         kelly *= 0.5
 
+    # Loss streak
     streak = get_loss_streak()
-    if streak >= 3:
-        kelly *= 0.7
-    if streak >= 5:
-        kelly *= 0.5
     if streak >= 7:
         return 0.0
-
-    avg_corr = get_average_correlation()
-
-    if avg_corr > 0.8:
-        return 0.0
-    elif avg_corr > 0.6:
+    elif streak >= 5:
         kelly *= 0.5
-    elif avg_corr > 0.3:
+    elif streak >= 3:
         kelly *= 0.7
+
+    # Regime change
+    regime = detect_regime_change()
+    if regime == "NEGATIVE_SHIFT":
+        return 0.0
+    elif regime == "POSITIVE_SHIFT":
+        kelly *= 0.3
+
+    # Vol regime
+    vol_regime = get_volatility_regime()
+    if vol_regime == "HIGH_VOL":
+        kelly *= 0.5
+    elif vol_regime == "LOW_VOL":
+        kelly *= 1.2
 
     return round(kelly, 4)
