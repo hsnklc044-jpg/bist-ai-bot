@@ -1,85 +1,77 @@
-import os
-import statistics
-import random
-import psycopg2
-from collections import defaultdict
-import numpy as np
+# performance_tracker.py
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+import math
+
+# --------------------------------------------------
+# MOCK / PLACEHOLDER METRİKLER
+# (Senin gerçek sistem fonksiyonların varsa bunları sil)
+# --------------------------------------------------
+
+def get_bayesian_winrate() -> float:
+    return 0.58  # örnek
+
+def calculate_drawdown() -> float:
+    return 8.5  # yüzde
+
+def get_loss_streak() -> int:
+    return 1
+
+def get_volatility_regime() -> str:
+    return "normal"  # low / normal / high
+
+def get_avg_rr() -> float:
+    return 1.6
+
+def monte_carlo_tail_risk() -> float:
+    return 0.22
+
+def detect_regime_change() -> str:
+    return "stable"
 
 
-# ================= DATABASE =================
+# --------------------------------------------------
+# ANA FONKSİYON
+# --------------------------------------------------
 
-def get_connection():
-    return psycopg2.connect(DATABASE_URL)
+def get_position_multiplier() -> float:
+    """
+    Sistem performansına göre dinamik pozisyon çarpanı.
+    """
 
-
-def fetch_symbol_profits():
     try:
-        conn = get_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT symbol, profit FROM trades ORDER BY created_at ASC;")
-        rows = cur.fetchall()
-        cur.close()
-        conn.close()
-        return rows
-    except:
-        return []
+        winrate = get_bayesian_winrate()
+        drawdown = calculate_drawdown()
+        streak = get_loss_streak()
+        vol_regime = get_volatility_regime()
 
+        multiplier = 1.0
 
-# ================= SYMBOL EDGE =================
+        # Winrate etkisi
+        if winrate > 0.60:
+            multiplier += 0.2
+        elif winrate < 0.45:
+            multiplier -= 0.2
 
-def get_symbol_stats():
-    rows = fetch_symbol_profits()
-    symbol_data = defaultdict(list)
+        # Drawdown etkisi
+        if drawdown > 15:
+            multiplier -= 0.3
+        elif drawdown > 10:
+            multiplier -= 0.15
 
-    for symbol, profit in rows:
-        symbol_data[symbol].append(float(profit))
+        # Loss streak
+        if streak >= 4:
+            multiplier -= 0.2
 
-    stats = {}
+        # Volatilite rejimi
+        if vol_regime == "high":
+            multiplier -= 0.1
+        elif vol_regime == "low":
+            multiplier += 0.1
 
-    for symbol, profits in symbol_data.items():
-        if len(profits) < 10:
-            continue
+        # Güvenlik limitleri
+        multiplier = max(0.5, min(multiplier, 1.5))
 
-        wins = [p for p in profits if p > 0]
-        losses = [abs(p) for p in profits if p <= 0]
+        return round(multiplier, 2)
 
-        alpha = len(wins) + 2
-        beta = len(losses) + 2
-        winrate = alpha / (alpha + beta)
-
-        if wins and losses:
-            rr = statistics.mean(wins) / statistics.mean(losses)
-        else:
-            rr = 1
-
-        if rr <= 0:
-            kelly = 0
-        else:
-            kelly = winrate - ((1 - winrate) / rr)
-
-        kelly = max(0, kelly)
-        kelly *= 0.5  # half Kelly
-
-        stats[symbol] = {
-            "winrate": round(winrate, 3),
-            "rr": round(rr, 3),
-            "kelly": round(kelly, 4)
-        }
-
-    return stats
-
-
-def get_symbol_multiplier(symbol):
-    stats = get_symbol_stats()
-
-    if symbol not in stats:
-        return 0
-
-    return stats[symbol]["kelly"]
-
-
-def get_active_symbols():
-    stats = get_symbol_stats()
-    return {s: v for s, v in stats.items() if v["kelly"] > 0}
+    except Exception:
+        return 1.0
