@@ -8,3 +8,4 @@ scipy
 sqlalchemy
 psycopg2-binary
 python-telegram-bot==20.3
+streamlit
