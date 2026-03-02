@@ -16,14 +16,14 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # -------------------------
-# ENV VARIABLES
+# ENV
 # -------------------------
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # -------------------------
-# DATABASE CONNECTION
+# DB CONNECTION
 # -------------------------
 
 def get_connection():
@@ -67,13 +67,11 @@ def init_db():
 # -------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("BIST AI Performance Engine aktif 🚀")
+    await update.message.reply_text("🚀 Performance Engine aktif")
 
-# 🔥 ADDTRADE + PNL HESABI
 async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        text = update.message.text.strip()
-        parts = text.split()
+        parts = update.message.text.strip().split()
 
         if len(parts) != 5:
             await update.message.reply_text(
@@ -86,7 +84,6 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         entry = float(entry)
         target = float(target)
 
-        # PNL hesap
         if side.lower() == "long":
             pnl = target - entry
         else:
@@ -110,13 +107,13 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"ADDTRADE ERROR: {e}")
         await update.message.reply_text("❌ Sistem hatası.")
 
-# 🔥 PROFESYONEL EQUITY
+# 🔥 PRO EQUITY + MAX DRAWDOWN
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         conn = get_connection()
         cur = conn.cursor()
 
-        cur.execute("SELECT pnl FROM trades;")
+        cur.execute("SELECT pnl FROM trades ORDER BY id ASC;")
         rows = cur.fetchall()
 
         if not rows:
@@ -129,13 +126,28 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         wins = len([p for p in pnls if p > 0])
         losses = len([p for p in pnls if p < 0])
 
-        win_rate = round((wins / total_trades) * 100, 2) if total_trades > 0 else 0
+        win_rate = round((wins / total_trades) * 100, 2)
         net_pnl = round(sum(pnls), 2)
 
         avg_win = round(sum([p for p in pnls if p > 0]) / wins, 2) if wins > 0 else 0
         avg_loss = round(sum([p for p in pnls if p < 0]) / losses, 2) if losses > 0 else 0
-
         rr = round(abs(avg_win / avg_loss), 2) if avg_loss != 0 else 0
+
+        # EQUITY CURVE
+        cumulative = 0
+        peak = 0
+        max_drawdown = 0
+
+        for pnl in pnls:
+            cumulative += pnl
+
+            if cumulative > peak:
+                peak = cumulative
+
+            drawdown = peak - cumulative
+
+            if drawdown > max_drawdown:
+                max_drawdown = drawdown
 
         msg = f"""
 📊 TRADE PERFORMANS
@@ -149,6 +161,8 @@ Win Rate: %{win_rate}
 📈 Ortalama Kazanç: {avg_win}
 📉 Ortalama Zarar: {avg_loss}
 ⚖️ Risk/Reward: {rr}
+
+📉 Max Drawdown: {round(max_drawdown,2)}
 """
 
         await update.message.reply_text(msg)
@@ -165,26 +179,19 @@ Win Rate: %{win_rate}
 # -------------------------
 
 def main():
-    if not TOKEN:
-        logger.error("TELEGRAM_TOKEN bulunamadı.")
-        return
-
-    if not DATABASE_URL:
-        logger.error("DATABASE_URL bulunamadı.")
+    if not TOKEN or not DATABASE_URL:
+        logger.error("ENV eksik.")
         return
 
     init_db()
 
-    application = ApplicationBuilder().token(TOKEN).build()
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("addtrade", addtrade))
-    application.add_handler(CommandHandler("equity", equity))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("addtrade", addtrade))
+    app.add_handler(CommandHandler("equity", equity))
 
-    # Conflict önleyici
-    application.run_polling(drop_pending_updates=True)
-
-# -------------------------
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     main()
