@@ -16,19 +16,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # -------------------------
-# ENV
+# ENV VARIABLES
 # -------------------------
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 # -------------------------
-# DB CONNECTION
+# GLOBAL RISK SETTINGS
+# -------------------------
+
+USER_CAPITAL = 0
+RISK_PERCENT = 1
+DAILY_LOSS_LIMIT = 3  # %3 günlük max kayıp
+
+# -------------------------
+# DATABASE CONNECTION
 # -------------------------
 
 def get_connection():
     url = urlparse(DATABASE_URL)
-
     return psycopg2.connect(
         host=url.hostname,
         port=url.port,
@@ -67,7 +74,11 @@ def init_db():
 # -------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 Performance Engine aktif")
+    await update.message.reply_text("🚀 Performance Engine + Risk Engine aktif")
+
+# -------------------------
+# ADD TRADE
+# -------------------------
 
 async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -89,8 +100,19 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             pnl = entry - target
 
+        # Günlük zarar kontrolü
         conn = get_connection()
         cur = conn.cursor()
+        cur.execute("SELECT SUM(pnl) FROM trades WHERE created_at::date = CURRENT_DATE;")
+        today_pnl = cur.fetchone()[0] or 0
+
+        if USER_CAPITAL > 0:
+            daily_loss_limit_amount = USER_CAPITAL * (DAILY_LOSS_LIMIT / 100)
+            if today_pnl < -daily_loss_limit_amount:
+                await update.message.reply_text("🚫 Günlük zarar limiti aşıldı. Trade kilitlendi.")
+                cur.close()
+                conn.close()
+                return
 
         cur.execute(
             "INSERT INTO trades (symbol, side, entry, target, pnl) VALUES (%s, %s, %s, %s, %s)",
@@ -107,7 +129,10 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"ADDTRADE ERROR: {e}")
         await update.message.reply_text("❌ Sistem hatası.")
 
-# 🔥 PRO EQUITY + MAX DRAWDOWN
+# -------------------------
+# EQUITY + DRAWDOWN
+# -------------------------
+
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         conn = get_connection()
@@ -133,19 +158,16 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         avg_loss = round(sum([p for p in pnls if p < 0]) / losses, 2) if losses > 0 else 0
         rr = round(abs(avg_win / avg_loss), 2) if avg_loss != 0 else 0
 
-        # EQUITY CURVE
+        # Equity curve + drawdown
         cumulative = 0
         peak = 0
         max_drawdown = 0
 
         for pnl in pnls:
             cumulative += pnl
-
             if cumulative > peak:
                 peak = cumulative
-
             drawdown = peak - cumulative
-
             if drawdown > max_drawdown:
                 max_drawdown = drawdown
 
@@ -175,6 +197,40 @@ Win Rate: %{win_rate}
         await update.message.reply_text("❌ Equity hesaplanamadı.")
 
 # -------------------------
+# RISK COMMANDS
+# -------------------------
+
+async def setcapital(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global USER_CAPITAL
+    try:
+        USER_CAPITAL = float(context.args[0])
+        await update.message.reply_text(f"💰 Sermaye ayarlandı: {USER_CAPITAL}")
+    except:
+        await update.message.reply_text("❌ Kullanım: /setcapital 100000")
+
+async def setrisk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global RISK_PERCENT
+    try:
+        RISK_PERCENT = float(context.args[0])
+        await update.message.reply_text(f"🎯 Risk yüzdesi: %{RISK_PERCENT}")
+    except:
+        await update.message.reply_text("❌ Kullanım: /setrisk 1")
+
+async def risk(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if USER_CAPITAL == 0:
+        await update.message.reply_text("Önce /setcapital ile sermaye gir.")
+        return
+
+    risk_amount = USER_CAPITAL * (RISK_PERCENT / 100)
+
+    msg = f"""
+💰 Sermaye: {USER_CAPITAL}
+🎯 Risk: %{RISK_PERCENT}
+📉 İşlem Başına Maks Risk: {round(risk_amount,2)}
+"""
+    await update.message.reply_text(msg)
+
+# -------------------------
 # MAIN
 # -------------------------
 
@@ -190,6 +246,9 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("addtrade", addtrade))
     app.add_handler(CommandHandler("equity", equity))
+    app.add_handler(CommandHandler("setcapital", setcapital))
+    app.add_handler(CommandHandler("setrisk", setrisk))
+    app.add_handler(CommandHandler("risk", risk))
 
     app.run_polling(drop_pending_updates=True)
 
