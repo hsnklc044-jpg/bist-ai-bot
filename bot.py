@@ -450,6 +450,63 @@ En Kötü Drawdown: {round(worst_dd,2)}
     cur.close()
     conn.close()
 
+# ---------------- RISK OF RUIN ---------------- #
+
+async def riskofruin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT pnl FROM trades WHERE status='closed';")
+    rows = cur.fetchall()
+
+    if not rows or len(rows) < 10:
+        await update.message.reply_text("Risk of Ruin için en az 10 kapanmış trade gerekli.")
+        return
+
+    pnls = [r[0] for r in rows]
+    wins = [p for p in pnls if p > 0]
+    losses = [p for p in pnls if p < 0]
+
+    if not wins or not losses:
+        await update.message.reply_text("Yeterli veri yok.")
+        return
+
+    capital, risk_percent, _ = get_settings()
+
+    win_rate = len(wins) / len(pnls)
+    loss_rate = 1 - win_rate
+
+    avg_win = sum(wins) / len(wins)
+    avg_loss = abs(sum(losses) / len(losses))
+
+    edge = (win_rate * avg_win) - (loss_rate * avg_loss)
+
+    if edge <= 0:
+        await update.message.reply_text("Negatif edge. Batma riski çok yüksek.")
+        return
+
+    risk_per_trade = capital * (risk_percent / 100)
+
+    ruin_probability = ((avg_loss - edge) / (avg_loss + edge)) ** (capital / risk_per_trade)
+    ruin_probability = max(0, min(1, ruin_probability))
+
+    msg = f"""
+📉 RISK OF RUIN
+
+Win Rate: %{round(win_rate*100,2)}
+Edge: {round(edge,2)}
+
+Risk/Trade: {round(risk_per_trade,2)}
+Sermaye: {capital}
+
+Batma Olasılığı: %{round(ruin_probability*100,4)}
+"""
+
+    await update.message.reply_text(msg)
+
+    cur.close()
+    conn.close()
+
 # ---------------- MAIN ---------------- #
 
 def main():
@@ -465,6 +522,7 @@ def main():
     app.add_handler(CommandHandler("equity", equity))
     app.add_handler(CommandHandler("kelly", kelly))
     app.add_handler(CommandHandler("montecarlo", montecarlo))
+    app.add_handler(CommandHandler("riskofruin", riskofruin))
 
     app.run_polling(drop_pending_updates=True)
 
