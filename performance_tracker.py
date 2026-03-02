@@ -2,6 +2,8 @@ import os
 import statistics
 import random
 import psycopg2
+from collections import defaultdict
+import numpy as np
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -14,17 +16,70 @@ def get_connection():
     return psycopg2.connect(DATABASE_URL)
 
 
-def fetch_profits():
+def fetch_symbol_profits():
+    """
+    trades table must contain:
+    symbol | profit | created_at
+    """
     try:
         conn = get_connection()
         cur = conn.cursor()
-        cur.execute("SELECT profit FROM trades ORDER BY created_at ASC;")
+        cur.execute("SELECT symbol, profit FROM trades ORDER BY created_at ASC;")
         rows = cur.fetchall()
         cur.close()
         conn.close()
-        return [float(r[0]) for r in rows]
+        return rows
     except:
         return []
+
+
+def fetch_profits():
+    rows = fetch_symbol_profits()
+    return [float(r[1]) for r in rows]
+
+
+# =====================================================
+# CORRELATION ENGINE
+# =====================================================
+
+def get_average_correlation():
+    rows = fetch_symbol_profits()
+
+    if len(rows) < 20:
+        return 0  # not enough data
+
+    symbol_data = defaultdict(list)
+
+    for symbol, profit in rows:
+        symbol_data[symbol].append(float(profit))
+
+    # Need at least 2 symbols
+    if len(symbol_data) < 2:
+        return 0
+
+    # Align lengths
+    min_len = min(len(v) for v in symbol_data.values())
+
+    matrix = []
+    for profits in symbol_data.values():
+        matrix.append(profits[-min_len:])
+
+    matrix = np.array(matrix)
+
+    corr_matrix = np.corrcoef(matrix)
+
+    # Extract upper triangle without diagonal
+    correlations = []
+    n = corr_matrix.shape[0]
+
+    for i in range(n):
+        for j in range(i+1, n):
+            correlations.append(abs(corr_matrix[i, j]))
+
+    if not correlations:
+        return 0
+
+    return round(statistics.mean(correlations), 3)
 
 
 # =====================================================
@@ -63,10 +118,10 @@ def get_avg_rr():
 
 
 # =====================================================
-# MONTE CARLO CONFIDENCE
+# MONTE CARLO
 # =====================================================
 
-def monte_carlo_tail_risk(initial_equity=100000, simulations=500):
+def monte_carlo_tail_risk(initial_equity=100000, simulations=300):
     profits = fetch_profits()
 
     if not profits:
@@ -81,13 +136,12 @@ def monte_carlo_tail_risk(initial_equity=100000, simulations=500):
         results.append(equity)
 
     results.sort()
-    worst_5_percent = results[int(0.05 * len(results))]
-
-    return worst_5_percent / initial_equity
+    worst = results[int(0.05 * len(results))]
+    return worst / initial_equity
 
 
 # =====================================================
-# DRAWDOWN
+# DRAWNDOWN
 # =====================================================
 
 def calculate_drawdown(initial_equity=100000):
@@ -123,30 +177,7 @@ def get_loss_streak():
 
 
 # =====================================================
-# VOL REGIME
-# =====================================================
-
-def get_volatility_regime():
-    profits = fetch_profits()
-
-    if len(profits) < 10:
-        return "INSUFFICIENT"
-
-    mean = statistics.mean(profits)
-    std = statistics.stdev(profits)
-
-    if std < abs(mean) * 0.5:
-        return "LOW"
-    elif std < abs(mean):
-        return "NORMAL"
-    elif std < abs(mean) * 2:
-        return "HIGH"
-    else:
-        return "EXTREME"
-
-
-# =====================================================
-# FINAL POSITION ENGINE
+# FINAL POSITION ENGINE (FULL INSTITUTIONAL STACK)
 # =====================================================
 
 def get_position_multiplier():
@@ -160,7 +191,7 @@ def get_position_multiplier():
     kelly = max(0, kelly)
     kelly *= 0.5  # half Kelly
 
-    # Monte Carlo tail risk adjustment
+    # Monte Carlo tail
     mc_ratio = monte_carlo_tail_risk()
 
     if mc_ratio < 0.7:
@@ -170,12 +201,12 @@ def get_position_multiplier():
     elif mc_ratio < 0.9:
         kelly *= 0.5
 
-    # Drawdown suppression
+    # Drawdown
     dd_percent = calculate_drawdown()
     if dd_percent > 10:
         kelly *= 0.5
 
-    # Loss streak suppression
+    # Loss streak
     streak = get_loss_streak()
     if streak >= 3:
         kelly *= 0.7
@@ -184,11 +215,14 @@ def get_position_multiplier():
     if streak >= 7:
         return 0.0
 
-    # Volatility regime
-    regime = get_volatility_regime()
-    if regime == "HIGH":
-        kelly *= 0.5
-    if regime == "EXTREME":
+    # Correlation suppression
+    avg_corr = get_average_correlation()
+
+    if avg_corr > 0.8:
         return 0.0
+    elif avg_corr > 0.6:
+        kelly *= 0.5
+    elif avg_corr > 0.3:
+        kelly *= 0.7
 
     return round(kelly, 4)
