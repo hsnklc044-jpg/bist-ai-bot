@@ -5,7 +5,11 @@ from urllib.parse import urlparse
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_connection():
+    if not DATABASE_URL:
+        raise ValueError("DATABASE_URL not found in environment variables")
+
     url = urlparse(DATABASE_URL)
+
     conn = psycopg2.connect(
         host=url.hostname,
         database=url.path[1:],
@@ -36,7 +40,10 @@ def init_db():
 
 
 def add_trade(symbol, direction, entry, exit):
-    r_multiple = ((exit - entry) / entry) * 100
+    if direction.lower() == "long":
+        r_multiple = ((exit - entry) / entry) * 100
+    else:
+        r_multiple = ((entry - exit) / entry) * 100
 
     conn = get_connection()
     cur = conn.cursor()
@@ -52,8 +59,22 @@ def add_trade(symbol, direction, entry, exit):
 def get_all_r():
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT r_multiple FROM trades")
+    cur.execute("SELECT r_multiple FROM trades ORDER BY id ASC")
     rows = cur.fetchall()
     cur.close()
     conn.close()
+
     return [r[0] for r in rows]
+
+
+def get_equity_curve():
+    trades = get_all_r()
+
+    equity = 1.0
+    curve = [equity]
+
+    for r in trades:
+        equity *= (1 + r * 0.01)
+        curve.append(equity)
+
+    return curve
