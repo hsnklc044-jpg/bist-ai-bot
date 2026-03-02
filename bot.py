@@ -4,6 +4,8 @@ import psycopg2
 from urllib.parse import urlparse
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import matplotlib.pyplot as plt
+import io
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -163,7 +165,13 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     capital, _, daily_limit = get_settings()
 
     try:
-        _, symbol, side, entry, target = update.message.text.split()
+        parts = update.message.text.split()
+        if len(parts) != 5:
+            await update.message.reply_text("❌ Kullanım: /addtrade EREGL long 42 45")
+            return
+
+        _, symbol, side, entry, target = parts
+
         entry = float(entry)
         target = float(target)
 
@@ -196,7 +204,7 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(e)
         await update.message.reply_text("❌ Sistem hatası.")
 
-# -------- EQUITY -------- #
+# -------- EQUITY + GRAPH -------- #
 
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
@@ -209,20 +217,34 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     pnls = [r[0] for r in rows]
+
     total = len(pnls)
     wins = len([p for p in pnls if p > 0])
     losses = len([p for p in pnls if p < 0])
     net = sum(pnls)
     win_rate = round((wins/total)*100,2)
 
+    equity_curve = []
     cumulative = 0
     peak = 0
     max_dd = 0
 
     for p in pnls:
         cumulative += p
+        equity_curve.append(cumulative)
         peak = max(peak, cumulative)
         max_dd = max(max_dd, peak - cumulative)
+
+    plt.figure()
+    plt.plot(equity_curve)
+    plt.title("Equity Curve")
+    plt.xlabel("Trade")
+    plt.ylabel("Cumulative PnL")
+
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format="png")
+    buffer.seek(0)
+    plt.close()
 
     msg = f"""
 📊 TRADE PERFORMANS
@@ -235,7 +257,9 @@ Win Rate: %{win_rate}
 💰 Net PnL: {round(net,2)}
 📉 Max Drawdown: {round(max_dd,2)}
 """
+
     await update.message.reply_text(msg)
+    await update.message.reply_photo(photo=buffer)
 
     cur.close()
     conn.close()
