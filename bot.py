@@ -6,109 +6,56 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # -------------------------
+# LOGGING
+# -------------------------
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
+
+# -------------------------
 # ENV VARIABLES
 # -------------------------
-
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# -------------------------
-# LOGGING
-# -------------------------
-
-logging.basicConfig(
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    level=logging.INFO
-)
-
-logger = logging.getLogger(__name__)
+print("TOKEN DEBUG:", TOKEN)
 
 # -------------------------
-# DATABASE CONNECTION
+# DATABASE INIT
 # -------------------------
-
-def get_connection():
-    if not DATABASE_URL:
-        raise ValueError("DATABASE_URL not found!")
-
-    url = urlparse(DATABASE_URL)
-
-    conn = psycopg2.connect(
-        host=url.hostname,
-        database=url.path[1:],
-        user=url.username,
-        password=url.password,
-        port=url.port
-    )
-    return conn
-
-
 def init_db():
-    print("INIT_DB STARTING...")
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
 
-    conn = get_connection()
-    cur = conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS trades (
+                id SERIAL PRIMARY KEY,
+                symbol TEXT,
+                direction TEXT,
+                entry FLOAT,
+                exit FLOAT,
+                profit FLOAT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS trades (
-            id SERIAL PRIMARY KEY,
-            symbol TEXT,
-            direction TEXT,
-            entry FLOAT,
-            exit FLOAT,
-            r_multiple FLOAT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
-    """)
+        conn.commit()
+        cur.close()
+        conn.close()
 
-    conn.commit()
-    cur.close()
-    conn.close()
+        print("DB INIT SUCCESS")
 
-    print("INIT_DB SUCCESS")
-
-
-def add_trade_db(symbol, direction, entry, exit_price):
-    r_multiple = (exit_price - entry) / entry if direction == "long" else (entry - exit_price) / entry
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        INSERT INTO trades (symbol, direction, entry, exit, r_multiple)
-        VALUES (%s, %s, %s, %s, %s)
-    """, (symbol, direction, entry, exit_price, r_multiple))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-
-def get_equity_curve():
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("SELECT r_multiple FROM trades ORDER BY id ASC")
-    rows = cur.fetchall()
-
-    cur.close()
-    conn.close()
-
-    equity = 1.0
-    curve = [equity]
-
-    for r in rows:
-        equity *= (1 + r[0])
-        curve.append(equity)
-
-    return curve
+    except Exception as e:
+        print("DB INIT ERROR:", e)
 
 
 # -------------------------
 # COMMANDS
 # -------------------------
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("BIST AI Bot aktif 🚀")
 
@@ -117,39 +64,59 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = context.args
 
-        if len(args) != 4:
-            await update.message.reply_text(
-                "Kullanım:\n/addtrade SYMBOL long/short entry exit"
-            )
-            return
-
         symbol = args[0]
         direction = args[1]
         entry = float(args[2])
         exit_price = float(args[3])
 
-        add_trade_db(symbol, direction, entry, exit_price)
+        if direction.lower() == "long":
+            profit = exit_price - entry
+        else:
+            profit = entry - exit_price
 
-        await update.message.reply_text("✅ Trade kaydedildi.")
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+
+        cur.execute("""
+            INSERT INTO trades (symbol, direction, entry, exit, profit)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (symbol, direction, entry, exit_price, profit))
+
+        conn.commit()
+        cur.close()
+        conn.close()
+
+        await update.message.reply_text(f"Trade eklendi ✅ Profit: {round(profit,2)}")
 
     except Exception as e:
         logger.error(f"Addtrade error: {e}")
-        await update.message.reply_text("❌ Trade kaydedilemedi.")
+        await update.message.reply_text("❌ Hatalı kullanım.\nÖrnek:\n/addtrade EREGL long 42 45")
 
 
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        curve = get_equity_curve()
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
 
-        if len(curve) <= 1:
-            await update.message.reply_text("Henüz yeterli trade yok.")
+        cur.execute("SELECT profit FROM trades ORDER BY id ASC")
+        rows = cur.fetchall()
+
+        conn.close()
+
+        equity = 0
+        curve = []
+
+        for row in rows:
+            equity += row[0]
+            curve.append(equity)
+
+        if not curve:
+            await update.message.reply_text("Henüz trade yok.")
             return
 
-        final_equity = round(curve[-1], 3)
+        final_equity = round(curve[-1], 2)
 
-        await update.message.reply_text(
-            f"📈 Güncel Equity: {final_equity}"
-        )
+        await update.message.reply_text(f"📈 Güncel Equity: {final_equity}")
 
     except Exception as e:
         logger.error(f"Equity error: {e}")
@@ -159,12 +126,12 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # -------------------------
 # MAIN
 # -------------------------
-
 def main():
-    try:
-        init_db()
-    except Exception as e:
-        print("INIT_DB ERROR:", e)
+    if not TOKEN:
+        print("TOKEN BULUNAMADI!")
+        return
+
+    init_db()
 
     application = ApplicationBuilder().token(TOKEN).build()
 
