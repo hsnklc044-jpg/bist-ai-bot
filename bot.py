@@ -5,16 +5,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 from trade_engine import init_db, add_trade, get_equity_curve
 
-# =========================
-# ENV VARIABLES
-# =========================
-
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-
-# =========================
-# LOGGING
-# =========================
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -23,18 +14,16 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# =========================
-# COMMAND: /start
-# =========================
+# -------------------------
+# /start
+# -------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("BIST AI Bot aktif 🚀")
 
-# =========================
-# COMMAND: /addtrade
-# Örnek:
-# /addtrade EREGL long 45 47
-# =========================
+# -------------------------
+# /addtrade
+# -------------------------
 
 async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -64,9 +53,9 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Addtrade error: {e}")
         await update.message.reply_text("❌ Trade kaydedilemedi.")
 
-# =========================
-# COMMAND: /equity
-# =========================
+# -------------------------
+# /equity
+# -------------------------
 
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -86,12 +75,12 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Equity error: {e}")
         await update.message.reply_text("❌ Equity hesaplanamadı.")
 
-# =========================
+# -------------------------
 # MAIN
-# =========================
+# -------------------------
 
 def main():
-    # 🔥 TABLOYU OLUŞTUR
+    # 🔥 Tabloyu oluştur
     init_db()
 
     application = ApplicationBuilder().token(TOKEN).build()
@@ -102,7 +91,7 @@ def main():
 
     application.run_polling()
 
-# =========================
+# -------------------------
 
 if __name__ == "__main__":
     main()
