@@ -13,13 +13,11 @@ from telegram.ext import (
 from performance_tracker import (
     get_position_multiplier,
     get_bayesian_winrate,
-    get_avg_rr,
+    get_avg_r,
     calculate_drawdown,
-    get_loss_streak,
-    get_volatility_regime,
-    monte_carlo_tail_risk,
-    detect_regime_change,
 )
+
+from trade_engine import init_db, log_trade
 
 # --------------------------------------------------
 # LOGGING
@@ -38,39 +36,32 @@ logger = logging.getLogger(__name__)
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🤖 BIST AI Bot aktif.\n\n"
+        "🤖 BIST AI Quant Bot Aktif\n\n"
         "Komutlar:\n"
         "/dashboard\n"
-        "/multiplier"
+        "/multiplier\n"
+        "/addtrade SYMBOL long/short entry exit risk%"
     )
 
 
 async def dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        multiplier = get_position_multiplier()
         winrate = get_bayesian_winrate()
-        rr = get_avg_rr()
-        dd = calculate_drawdown()
-        streak = get_loss_streak()
-        vol_regime = get_volatility_regime()
-        mc = monte_carlo_tail_risk()
-        regime_shift = detect_regime_change()
+        avg_r = get_avg_r()
+        drawdown = calculate_drawdown()
+        multiplier = get_position_multiplier()
 
         message = (
             "📊 QUANT CORE DASHBOARD\n\n"
-            f"Bayesian Win Rate: {round(winrate * 100, 2)}%\n"
-            f"Avg R:R: {round(rr, 2)}\n"
-            f"Monte Carlo Tail Ratio: {round(mc, 2)}\n"
-            f"Drawdown: {round(dd, 2)}%\n"
-            f"Loss Streak: {streak}\n"
-            f"Volatility Regime: {vol_regime}\n"
-            f"Regime Shift: {regime_shift}\n\n"
-            f"Final Position Multiplier: {multiplier}"
+            f"Win Rate: {round(winrate * 100, 2)}%\n"
+            f"Avg R: {round(avg_r, 2)}\n"
+            f"Drawdown: {drawdown}%\n\n"
+            f"Kelly Position Multiplier: {multiplier}"
         )
 
         await update.message.reply_text(message)
 
-    except Exception as e:
+    except Exception:
         logger.exception("Dashboard error")
         await update.message.reply_text("❌ Dashboard hesaplanamadı.")
 
@@ -79,11 +70,40 @@ async def multiplier_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         m = get_position_multiplier()
         await update.message.reply_text(
-            f"📈 Current Position Multiplier: {m}"
+            f"📈 Current Kelly Multiplier: {m}"
         )
     except Exception:
         logger.exception("Multiplier error")
         await update.message.reply_text("❌ Multiplier hesaplanamadı.")
+
+
+async def add_trade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if len(context.args) != 5:
+            await update.message.reply_text(
+                "Kullanım:\n"
+                "/addtrade SYMBOL long/short entry exit risk%"
+            )
+            return
+
+        symbol = context.args[0]
+        direction = context.args[1]
+        entry = float(context.args[2])
+        exit_price = float(context.args[3])
+        risk_percent = float(context.args[4])
+
+        log_trade(symbol, direction, entry, exit_price, risk_percent)
+
+        await update.message.reply_text(
+            f"✅ Trade kaydedildi:\n"
+            f"{symbol} {direction}\n"
+            f"Entry: {entry}\n"
+            f"Exit: {exit_price}"
+        )
+
+    except Exception:
+        logger.exception("Add trade error")
+        await update.message.reply_text("❌ Trade eklenemedi.")
 
 
 # --------------------------------------------------
@@ -91,7 +111,7 @@ async def multiplier_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # --------------------------------------------------
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-    logger.error(msg="Exception while handling update:", exc_info=context.error)
+    logger.error("Exception while handling update:", exc_info=context.error)
 
 
 # --------------------------------------------------
@@ -104,11 +124,15 @@ def main():
     if not token:
         raise ValueError("TELEGRAM_TOKEN environment variable not set.")
 
+    # DB initialize
+    init_db()
+
     app = ApplicationBuilder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("dashboard", dashboard))
     app.add_handler(CommandHandler("multiplier", multiplier_command))
+    app.add_handler(CommandHandler("addtrade", add_trade_command))
 
     app.add_error_handler(error_handler)
 
