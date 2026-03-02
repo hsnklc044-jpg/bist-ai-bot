@@ -507,6 +507,45 @@ Batma Olasılığı: %{round(ruin_probability*100,4)}
     cur.close()
     conn.close()
 
+# ---------------- METRICS (SHARPE & SORTINO) ---------------- #
+
+async def metrics(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT pnl FROM trades WHERE status='closed';")
+    rows = cur.fetchall()
+
+    if not rows or len(rows) < 5:
+        await update.message.reply_text("Metrics için en az 5 kapanmış trade gerekli.")
+        return
+
+    pnls = np.array([r[0] for r in rows])
+
+    mean_return = np.mean(pnls)
+    std_dev = np.std(pnls)
+
+    downside = pnls[pnls < 0]
+    downside_std = np.std(downside) if len(downside) > 0 else 0
+
+    sharpe = mean_return / std_dev if std_dev != 0 else 0
+    sortino = mean_return / downside_std if downside_std != 0 else 0
+
+    msg = f"""
+📊 FUND METRICS
+
+Ortalama Getiri: {round(mean_return,2)}
+Standart Sapma: {round(std_dev,2)}
+
+Sharpe Ratio: {round(sharpe,3)}
+Sortino Ratio: {round(sortino,3)}
+"""
+
+    await update.message.reply_text(msg)
+
+    cur.close()
+    conn.close()
+
 # ---------------- MAIN ---------------- #
 
 def main():
@@ -523,6 +562,7 @@ def main():
     app.add_handler(CommandHandler("kelly", kelly))
     app.add_handler(CommandHandler("montecarlo", montecarlo))
     app.add_handler(CommandHandler("riskofruin", riskofruin))
+    app.add_handler(CommandHandler("metrics", metrics))
 
     app.run_polling(drop_pending_updates=True)
 
