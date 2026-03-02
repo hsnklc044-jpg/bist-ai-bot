@@ -67,19 +67,29 @@ def init_db():
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("BIST AI Bot aktif 🚀")
 
+# 🔥 GÜÇLENDİRİLMİŞ ADDTRADE
 async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        symbol = context.args[0]
-        side = context.args[1]
-        entry = float(context.args[2])
-        target = float(context.args[3])
+        text = update.message.text.strip()
+        parts = text.split()
+
+        if len(parts) != 5:
+            await update.message.reply_text(
+                "❌ Hatalı kullanım.\nÖrnek:\n/addtrade EREGL long 42 45"
+            )
+            return
+
+        _, symbol, side, entry, target = parts
+
+        entry = float(entry)
+        target = float(target)
 
         conn = get_connection()
         cur = conn.cursor()
 
         cur.execute(
             "INSERT INTO trades (symbol, side, entry, target) VALUES (%s, %s, %s, %s)",
-            (symbol, side, entry, target)
+            (symbol.upper(), side.lower(), entry, target)
         )
 
         conn.commit()
@@ -90,9 +100,7 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"ADDTRADE ERROR: {e}")
-        await update.message.reply_text(
-            "❌ Hatalı kullanım.\nÖrnek:\n/addtrade EREGL long 42 45"
-        )
+        await update.message.reply_text("❌ Sistem hatası.")
 
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -140,7 +148,7 @@ def main():
     application.add_handler(CommandHandler("addtrade", addtrade))
     application.add_handler(CommandHandler("equity", equity))
 
-    # 🔥 Conflict çözümü burada
+    # 🔥 Conflict fix
     application.run_polling(
         drop_pending_updates=True
     )
