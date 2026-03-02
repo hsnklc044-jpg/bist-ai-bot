@@ -1,7 +1,14 @@
+# bot.py
+
 import os
 import logging
+
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes,
+)
 
 from performance_tracker import (
     get_position_multiplier,
@@ -14,28 +21,28 @@ from performance_tracker import (
     detect_regime_change,
 )
 
-# ================= CONFIG =================
+# --------------------------------------------------
+# LOGGING
+# --------------------------------------------------
 
-TOKEN = os.getenv("TELEGRAM_TOKEN")
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
 
-if not TOKEN:
-    raise ValueError("TELEGRAM_TOKEN environment variable not set.")
-
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-# ================= COMMANDS =================
+# --------------------------------------------------
+# COMMANDS
+# --------------------------------------------------
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🚀 QUANT CORE ENGINE ONLINE\n\n"
+        "🤖 BIST AI Bot aktif.\n\n"
         "Komutlar:\n"
         "/dashboard\n"
-        "/multiplier\n"
-        "/regime\n"
-        "/vol\n"
-        "/risk"
+        "/multiplier"
     )
 
 
@@ -50,17 +57,20 @@ async def dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         mc = monte_carlo_tail_risk()
         regime_shift = detect_regime_change()
 
-        await update.message.reply_text(
+        message = (
             "📊 QUANT CORE DASHBOARD\n\n"
-            f"Bayesian Win Rate: {round(winrate*100,2)}%\n"
-            f"Avg R:R: {round(rr,2)}\n"
-            f"Monte Carlo Tail Ratio: {round(mc,2)}\n"
-            f"Drawdown: {round(dd,2)}%\n"
+            f"Bayesian Win Rate: {round(winrate * 100, 2)}%\n"
+            f"Avg R:R: {round(rr, 2)}\n"
+            f"Monte Carlo Tail Ratio: {round(mc, 2)}\n"
+            f"Drawdown: {round(dd, 2)}%\n"
             f"Loss Streak: {streak}\n"
             f"Volatility Regime: {vol_regime}\n"
             f"Regime Shift: {regime_shift}\n\n"
             f"Final Position Multiplier: {multiplier}"
         )
+
+        await update.message.reply_text(message)
+
     except Exception as e:
         logger.error(f"Dashboard error: {e}")
         await update.message.reply_text("❌ Dashboard hesaplanamadı.")
@@ -69,58 +79,31 @@ async def dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def multiplier_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         m = get_position_multiplier()
-        await update.message.reply_text(f"📏 Current Multiplier: {m}")
+        await update.message.reply_text(
+            f"📈 Current Position Multiplier: {m}"
+        )
     except Exception as e:
         logger.error(f"Multiplier error: {e}")
         await update.message.reply_text("❌ Multiplier hesaplanamadı.")
 
 
-async def regime_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        r = detect_regime_change()
-        await update.message.reply_text(f"🧠 Regime Shift Status: {r}")
-    except Exception as e:
-        logger.error(f"Regime error: {e}")
-        await update.message.reply_text("❌ Regime hesaplanamadı.")
-
-
-async def vol_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        v = get_volatility_regime()
-        await update.message.reply_text(f"🌊 Volatility Regime: {v}")
-    except Exception as e:
-        logger.error(f"Vol error: {e}")
-        await update.message.reply_text("❌ Volatility hesaplanamadı.")
-
-
-async def risk_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        dd = calculate_drawdown()
-        streak = get_loss_streak()
-
-        await update.message.reply_text(
-            "⚠️ RISK STATUS\n\n"
-            f"Drawdown: {round(dd,2)}%\n"
-            f"Loss Streak: {streak}"
-        )
-    except Exception as e:
-        logger.error(f"Risk error: {e}")
-        await update.message.reply_text("❌ Risk hesaplanamadı.")
-
-
-# ================= MAIN =================
+# --------------------------------------------------
+# MAIN
+# --------------------------------------------------
 
 def main():
-    app = ApplicationBuilder().token(TOKEN).build()
+    token = os.getenv("TELEGRAM_TOKEN")
+
+    if not token:
+        raise ValueError("TELEGRAM_TOKEN environment variable not set.")
+
+    app = ApplicationBuilder().token(token).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("dashboard", dashboard))
     app.add_handler(CommandHandler("multiplier", multiplier_command))
-    app.add_handler(CommandHandler("regime", regime_command))
-    app.add_handler(CommandHandler("vol", vol_command))
-    app.add_handler(CommandHandler("risk", risk_command))
 
-    logger.info("🚀 Quant Core Engine started.")
+    logger.info("Bot başlatıldı...")
     app.run_polling()
 
 
