@@ -27,188 +27,59 @@ def fetch_symbol_profits():
         return []
 
 
-def fetch_profits():
+# ================= SYMBOL EDGE =================
+
+def get_symbol_stats():
     rows = fetch_symbol_profits()
-    return [float(r[1]) for r in rows]
+    symbol_data = defaultdict(list)
 
+    for symbol, profit in rows:
+        symbol_data[symbol].append(float(profit))
 
-# ================= VOLATILITY REGIME =================
+    stats = {}
 
-def get_volatility_regime():
-    profits = fetch_profits()
+    for symbol, profits in symbol_data.items():
+        if len(profits) < 10:
+            continue
 
-    if len(profits) < 20:
-        return "NORMAL"
+        wins = [p for p in profits if p > 0]
+        losses = [abs(p) for p in profits if p <= 0]
 
-    vol = statistics.stdev(profits)
+        alpha = len(wins) + 2
+        beta = len(losses) + 2
+        winrate = alpha / (alpha + beta)
 
-    if vol < 50:
-        return "LOW_VOL"
-    elif vol > 200:
-        return "HIGH_VOL"
-    else:
-        return "NORMAL"
-
-
-# ================= REGIME CHANGE =================
-
-def detect_regime_change():
-    profits = fetch_profits()
-
-    if len(profits) < 30:
-        return "STABLE"
-
-    split = int(len(profits) * 0.7)
-
-    past = profits[:split]
-    recent = profits[split:]
-
-    mean_past = statistics.mean(past)
-    mean_recent = statistics.mean(recent)
-    std_past = statistics.stdev(past) if len(past) > 1 else 0
-
-    if std_past == 0:
-        return "STABLE"
-
-    diff = abs(mean_recent - mean_past)
-
-    if diff > 1.5 * std_past:
-        if mean_recent < mean_past:
-            return "NEGATIVE_SHIFT"
+        if wins and losses:
+            rr = statistics.mean(wins) / statistics.mean(losses)
         else:
-            return "POSITIVE_SHIFT"
+            rr = 1
 
-    return "STABLE"
-
-
-# ================= BAYESIAN EDGE =================
-
-def get_bayesian_winrate():
-    profits = fetch_profits()
-
-    if not profits:
-        return 0.5
-
-    wins = len([p for p in profits if p > 0])
-    losses = len([p for p in profits if p <= 0])
-
-    alpha = wins + 2
-    beta = losses + 2
-
-    return alpha / (alpha + beta)
-
-
-def get_avg_rr():
-    profits = fetch_profits()
-
-    wins = [p for p in profits if p > 0]
-    losses = [abs(p) for p in profits if p <= 0]
-
-    if not wins or not losses:
-        return 1
-
-    return statistics.mean(wins) / statistics.mean(losses)
-
-
-# ================= MONTE CARLO =================
-
-def monte_carlo_tail_risk(initial_equity=100000, simulations=300):
-    profits = fetch_profits()
-
-    if not profits:
-        return 1.0
-
-    results = []
-
-    for _ in range(simulations):
-        equity = initial_equity
-        for _ in profits:
-            equity += random.choice(profits)
-        results.append(equity)
-
-    results.sort()
-    worst = results[int(0.05 * len(results))]
-    return worst / initial_equity
-
-
-# ================= DRAWDOWN =================
-
-def calculate_drawdown(initial_equity=100000):
-    profits = fetch_profits()
-    equity = initial_equity
-    peak = equity
-    max_dd = 0
-
-    for p in profits:
-        equity += p
-        peak = max(peak, equity)
-        dd = peak - equity
-        max_dd = max(max_dd, dd)
-
-    return (max_dd / peak) * 100 if peak != 0 else 0
-
-
-def get_loss_streak():
-    profits = fetch_profits()
-    streak = 0
-
-    for p in reversed(profits):
-        if p <= 0:
-            streak += 1
+        if rr <= 0:
+            kelly = 0
         else:
-            break
+            kelly = winrate - ((1 - winrate) / rr)
 
-    return streak
+        kelly = max(0, kelly)
+        kelly *= 0.5  # half Kelly
+
+        stats[symbol] = {
+            "winrate": round(winrate, 3),
+            "rr": round(rr, 3),
+            "kelly": round(kelly, 4)
+        }
+
+    return stats
 
 
-# ================= FINAL MULTIPLIER =================
+def get_symbol_multiplier(symbol):
+    stats = get_symbol_stats()
 
-def get_position_multiplier():
-    win_rate = get_bayesian_winrate()
-    R = get_avg_rr()
+    if symbol not in stats:
+        return 0
 
-    if R <= 0:
-        return 0.0
+    return stats[symbol]["kelly"]
 
-    kelly = win_rate - ((1 - win_rate) / R)
-    kelly = max(0, kelly)
-    kelly *= 0.5
 
-    # Monte Carlo
-    mc_ratio = monte_carlo_tail_risk()
-
-    if mc_ratio < 0.7:
-        return 0.0
-    elif mc_ratio < 0.8:
-        kelly *= 0.3
-    elif mc_ratio < 0.9:
-        kelly *= 0.5
-
-    # Drawdown
-    if calculate_drawdown() > 10:
-        kelly *= 0.5
-
-    # Loss streak
-    streak = get_loss_streak()
-    if streak >= 7:
-        return 0.0
-    elif streak >= 5:
-        kelly *= 0.5
-    elif streak >= 3:
-        kelly *= 0.7
-
-    # Regime change
-    regime = detect_regime_change()
-    if regime == "NEGATIVE_SHIFT":
-        return 0.0
-    elif regime == "POSITIVE_SHIFT":
-        kelly *= 0.3
-
-    # Vol regime
-    vol_regime = get_volatility_regime()
-    if vol_regime == "HIGH_VOL":
-        kelly *= 0.5
-    elif vol_regime == "LOW_VOL":
-        kelly *= 1.2
-
-    return round(kelly, 4)
+def get_active_symbols():
+    stats = get_symbol_stats()
+    return {s: v for s, v in stats.items() if v["kelly"] > 0}
