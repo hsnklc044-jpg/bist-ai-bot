@@ -32,7 +32,6 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-
 # --------------------------------------------------
 # COMMANDS
 # --------------------------------------------------
@@ -72,7 +71,7 @@ async def dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(message)
 
     except Exception as e:
-        logger.error(f"Dashboard error: {e}")
+        logger.exception("Dashboard error")
         await update.message.reply_text("❌ Dashboard hesaplanamadı.")
 
 
@@ -82,9 +81,17 @@ async def multiplier_command(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text(
             f"📈 Current Position Multiplier: {m}"
         )
-    except Exception as e:
-        logger.error(f"Multiplier error: {e}")
+    except Exception:
+        logger.exception("Multiplier error")
         await update.message.reply_text("❌ Multiplier hesaplanamadı.")
+
+
+# --------------------------------------------------
+# ERROR HANDLER
+# --------------------------------------------------
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.error(msg="Exception while handling update:", exc_info=context.error)
 
 
 # --------------------------------------------------
@@ -103,8 +110,16 @@ def main():
     app.add_handler(CommandHandler("dashboard", dashboard))
     app.add_handler(CommandHandler("multiplier", multiplier_command))
 
+    app.add_error_handler(error_handler)
+
     logger.info("Bot başlatıldı...")
-    app.run_polling()
+
+    app.run_polling(
+        poll_interval=3,
+        timeout=30,
+        drop_pending_updates=True,
+        close_loop=False,
+    )
 
 
 if __name__ == "__main__":
