@@ -2,6 +2,8 @@
 
 import os
 import logging
+import sqlite3
+import matplotlib.pyplot as plt
 
 from telegram import Update
 from telegram.ext import (
@@ -19,6 +21,8 @@ from performance_tracker import (
 
 from trade_engine import init_db, log_trade
 
+DB_NAME = "trades.db"
+
 # --------------------------------------------------
 # LOGGING
 # --------------------------------------------------
@@ -31,6 +35,28 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # --------------------------------------------------
+# EQUITY CURVE FUNCTION
+# --------------------------------------------------
+
+def get_equity_curve():
+    conn = sqlite3.connect(DB_NAME)
+    c = conn.cursor()
+    c.execute("SELECT r_multiple FROM trades")
+    rows = c.fetchall()
+    conn.close()
+
+    trades = [r[0] for r in rows]
+
+    equity = 1.0
+    curve = [equity]
+
+    for r in trades:
+        equity *= (1 + r * 0.01)
+        curve.append(equity)
+
+    return curve
+
+# --------------------------------------------------
 # COMMANDS
 # --------------------------------------------------
 
@@ -40,7 +66,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Komutlar:\n"
         "/dashboard\n"
         "/multiplier\n"
-        "/addtrade SYMBOL long/short entry exit risk%"
+        "/addtrade SYMBOL long/short entry exit risk%\n"
+        "/equity"
     )
 
 
@@ -106,6 +133,31 @@ async def add_trade_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Trade eklenemedi.")
 
 
+async def equity_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        curve = get_equity_curve()
+
+        if len(curve) <= 1:
+            await update.message.reply_text("Henüz yeterli trade yok.")
+            return
+
+        plt.figure()
+        plt.plot(curve)
+        plt.title("Equity Curve")
+        plt.xlabel("Trade Number")
+        plt.ylabel("Equity Growth")
+
+        file_path = "equity.png"
+        plt.savefig(file_path)
+        plt.close()
+
+        await update.message.reply_photo(photo=open(file_path, "rb"))
+
+    except Exception:
+        logger.exception("Equity error")
+        await update.message.reply_text("❌ Equity grafiği üretilemedi.")
+
+
 # --------------------------------------------------
 # ERROR HANDLER
 # --------------------------------------------------
@@ -124,7 +176,6 @@ def main():
     if not token:
         raise ValueError("TELEGRAM_TOKEN environment variable not set.")
 
-    # DB initialize
     init_db()
 
     app = ApplicationBuilder().token(token).build()
@@ -133,6 +184,7 @@ def main():
     app.add_handler(CommandHandler("dashboard", dashboard))
     app.add_handler(CommandHandler("multiplier", multiplier_command))
     app.add_handler(CommandHandler("addtrade", add_trade_command))
+    app.add_handler(CommandHandler("equity", equity_command))
 
     app.add_error_handler(error_handler)
 
