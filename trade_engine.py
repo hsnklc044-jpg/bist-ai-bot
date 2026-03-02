@@ -1,39 +1,44 @@
 # trade_engine.py
 
-import sqlite3
+import os
+import psycopg2
 from datetime import datetime
-import math
 
-DB_NAME = "trades.db"
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+
+def get_connection():
+    return psycopg2.connect(DATABASE_URL)
 
 
 # --------------------------------------------------
-# DATABASE SETUP
+# INIT DB
 # --------------------------------------------------
 
 def init_db():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
+    conn = get_connection()
+    cur = conn.cursor()
 
-    c.execute("""
+    cur.execute("""
         CREATE TABLE IF NOT EXISTS trades (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             symbol TEXT,
             direction TEXT,
-            entry REAL,
-            exit REAL,
-            risk_percent REAL,
-            r_multiple REAL,
-            timestamp TEXT
-        )
+            entry FLOAT,
+            exit FLOAT,
+            risk_percent FLOAT,
+            r_multiple FLOAT,
+            timestamp TIMESTAMP
+        );
     """)
 
     conn.commit()
+    cur.close()
     conn.close()
 
 
 # --------------------------------------------------
-# ADD TRADE
+# LOG TRADE
 # --------------------------------------------------
 
 def log_trade(symbol, direction, entry, exit_price, risk_percent):
@@ -47,12 +52,12 @@ def log_trade(symbol, direction, entry, exit_price, risk_percent):
     if direction.lower() == "short":
         r_multiple = -r_multiple
 
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
+    conn = get_connection()
+    cur = conn.cursor()
 
-    c.execute("""
+    cur.execute("""
         INSERT INTO trades (symbol, direction, entry, exit, risk_percent, r_multiple, timestamp)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s);
     """, (
         symbol,
         direction,
@@ -60,22 +65,24 @@ def log_trade(symbol, direction, entry, exit_price, risk_percent):
         exit_price,
         risk_percent,
         r_multiple,
-        datetime.now().isoformat()
+        datetime.now()
     ))
 
     conn.commit()
+    cur.close()
     conn.close()
 
 
 # --------------------------------------------------
-# PERFORMANCE METRICS
+# PERFORMANCE
 # --------------------------------------------------
 
 def get_all_trades():
-    conn = sqlite3.connect(DB_NAME)
-    c = conn.cursor()
-    c.execute("SELECT r_multiple FROM trades")
-    rows = c.fetchall()
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT r_multiple FROM trades ORDER BY id ASC;")
+    rows = cur.fetchall()
+    cur.close()
     conn.close()
     return [r[0] for r in rows]
 
@@ -96,39 +103,26 @@ def get_avg_r():
     return sum(trades) / len(trades)
 
 
-def get_equity_curve():
+def get_drawdown():
     trades = get_all_trades()
+
     equity = 1.0
-    curve = [equity]
+    peak = 1.0
+    max_dd = 0
 
     for r in trades:
         equity *= (1 + r * 0.01)
-        curve.append(equity)
+        if equity > peak:
+            peak = equity
 
-    return curve
-
-
-def get_drawdown():
-    curve = get_equity_curve()
-    peak = curve[0]
-    max_dd = 0
-
-    for value in curve:
-        if value > peak:
-            peak = value
-        dd = (peak - value) / peak
+        dd = (peak - equity) / peak
         if dd > max_dd:
             max_dd = dd
 
     return round(max_dd * 100, 2)
 
 
-# --------------------------------------------------
-# KELLY MULTIPLIER
-# --------------------------------------------------
-
 def get_kelly_multiplier():
-
     winrate = get_winrate()
     avg_r = get_avg_r()
 
@@ -140,7 +134,6 @@ def get_kelly_multiplier():
     q = 1 - p
 
     kelly = (b * p - q) / b
-
     half_kelly = 0.5 * kelly
 
     if half_kelly < 0:
