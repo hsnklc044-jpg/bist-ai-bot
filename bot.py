@@ -5,9 +5,17 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 from trade_engine import init_db, add_trade, get_equity_curve
 
+
+# =========================
+# ENV VARIABLES
+# =========================
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
+
+# =========================
+# LOGGING
+# =========================
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
@@ -16,18 +24,18 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# -------------------------
+# =========================
 # COMMAND: /start
-# -------------------------
+# =========================
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("BIST AI Bot aktif 🚀")
 
 
-# -------------------------
+# =========================
 # COMMAND: /addtrade
 # Örnek:
 # /addtrade EREGL long 45 47
-# -------------------------
+# =========================
 async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         args = context.args
@@ -57,9 +65,9 @@ async def addtrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Trade kaydedilemedi.")
 
 
-# -------------------------
+# =========================
 # COMMAND: /equity
-# -------------------------
+# =========================
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         curve = get_equity_curve()
@@ -72,7 +80,7 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(
             f"📈 Equity Curve\n\n"
-            f"Toplam Trade: {len(curve)-1}\n"
+            f"Toplam Trade: {len(curve) - 1}\n"
             f"Final Equity: {final_equity}"
         )
 
@@ -81,10 +89,13 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Equity hesaplanamadı.")
 
 
-# -------------------------
+# =========================
 # MAIN
-# -------------------------
+# =========================
 def main():
+    if not TOKEN:
+        raise ValueError("TELEGRAM_TOKEN environment variable not set")
+
     init_db()
 
     app = ApplicationBuilder().token(TOKEN).build()
