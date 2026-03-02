@@ -1,6 +1,8 @@
 import os
 import logging
 import psycopg2
+import random
+import numpy as np
 from urllib.parse import urlparse
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -229,7 +231,7 @@ async def positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur = conn.cursor()
 
     cur.execute("""
-    SELECT id, symbol, side, entry, stop, lot
+    SELECT symbol, side, entry, stop, lot
     FROM trades
     WHERE status='open'
     ORDER BY id;
@@ -243,7 +245,7 @@ async def positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     msg = "📂 AÇIK POZİSYONLAR\n\n"
     for r in rows:
-        msg += f"{r[1]} {r[2]} @ {r[3]} Stop:{r[4]} Lot:{round(r[5],2)}\n"
+        msg += f"{r[0]} {r[1]} @ {r[2]} Stop:{r[3]} Lot:{round(r[4],2)}\n"
 
     await update.message.reply_text(msg)
 
@@ -393,6 +395,61 @@ Kelly Optimal: %{round(kelly_fraction*100,2)}
     cur.close()
     conn.close()
 
+# ---------------- MONTE CARLO ---------------- #
+
+async def montecarlo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT pnl FROM trades WHERE status='closed';")
+    rows = cur.fetchall()
+
+    if not rows or len(rows) < 5:
+        await update.message.reply_text("Monte Carlo için en az 5 kapanmış trade gerekli.")
+        return
+
+    pnls = [r[0] for r in rows]
+
+    simulations = 1000
+    trade_count = len(pnls)
+
+    final_results = []
+    worst_dd = 0
+
+    for _ in range(simulations):
+        shuffled = random.choices(pnls, k=trade_count)
+
+        cumulative = 0
+        peak = 0
+        max_dd = 0
+
+        for p in shuffled:
+            cumulative += p
+            peak = max(peak, cumulative)
+            max_dd = max(max_dd, peak - cumulative)
+
+        final_results.append(cumulative)
+        worst_dd = max(worst_dd, max_dd)
+
+    avg_final = np.mean(final_results)
+    worst_case = min(final_results)
+
+    msg = f"""
+🎲 MONTE CARLO
+
+Simülasyon: {simulations}
+Trade Sayısı: {trade_count}
+
+Ortalama Final: {round(avg_final,2)}
+En Kötü Final: {round(worst_case,2)}
+En Kötü Drawdown: {round(worst_dd,2)}
+"""
+
+    await update.message.reply_text(msg)
+
+    cur.close()
+    conn.close()
+
 # ---------------- MAIN ---------------- #
 
 def main():
@@ -407,6 +464,7 @@ def main():
     app.add_handler(CommandHandler("price", price))
     app.add_handler(CommandHandler("equity", equity))
     app.add_handler(CommandHandler("kelly", kelly))
+    app.add_handler(CommandHandler("montecarlo", montecarlo))
 
     app.run_polling(drop_pending_updates=True)
 
