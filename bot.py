@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -14,6 +15,7 @@ SERMAYE = float(os.getenv("CAPITAL", 100000))
 RISK_YUZDE = float(os.getenv("RISK_PERCENT", 1))
 
 acik_pozisyon = {}
+son_bildirim = None
 
 # ================= RSI =================
 
@@ -91,8 +93,7 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                     adaylar.append(mesaj)
 
-            except Exception as e:
-                logger.error(f"{sembol} hata: {e}")
+            except:
                 continue
 
         if not adaylar:
@@ -121,7 +122,8 @@ async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "sembol": sembol,
             "giris": giris,
             "stop": stop,
-            "hedef": hedef
+            "hedef": hedef,
+            "chat_id": update.effective_chat.id
         }
 
         await update.message.reply_text(f"📂 {sembol} pozisyonu açıldı.")
@@ -129,69 +131,55 @@ async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         await update.message.reply_text("Kullanım:\n/ac ASTOR 180 176 190")
 
-# ================= POZİSYON DURUM =================
+# ================= OTOMATİK KONTROL =================
 
-async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def otomatik_kontrol(app):
+
     global acik_pozisyon
 
-    if not acik_pozisyon:
-        return await update.message.reply_text("Açık pozisyon yok.")
+    while True:
 
-    try:
-        sembol = acik_pozisyon["sembol"]
-        sembol_yf = sembol + ".IS"
+        if acik_pozisyon:
 
-        veri = yf.download(
-            sembol_yf,
-            period="5d",
-            interval="1d",
-            progress=False,
-            auto_adjust=False
-        )
+            try:
+                sembol = acik_pozisyon["sembol"]
+                sembol_yf = sembol + ".IS"
 
-        if veri is None or veri.empty:
-            return await update.message.reply_text("Fiyat verisi alınamadı.")
+                veri = yf.download(
+                    sembol_yf,
+                    period="1d",
+                    interval="1m",
+                    progress=False
+                )
 
-        # MultiIndex kontrolü
-        if isinstance(veri.columns, pd.MultiIndex):
-            guncel = float(veri[sembol_yf]["Close"].dropna().iloc[-1])
-        else:
-            guncel = float(veri["Close"].dropna().iloc[-1])
+                if veri is None or veri.empty:
+                    await asyncio.sleep(60)
+                    continue
 
-        giris = acik_pozisyon["giris"]
-        stop = acik_pozisyon["stop"]
-        hedef = acik_pozisyon["hedef"]
+                guncel = float(veri["Close"].dropna().iloc[-1])
 
-        kar_zarar = (guncel - giris) / giris * 100
+                stop = acik_pozisyon["stop"]
+                hedef = acik_pozisyon["hedef"]
+                chat_id = acik_pozisyon["chat_id"]
 
-        durum_mesaj = "🟢 Pozisyon Aktif"
+                if guncel <= stop:
+                    await app.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"🔴 STOP ÇALIŞTI!\n{sembol}\nFiyat: {round(guncel,2)}"
+                    )
+                    acik_pozisyon = {}
 
-        if guncel <= stop:
-            durum_mesaj = "🔴 STOP ÇALIŞTI"
-        elif guncel >= hedef:
-            durum_mesaj = "🎯 HEDEF ÇALIŞTI"
+                elif guncel >= hedef:
+                    await app.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"🎯 HEDEF GERÇEKLEŞTİ!\n{sembol}\nFiyat: {round(guncel,2)}"
+                    )
+                    acik_pozisyon = {}
 
-        mesaj = (
-            f"{durum_mesaj}\n\n"
-            f"Hisse: {sembol}\n"
-            f"Güncel Fiyat: {round(guncel,2)}\n"
-            f"Kâr/Zarar: %{round(kar_zarar,2)}\n"
-            f"Stop: {stop}\n"
-            f"Hedef: {hedef}"
-        )
+            except Exception as e:
+                logger.error(f"Otomatik kontrol hatası: {e}")
 
-        await update.message.reply_text(mesaj)
-
-    except Exception as e:
-        logger.error(f"Durum Hatası: {e}")
-        await update.message.reply_text("⚠️ Fiyat kontrol edilirken hata oluştu.")
-
-# ================= POZİSYON KAPAT =================
-
-async def pozisyon_kapat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global acik_pozisyon
-    acik_pozisyon = {}
-    await update.message.reply_text("📴 Pozisyon kapatıldı.")
+        await asyncio.sleep(60)
 
 # ================= MAIN =================
 
@@ -200,8 +188,8 @@ def main():
 
     app.add_handler(CommandHandler("bebek", bebek))
     app.add_handler(CommandHandler("ac", pozisyon_ac))
-    app.add_handler(CommandHandler("durum", durum))
-    app.add_handler(CommandHandler("kapat", pozisyon_kapat))
+
+    app.create_task(otomatik_kontrol(app))
 
     app.run_polling(drop_pending_updates=True)
 
