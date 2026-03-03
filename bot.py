@@ -43,7 +43,7 @@ def tablo_olustur():
     cur.close()
     conn.close()
 
-# ================= FİYAT ÇEKME =================
+# ================= FİYAT =================
 
 def fiyat_getir(sembol):
     try:
@@ -51,14 +51,14 @@ def fiyat_getir(sembol):
         data = ticker.history(period="1d", interval="1m")
         if not data.empty:
             return round(data["Close"].iloc[-1], 2)
-    except:
-        return None
+    except Exception as e:
+        logging.error(f"Fiyat hatası: {e}")
     return None
 
 # ================= KOMUTLAR =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 BIST AI PRO Gerçek Piyasa Aktif")
+    await update.message.reply_text("🚀 Kurumsal Risk Motoru Aktif")
 
 async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -86,15 +86,6 @@ async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except:
         await update.message.reply_text("⚠️ Kullanım: /ac ASTOR 180 175 190")
 
-async def pozisyon_kapat(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM pozisyon WHERE aktif = TRUE")
-    conn.commit()
-    cur.close()
-    conn.close()
-    await update.message.reply_text("📴 Pozisyon kapatıldı.")
-
 async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
     cur = conn.cursor()
@@ -110,11 +101,19 @@ async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
     sembol, giris, stop, hedef = row
     fiyat = fiyat_getir(sembol)
 
+    if fiyat is None:
+        await update.message.reply_text("Fiyat alınamadı.")
+        return
+
+    risk = giris - stop
+    R = round((fiyat - giris) / risk, 2)
+
     await update.message.reply_text(
-        f"""📊 AKTİF POZİSYON
+        f"""📊 POZİSYON DURUMU
 
 Sembol: {sembol}
-Anlık Fiyat: {fiyat}
+Fiyat: {fiyat}
+R: {R}
 Giriş: {giris}
 Stop: {stop}
 Hedef: {hedef}"""
@@ -123,6 +122,7 @@ Hedef: {hedef}"""
 # ================= OTOMATİK KONTROL =================
 
 async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
+
     conn = get_connection()
     cur = conn.cursor()
 
@@ -142,22 +142,29 @@ async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         return
 
+    risk = giris - stop
+    R = round((fiyat - giris) / risk, 2)
+
+    logging.info(f"{sembol} | Fiyat: {fiyat} | R: {R}")
+
+    # STOP
     if fiyat <= stop:
         cur.execute("DELETE FROM pozisyon WHERE id = %s", (poz_id,))
         conn.commit()
 
         await context.bot.send_message(
             chat_id=CHAT_ID,
-            text=f"🔴 STOP ÇALIŞTI!\n{sembol}\nFiyat: {fiyat}"
+            text=f"🔴 STOP ÇALIŞTI\n{sembol}\nFiyat: {fiyat}\nR: -1"
         )
 
+    # HEDEF
     elif fiyat >= hedef:
         cur.execute("DELETE FROM pozisyon WHERE id = %s", (poz_id,))
         conn.commit()
 
         await context.bot.send_message(
             chat_id=CHAT_ID,
-            text=f"🎯 HEDEF GERÇEKLEŞTİ!\n{sembol}\nFiyat: {fiyat}"
+            text=f"🎯 HEDEF GERÇEKLEŞTİ\n{sembol}\nFiyat: {fiyat}\nR: {R}"
         )
 
     cur.close()
@@ -172,7 +179,6 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ac", pozisyon_ac))
-    app.add_handler(CommandHandler("kapat", pozisyon_kapat))
     app.add_handler(CommandHandler("durum", durum))
 
     app.job_queue.run_repeating(
@@ -181,7 +187,7 @@ def main():
         first=10
     )
 
-    print("🚀 Gerçek piyasa sistemi başladı")
+    print("🚀 Kurumsal Sistem Başladı")
     app.run_polling()
 
 if __name__ == "__main__":
