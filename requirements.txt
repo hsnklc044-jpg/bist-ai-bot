@@ -1,8 +1,2 @@
-python-telegram-bot[job-queue]==20.7
+python-telegram-bot==20.7
 psycopg2-binary==2.9.9
-yfinance==0.2.37
-reportlab==4.0.9
-flask==3.0.2
-matplotlib==3.8.3
-pandas==2.2.1
-numpy==1.26.4
