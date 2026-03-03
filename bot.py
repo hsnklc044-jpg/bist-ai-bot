@@ -1,5 +1,4 @@
 import os
-import asyncio
 import logging
 import psycopg2
 from urllib.parse import urlparse
@@ -10,6 +9,7 @@ logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
+CHAT_ID = os.getenv("CHAT_ID")
 
 # ================= DATABASE =================
 
@@ -45,7 +45,7 @@ def tablo_olustur():
 # ================= KOMUTLAR =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 BIST AI PRO vFinal Aktif")
+    await update.message.reply_text("🚀 BIST AI PRO vProduction Aktif")
 
 async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -126,7 +126,7 @@ async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
 
     poz_id, sembol, giris, stop, hedef = row
 
-    # 🔥 ŞİMDİLİK FİYAT SİMÜLASYON (Sonra API bağlarız)
+    # Şimdilik simülasyon (sonra gerçek API bağlayacağız)
     import random
     fiyat = round(random.uniform(giris * 0.95, giris * 1.05), 2)
 
@@ -135,7 +135,7 @@ async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
 
         await context.bot.send_message(
-            chat_id=os.getenv("CHAT_ID"),
+            chat_id=CHAT_ID,
             text=f"🔴 STOP ÇALIŞTI!\n{sembol}\nFiyat: {fiyat}"
         )
 
@@ -144,7 +144,7 @@ async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
         conn.commit()
 
         await context.bot.send_message(
-            chat_id=os.getenv("CHAT_ID"),
+            chat_id=CHAT_ID,
             text=f"🎯 HEDEF GERÇEKLEŞTİ!\n{sembol}\nFiyat: {fiyat}"
         )
 
@@ -163,7 +163,6 @@ def main():
     app.add_handler(CommandHandler("kapat", pozisyon_kapat))
     app.add_handler(CommandHandler("durum", durum))
 
-    # 💎 PROFESYONEL OTOMATİK MOTOR
     app.job_queue.run_repeating(
         otomatik_kontrol,
         interval=60,
