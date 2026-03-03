@@ -1,6 +1,7 @@
 import os
 import logging
 import psycopg2
+import yfinance as yf
 from urllib.parse import urlparse
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
@@ -42,10 +43,22 @@ def tablo_olustur():
     cur.close()
     conn.close()
 
+# ================= FİYAT ÇEKME =================
+
+def fiyat_getir(sembol):
+    try:
+        ticker = yf.Ticker(f"{sembol}.IS")
+        data = ticker.history(period="1d", interval="1m")
+        if not data.empty:
+            return round(data["Close"].iloc[-1], 2)
+    except:
+        return None
+    return None
+
 # ================= KOMUTLAR =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 BIST AI PRO vProduction Aktif")
+    await update.message.reply_text("🚀 BIST AI PRO Gerçek Piyasa Aktif")
 
 async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -76,22 +89,17 @@ async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def pozisyon_kapat(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
     cur = conn.cursor()
-
     cur.execute("DELETE FROM pozisyon WHERE aktif = TRUE")
-
     conn.commit()
     cur.close()
     conn.close()
-
     await update.message.reply_text("📴 Pozisyon kapatıldı.")
 
 async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
     cur = conn.cursor()
-
     cur.execute("SELECT sembol, giris, stop, hedef FROM pozisyon WHERE aktif = TRUE")
     row = cur.fetchone()
-
     cur.close()
     conn.close()
 
@@ -100,11 +108,13 @@ async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     sembol, giris, stop, hedef = row
+    fiyat = fiyat_getir(sembol)
 
     await update.message.reply_text(
         f"""📊 AKTİF POZİSYON
 
 Sembol: {sembol}
+Anlık Fiyat: {fiyat}
 Giriş: {giris}
 Stop: {stop}
 Hedef: {hedef}"""
@@ -125,10 +135,12 @@ async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
         return
 
     poz_id, sembol, giris, stop, hedef = row
+    fiyat = fiyat_getir(sembol)
 
-    # Şimdilik simülasyon (sonra gerçek API bağlayacağız)
-    import random
-    fiyat = round(random.uniform(giris * 0.95, giris * 1.05), 2)
+    if fiyat is None:
+        cur.close()
+        conn.close()
+        return
 
     if fiyat <= stop:
         cur.execute("DELETE FROM pozisyon WHERE id = %s", (poz_id,))
@@ -169,7 +181,7 @@ def main():
         first=10
     )
 
-    print("🚀 Sistem başlatıldı...")
+    print("🚀 Gerçek piyasa sistemi başladı")
     app.run_polling()
 
 if __name__ == "__main__":
