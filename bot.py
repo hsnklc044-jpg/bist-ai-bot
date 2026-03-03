@@ -12,9 +12,11 @@ TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 CHAT_ID = os.getenv("CHAT_ID")
 
-MAX_TOPLAM_RISK = 0.05  # %5 portföy riski
+CAPITAL = float(os.getenv("CAPITAL", 100000))
+RISK_PERCENT = float(os.getenv("RISK_PERCENT", 1.5))
+MAX_PORTFOLIO_RISK = 0.05  # %5 toplam risk
 
-# ================= DATABASE =================
+# ================= DB =================
 
 def get_connection():
     url = urlparse(DATABASE_URL)
@@ -37,7 +39,8 @@ def tablo_olustur():
             giris FLOAT,
             stop FLOAT,
             hedef FLOAT,
-            baslangic_risk FLOAT,
+            lot FLOAT,
+            risk_tutar FLOAT,
             aktif BOOLEAN DEFAULT TRUE
         )
     """)
@@ -47,6 +50,7 @@ def tablo_olustur():
             id SERIAL PRIMARY KEY,
             sembol TEXT,
             R FLOAT,
+            kar FLOAT,
             tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -67,12 +71,18 @@ def fiyat_getir(sembol):
         pass
     return None
 
-# ================= RİSK KONTROL =================
+# ================= RİSK =================
 
-def toplam_risk():
+def hesapla_lot(giris, stop):
+    risk_mesafe = giris - stop
+    risk_para = CAPITAL * (RISK_PERCENT / 100)
+    lot = risk_para / risk_mesafe
+    return round(lot,2), risk_para
+
+def toplam_portfoy_risk():
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT SUM(baslangic_risk) FROM pozisyon WHERE aktif = TRUE")
+    cur.execute("SELECT SUM(risk_tutar) FROM pozisyon WHERE aktif = TRUE")
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -81,7 +91,7 @@ def toplam_risk():
 # ================= KOMUTLAR =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🏛 Kurumsal Motor v3 Aktif")
+    await update.message.reply_text("🏛 Kurumsal Motor v4 Aktif")
 
 async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -90,25 +100,30 @@ async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stop = float(context.args[2])
         hedef = float(context.args[3])
 
-        risk = giris - stop
+        lot, risk_para = hesapla_lot(giris, stop)
 
-        if toplam_risk() + risk > MAX_TOPLAM_RISK:
-            await update.message.reply_text("⚠️ Toplam portföy risk limiti aşılıyor.")
+        if toplam_portfoy_risk() + risk_para > CAPITAL * MAX_PORTFOLIO_RISK:
+            await update.message.reply_text("⚠️ Portföy toplam risk limiti aşılıyor.")
             return
 
         conn = get_connection()
         cur = conn.cursor()
 
         cur.execute("""
-            INSERT INTO pozisyon (sembol, giris, stop, hedef, baslangic_risk, aktif)
-            VALUES (%s, %s, %s, %s, %s, TRUE)
-        """, (sembol, giris, stop, hedef, risk))
+            INSERT INTO pozisyon (sembol, giris, stop, hedef, lot, risk_tutar, aktif)
+            VALUES (%s, %s, %s, %s, %s, %s, TRUE)
+        """, (sembol, giris, stop, hedef, lot, risk_para))
 
         conn.commit()
         cur.close()
         conn.close()
 
-        await update.message.reply_text(f"📂 {sembol} pozisyonu açıldı.")
+        await update.message.reply_text(
+            f"""📂 {sembol} açıldı
+
+Lot: {lot}
+Risk: {risk_para} TL"""
+        )
 
     except:
         await update.message.reply_text("⚠️ Kullanım: /ac ASTOR 180 175 190")
@@ -116,16 +131,17 @@ async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def performans(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*), SUM(R) FROM performans")
-    count, toplam_R = cur.fetchone()
+    cur.execute("SELECT COUNT(*), SUM(R), SUM(kar) FROM performans")
+    count, toplam_R, toplam_kar = cur.fetchone()
     cur.close()
     conn.close()
 
     await update.message.reply_text(
         f"""📊 Performans
 
-Toplam İşlem: {count}
-Toplam R: {round(toplam_R if toplam_R else 0,2)}"""
+İşlem: {count}
+Toplam R: {round(toplam_R if toplam_R else 0,2)}
+Toplam Kar: {round(toplam_kar if toplam_kar else 0,2)} TL"""
     )
 
 # ================= OTOMATİK MOTOR =================
@@ -135,27 +151,29 @@ async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("SELECT id, sembol, giris, stop, hedef, baslangic_risk FROM pozisyon WHERE aktif = TRUE")
+    cur.execute("SELECT id, sembol, giris, stop, hedef, lot, risk_tutar FROM pozisyon WHERE aktif = TRUE")
     rows = cur.fetchall()
 
     for row in rows:
-        poz_id, sembol, giris, stop, hedef, risk = row
+        poz_id, sembol, giris, stop, hedef, lot, risk_para = row
         fiyat = fiyat_getir(sembol)
 
         if fiyat is None:
             continue
 
-        R = (fiyat - giris) / risk
+        R = (fiyat - giris) / (giris - stop)
+        kar = (fiyat - giris) * lot
 
         if fiyat <= stop or fiyat >= hedef:
 
             cur.execute("UPDATE pozisyon SET aktif = FALSE WHERE id = %s", (poz_id,))
-            cur.execute("INSERT INTO performans (sembol, R) VALUES (%s, %s)", (sembol, R))
+            cur.execute("INSERT INTO performans (sembol, R, kar) VALUES (%s, %s, %s)",
+                        (sembol, R, kar))
             conn.commit()
 
             await context.bot.send_message(
                 chat_id=CHAT_ID,
-                text=f"🔔 {sembol} kapandı\nR: {round(R,2)}"
+                text=f"🔔 {sembol} kapandı\nR: {round(R,2)}\nKar: {round(kar,2)} TL"
             )
 
     cur.close()
@@ -178,7 +196,7 @@ def main():
         first=10
     )
 
-    print("🏛 Kurumsal Motor v3 Başladı")
+    print("🏛 Kurumsal Motor v4 Başladı")
     app.run_polling()
 
 if __name__ == "__main__":
