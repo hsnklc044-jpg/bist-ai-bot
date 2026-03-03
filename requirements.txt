@@ -2,3 +2,5 @@ python-telegram-bot==20.3
 psycopg2-binary
 numpy
 matplotlib
+yfinance
+pandas
