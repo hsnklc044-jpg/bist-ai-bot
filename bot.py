@@ -35,7 +35,8 @@ def tablo_olustur():
             giris FLOAT,
             stop FLOAT,
             hedef FLOAT,
-            aktif BOOLEAN DEFAULT TRUE
+            aktif BOOLEAN DEFAULT TRUE,
+            baslangic_risk FLOAT
         )
     """)
 
@@ -51,14 +52,14 @@ def fiyat_getir(sembol):
         data = ticker.history(period="1d", interval="1m")
         if not data.empty:
             return round(data["Close"].iloc[-1], 2)
-    except Exception as e:
-        logging.error(f"Fiyat hatası: {e}")
+    except:
+        pass
     return None
 
 # ================= KOMUTLAR =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 Kurumsal Risk Motoru Aktif")
+    await update.message.reply_text("🏛 Kurumsal Risk Motoru v2 Aktif")
 
 async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -67,15 +68,17 @@ async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
         stop = float(context.args[2])
         hedef = float(context.args[3])
 
+        risk = giris - stop
+
         conn = get_connection()
         cur = conn.cursor()
 
         cur.execute("DELETE FROM pozisyon WHERE aktif = TRUE")
 
         cur.execute("""
-            INSERT INTO pozisyon (sembol, giris, stop, hedef, aktif)
-            VALUES (%s, %s, %s, %s, TRUE)
-        """, (sembol, giris, stop, hedef))
+            INSERT INTO pozisyon (sembol, giris, stop, hedef, aktif, baslangic_risk)
+            VALUES (%s, %s, %s, %s, TRUE, %s)
+        """, (sembol, giris, stop, hedef, risk))
 
         conn.commit()
         cur.close()
@@ -89,7 +92,7 @@ async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT sembol, giris, stop, hedef FROM pozisyon WHERE aktif = TRUE")
+    cur.execute("SELECT sembol, giris, stop, hedef, baslangic_risk FROM pozisyon WHERE aktif = TRUE")
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -98,35 +101,32 @@ async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("📭 Aktif pozisyon yok.")
         return
 
-    sembol, giris, stop, hedef = row
+    sembol, giris, stop, hedef, risk = row
     fiyat = fiyat_getir(sembol)
 
     if fiyat is None:
         await update.message.reply_text("Fiyat alınamadı.")
         return
 
-    risk = giris - stop
     R = round((fiyat - giris) / risk, 2)
 
     await update.message.reply_text(
-        f"""📊 POZİSYON DURUMU
+        f"""📊 POZİSYON
 
 Sembol: {sembol}
 Fiyat: {fiyat}
 R: {R}
-Giriş: {giris}
-Stop: {stop}
-Hedef: {hedef}"""
+Stop: {stop}"""
     )
 
-# ================= OTOMATİK KONTROL =================
+# ================= TRAILING MOTOR =================
 
 async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
 
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("SELECT id, sembol, giris, stop, hedef FROM pozisyon WHERE aktif = TRUE")
+    cur.execute("SELECT id, sembol, giris, stop, hedef, baslangic_risk FROM pozisyon WHERE aktif = TRUE")
     row = cur.fetchone()
 
     if not row:
@@ -134,7 +134,7 @@ async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         return
 
-    poz_id, sembol, giris, stop, hedef = row
+    poz_id, sembol, giris, stop, hedef, risk = row
     fiyat = fiyat_getir(sembol)
 
     if fiyat is None:
@@ -142,19 +142,33 @@ async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
         conn.close()
         return
 
-    risk = giris - stop
-    R = round((fiyat - giris) / risk, 2)
+    R = (fiyat - giris) / risk
+    yeni_stop = stop
 
-    logging.info(f"{sembol} | Fiyat: {fiyat} | R: {R}")
+    # Trailing Mantığı
+    if R >= 1:
+        yeni_stop = max(stop, giris)
+
+    if R >= 2:
+        yeni_stop = max(stop, giris + risk)
+
+    if R >= 3:
+        yeni_stop = max(stop, giris + 2*risk)
+
+    # Stop güncelle
+    if yeni_stop != stop:
+        cur.execute("UPDATE pozisyon SET stop = %s WHERE id = %s", (yeni_stop, poz_id))
+        conn.commit()
+        logging.info(f"{sembol} trailing stop güncellendi: {yeni_stop}")
 
     # STOP
-    if fiyat <= stop:
+    if fiyat <= yeni_stop:
         cur.execute("DELETE FROM pozisyon WHERE id = %s", (poz_id,))
         conn.commit()
 
         await context.bot.send_message(
             chat_id=CHAT_ID,
-            text=f"🔴 STOP ÇALIŞTI\n{sembol}\nFiyat: {fiyat}\nR: -1"
+            text=f"🔴 STOP ÇALIŞTI\n{sembol}\nFiyat: {fiyat}"
         )
 
     # HEDEF
@@ -164,7 +178,7 @@ async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
 
         await context.bot.send_message(
             chat_id=CHAT_ID,
-            text=f"🎯 HEDEF GERÇEKLEŞTİ\n{sembol}\nFiyat: {fiyat}\nR: {R}"
+            text=f"🎯 HEDEF GERÇEKLEŞTİ\n{sembol}\nFiyat: {fiyat}"
         )
 
     cur.close()
@@ -187,7 +201,7 @@ def main():
         first=10
     )
 
-    print("🚀 Kurumsal Sistem Başladı")
+    print("🏛 Kurumsal Sistem v2 Başladı")
     app.run_polling()
 
 if __name__ == "__main__":
