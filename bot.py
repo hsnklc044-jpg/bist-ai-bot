@@ -61,7 +61,7 @@ def init_db():
     cur.close()
     conn.close()
 
-# ================= RSI =================
+# ================= INDICATORS =================
 
 def compute_rsi(series, period=14):
     delta = series.diff()
@@ -73,134 +73,30 @@ def compute_rsi(series, period=14):
 # ================= BASIC COMMANDS =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 BIST AI PRO v6 Aktif")
+    await update.message.reply_text("🚀 BIST AI PRO v7 Aktif")
 
 async def setcapital(update: Update, context: ContextTypes.DEFAULT_TYPE):
     capital = float(context.args[0])
-
     conn = get_connection()
     cur = conn.cursor()
-
     cur.execute("DELETE FROM settings;")
     cur.execute("INSERT INTO settings (capital, risk) VALUES (%s, %s)", (capital, 1))
-
     conn.commit()
     cur.close()
     conn.close()
-
     await update.message.reply_text(f"💰 Sermaye: {capital}")
 
 async def setrisk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     risk = float(context.args[0])
-
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE settings SET risk=%s;", (risk,))
     conn.commit()
     cur.close()
     conn.close()
-
     await update.message.reply_text(f"🎯 Risk: %{risk}")
 
-# ================= TRADE ENGINE =================
-
-async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 4:
-        return await update.message.reply_text("Kullanım: /open EREGL long 42 40")
-
-    symbol, side = context.args[0], context.args[1]
-    entry, stop = float(context.args[2]), float(context.args[3])
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("SELECT id FROM trades WHERE exit IS NULL")
-    if cur.fetchone():
-        return await update.message.reply_text("❌ Açık pozisyon var.")
-
-    cur.execute("SELECT capital, risk FROM settings LIMIT 1")
-    settings = cur.fetchone()
-
-    if not settings:
-        return await update.message.reply_text("Önce /setcapital gir.")
-
-    capital, risk = settings
-    risk_amount = capital * (risk / 100)
-    stop_distance = abs(entry - stop)
-
-    if stop_distance == 0:
-        return await update.message.reply_text("Stop mesafesi 0 olamaz.")
-
-    lot = risk_amount / stop_distance
-    target = entry + stop_distance * RR_RATIO if side == "long" else entry - stop_distance * RR_RATIO
-
-    cur.execute("""
-    INSERT INTO trades (symbol, side, entry, stop, target, lot, exit, pnl)
-    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
-    """, (symbol, side, entry, stop, target, lot, None, 0))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    await update.message.reply_text(
-        f"{symbol} {side.upper()}\nEntry:{entry}\nStop:{stop}\nTarget:{round(target,2)}\nLot:{round(lot,2)}"
-    )
-
-async def close_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    exit_price = float(context.args[0])
-
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("SELECT id, side, entry, lot FROM trades WHERE exit IS NULL LIMIT 1")
-    trade = cur.fetchone()
-
-    if not trade:
-        return await update.message.reply_text("Açık pozisyon yok.")
-
-    trade_id, side, entry, lot = trade
-
-    pnl = (exit_price - entry) * lot if side == "long" else (entry - exit_price) * lot
-
-    cur.execute("UPDATE trades SET exit=%s, pnl=%s WHERE id=%s",
-                (exit_price, pnl, trade_id))
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
-    await update.message.reply_text(f"✅ PnL: {round(pnl,2)}")
-
-# ================= EQUITY =================
-
-async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("SELECT pnl FROM trades WHERE exit IS NOT NULL ORDER BY id")
-    rows = cur.fetchall()
-
-    if not rows:
-        return await update.message.reply_text("Trade yok.")
-
-    pnls = np.array([r[0] for r in rows])
-    cumulative = np.cumsum(pnls)
-
-    plt.figure()
-    plt.plot(cumulative)
-    buffer = io.BytesIO()
-    plt.savefig(buffer, format="png")
-    buffer.seek(0)
-    plt.close()
-
-    await update.message.reply_text(f"Net PnL: {round(cumulative[-1],2)}")
-    await update.message.reply_photo(photo=buffer)
-
-    cur.close()
-    conn.close()
-
-# ================= SCOUT v2 RADAR =================
+# ================= SCOUT v3 =================
 
 BIST_SYMBOLS = [
     "EREGL.IS","THYAO.IS","TUPRS.IS","KRDMD.IS","SASA.IS",
@@ -211,30 +107,37 @@ BIST_SYMBOLS = [
 
 async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("🟡 SCOUT v2 tarıyor...")
+    await update.message.reply_text("🟢 SCOUT v3 trend tarıyor...")
+
+    # 📈 Endeks filtresi (BIST100)
+    index_df = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
+    index_df["EMA20"] = index_df["Close"].ewm(span=20).mean()
+    index_last = index_df.iloc[-1]
+
+    if index_last["Close"] < index_last["EMA20"]:
+        return await update.message.reply_text("❌ Endeks zayıf. Trend yok.")
 
     candidates = []
 
     for symbol in BIST_SYMBOLS:
         try:
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
-
             if len(df) < 30:
                 continue
 
             df["RSI"] = compute_rsi(df["Close"], 14)
-            df["Mom10"] = df["Close"].pct_change(10) * 100
+            df["EMA20"] = df["Close"].ewm(span=20).mean()
+            df["Mom5"] = df["Close"].pct_change(5) * 100
             df["VolAvg20"] = df["Volume"].rolling(20).mean()
 
             last = df.iloc[-1]
-            high20 = df["High"].rolling(20).max().iloc[-2]
 
-            near_breakout = last["Close"] >= high20 * 0.97
-            cond_rsi = last["RSI"] > 50
-            cond_mom = last["Mom10"] > 2
+            cond_trend = last["Close"] > last["EMA20"]
+            cond_rsi = last["RSI"] > 48
+            cond_mom = last["Mom5"] > 1.5
             cond_vol = last["Volume"] > last["VolAvg20"] * 1.1
 
-            if near_breakout and cond_rsi and cond_mom and cond_vol:
+            if cond_trend and cond_rsi and cond_mom and cond_vol:
 
                 entry = last["Close"]
                 stop = df["Low"].rolling(5).min().iloc[-1]
@@ -246,7 +149,7 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "entry": round(entry,2),
                     "stop": round(stop,2),
                     "target": round(target,2),
-                    "score": last["Mom10"]
+                    "score": last["Mom5"]
                 })
 
         except:
@@ -257,8 +160,7 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:5]
 
-    message = "🟡 SCOUT RADAR\n\n"
-
+    message = "🟢 TREND RADAR\n\n"
     for c in candidates:
         message += f"{c['symbol']} | Entry:{c['entry']} | Stop:{c['stop']} | Target:{c['target']}\n"
 
@@ -268,15 +170,11 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     init_db()
-
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setcapital", setcapital))
     app.add_handler(CommandHandler("setrisk", setrisk))
-    app.add_handler(CommandHandler("open", open_trade))
-    app.add_handler(CommandHandler("close", close_trade))
-    app.add_handler(CommandHandler("equity", equity))
     app.add_handler(CommandHandler("bebek", bebek))
 
     app.run_polling(drop_pending_updates=True)
