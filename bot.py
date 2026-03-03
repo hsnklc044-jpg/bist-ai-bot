@@ -34,22 +34,30 @@ def compute_rsi(series, period=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-# ================= BATCH SCOUT =================
+# ================= RELATIVE STRENGTH ENGINE =================
 
 async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("🚀 Batch PRO tarıyor...")
+    await update.message.reply_text("🔥 RS PRO tarıyor...")
 
     try:
+        tickers = BIST_SYMBOLS + ["XU100.IS"]
+
         data = yf.download(
-            tickers=" ".join(BIST_SYMBOLS),
+            tickers=" ".join(tickers),
             period="3mo",
             interval="1d",
             group_by="ticker",
             progress=False
         )
-    except Exception as e:
+    except:
         return await update.message.reply_text("Veri çekilemedi.")
+
+    try:
+        index_df = data["XU100.IS"].dropna()
+        index_return = (index_df["Close"].iloc[-1] / index_df["Close"].iloc[-20]) - 1
+    except:
+        return await update.message.reply_text("Endeks verisi alınamadı.")
 
     candidates = []
 
@@ -62,28 +70,25 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 continue
 
             df["EMA20"] = df["Close"].ewm(span=20).mean()
-            df["Mom5"] = df["Close"].pct_change(5) * 100
-            df["VolAvg20"] = df["Volume"].rolling(20).mean()
             df["RSI"] = compute_rsi(df["Close"], 14)
+
+            stock_return = (df["Close"].iloc[-1] / df["Close"].iloc[-20]) - 1
+            relative_strength = stock_return - index_return
 
             last = df.iloc[-1]
 
-            trend = last["Close"] > last["EMA20"]
-            momentum = last["Mom5"]
-            volume_boost = last["Volume"] > last["VolAvg20"] * 1.1
+            cond_trend = last["Close"] > last["EMA20"]
+            cond_rs = relative_strength > 0
+            cond_rsi = last["RSI"] > 50
 
-            if trend and momentum > 1 and volume_boost:
-
-                score = (
-                    momentum * 0.5 +
-                    (last["Volume"] / last["VolAvg20"]) * 10 * 0.3 +
-                    last["RSI"] * 0.2
-                )
+            if cond_trend and cond_rs and cond_rsi:
 
                 entry = last["Close"]
                 stop = df["Low"].rolling(5).min().iloc[-1]
                 risk = entry - stop
                 target = entry + risk * 2
+
+                score = relative_strength * 100
 
                 candidates.append({
                     "symbol": symbol.replace(".IS",""),
@@ -97,11 +102,11 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
 
     if not candidates:
-        return await update.message.reply_text("❌ Momentum yok.")
+        return await update.message.reply_text("❌ Endeksten güçlü hisse yok.")
 
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:10]
 
-    message = "🔥 BATCH MOMENTUM LİSTESİ\n\n"
+    message = "🔥 RELATIVE STRENGTH LİDERLERİ\n\n"
 
     for c in candidates:
         message += (
