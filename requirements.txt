@@ -1,6 +1,2 @@
-python-telegram-bot==20.7
-psycopg2-binary
-numpy
-matplotlib
-yfinance
-pandas
+python-telegram-bot[job-queue]==20.7
+psycopg2-binary==2.9.9
