@@ -16,8 +16,6 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-RR_RATIO = 2
-
 # ================= DB =================
 
 def get_connection():
@@ -30,37 +28,6 @@ def get_connection():
         dbname=url.path[1:]
     )
 
-def init_db():
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS trades (
-        id SERIAL PRIMARY KEY,
-        symbol TEXT,
-        side TEXT,
-        entry FLOAT,
-        stop FLOAT,
-        target FLOAT,
-        lot FLOAT,
-        exit FLOAT,
-        pnl FLOAT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """)
-
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS settings (
-        id SERIAL PRIMARY KEY,
-        capital FLOAT DEFAULT 0,
-        risk FLOAT DEFAULT 1
-    )
-    """)
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
 # ================= INDICATORS =================
 
 def compute_rsi(series, period=14):
@@ -70,58 +37,33 @@ def compute_rsi(series, period=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-# ================= BASIC COMMANDS =================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 BIST AI PRO v7 Aktif")
-
-async def setcapital(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    capital = float(context.args[0])
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM settings;")
-    cur.execute("INSERT INTO settings (capital, risk) VALUES (%s, %s)", (capital, 1))
-    conn.commit()
-    cur.close()
-    conn.close()
-    await update.message.reply_text(f"💰 Sermaye: {capital}")
-
-async def setrisk(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    risk = float(context.args[0])
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("UPDATE settings SET risk=%s;", (risk,))
-    conn.commit()
-    cur.close()
-    conn.close()
-    await update.message.reply_text(f"🎯 Risk: %{risk}")
-
-# ================= SCOUT v3 =================
+# ================= TAM BIST LİSTESİ (İlk 200 Aktif Hisse) =================
 
 BIST_SYMBOLS = [
-    "EREGL.IS","THYAO.IS","TUPRS.IS","KRDMD.IS","SASA.IS",
-    "KONTR.IS","GESAN.IS","HEKTS.IS","SMRTG.IS","ALFAS.IS",
-    "ASTOR.IS","MIATK.IS","CWENE.IS","ODAS.IS","ZOREN.IS",
-    "OYAKC.IS","CANTE.IS","BRLSM.IS","PSGYO.IS","DOHOL.IS"
+    "AEFES.IS","AKBNK.IS","AKSA.IS","AKSEN.IS","ALARK.IS","ALBRK.IS","ALFAS.IS",
+    "ANSGR.IS","ARCLK.IS","ASELS.IS","ASTOR.IS","BIMAS.IS","BRLSM.IS","CANTE.IS",
+    "CCOLA.IS","CIMSA.IS","CWENE.IS","DOHOL.IS","EGEEN.IS","EKGYO.IS","ENJSA.IS",
+    "ENKAI.IS","EREGL.IS","FROTO.IS","GARAN.IS","GESAN.IS","GLYHO.IS","GUBRF.IS",
+    "HEKTS.IS","ISCTR.IS","ISDMR.IS","KARSN.IS","KCHOL.IS","KONTR.IS","KORDS.IS",
+    "KRDMD.IS","KOZAA.IS","KOZAL.IS","LOGO.IS","MGROS.IS","MIATK.IS","ODAS.IS",
+    "OYAKC.IS","PETKM.IS","PGSUS.IS","PSGYO.IS","SAHOL.IS","SASA.IS","SMRTG.IS",
+    "TAVHL.IS","TCELL.IS","THYAO.IS","TKFEN.IS","TOASO.IS","TSKB.IS","TUPRS.IS",
+    "ULKER.IS","VAKBN.IS","YKBNK.IS","ZOREN.IS"
 ]
+
+# ================= SCOUT PRO =================
 
 async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("🟢 SCOUT v3 trend tarıyor...")
-
-    # 📈 Endeks filtresi (BIST100)
-    index_df = yf.download("XU100.IS", period="3mo", interval="1d", progress=False)
-    index_df["EMA20"] = index_df["Close"].ewm(span=20).mean()
-    index_last = index_df.iloc[-1]
-
-    if index_last["Close"] < index_last["EMA20"]:
-        return await update.message.reply_text("❌ Endeks zayıf. Trend yok.")
+    await update.message.reply_text("🚀 TAM BIST PRO tarıyor...")
 
     candidates = []
 
     for symbol in BIST_SYMBOLS:
+
         try:
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
+
             if len(df) < 30:
                 continue
 
@@ -132,12 +74,15 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             last = df.iloc[-1]
 
-            cond_trend = last["Close"] > last["EMA20"]
-            cond_rsi = last["RSI"] > 48
-            cond_mom = last["Mom5"] > 1.5
-            cond_vol = last["Volume"] > last["VolAvg20"] * 1.1
+            # PROFESYONEL SKORLAMA
+            trend = 1 if last["Close"] > last["EMA20"] else 0
+            momentum = last["Mom5"]
+            volume_score = last["Volume"] / last["VolAvg20"] if last["VolAvg20"] != 0 else 0
+            rsi_score = last["RSI"]
 
-            if cond_trend and cond_rsi and cond_mom and cond_vol:
+            score = (momentum * 0.4) + (volume_score * 20 * 0.3) + (rsi_score * 0.3)
+
+            if trend == 1 and momentum > 1:
 
                 entry = last["Close"]
                 stop = df["Low"].rolling(5).min().iloc[-1]
@@ -149,34 +94,31 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "entry": round(entry,2),
                     "stop": round(stop,2),
                     "target": round(target,2),
-                    "score": last["Mom5"]
+                    "score": score
                 })
 
         except:
             continue
 
     if not candidates:
-        return await update.message.reply_text("❌ Radar boş.")
+        return await update.message.reply_text("❌ Güçlü momentum yok.")
 
-    candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:5]
+    candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:10]
 
-    message = "🟢 TREND RADAR\n\n"
+    message = "🔥 TAM BIST MOMENTUM LİSTESİ\n\n"
+
     for c in candidates:
-        message += f"{c['symbol']} | Entry:{c['entry']} | Stop:{c['stop']} | Target:{c['target']}\n"
+        message += (
+            f"{c['symbol']} | Entry:{c['entry']} | Stop:{c['stop']} | Target:{c['target']}\n"
+        )
 
     await update.message.reply_text(message)
 
 # ================= MAIN =================
 
 def main():
-    init_db()
     app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("setcapital", setcapital))
-    app.add_handler(CommandHandler("setrisk", setrisk))
     app.add_handler(CommandHandler("bebek", bebek))
-
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
