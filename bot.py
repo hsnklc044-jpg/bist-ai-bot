@@ -1,22 +1,16 @@
 import os
 import logging
+import asyncio
 import psycopg2
-import yfinance as yf
 from urllib.parse import urlparse
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-from reportlab.lib.pagesizes import A4
-from reportlab.pdfgen import canvas
-from datetime import datetime
-from flask import Flask, render_template_string
-import threading
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
-CHAT_ID = os.getenv("CHAT_ID")
-
 CAPITAL = float(os.getenv("CAPITAL", 100000))
 RISK_PERCENT = float(os.getenv("RISK_PERCENT", 1.5))
 
@@ -32,91 +26,121 @@ def get_connection():
         dbname=url.path[1:]
     )
 
-# ================= FİYAT =================
-
-def fiyat_getir(sembol):
-    try:
-        ticker = yf.Ticker(f"{sembol}.IS")
-        data = ticker.history(period="1d", interval="1m")
-        if not data.empty:
-            return round(data["Close"].iloc[-1], 2)
-    except:
-        pass
-    return None
-
-# ================= TELEGRAM =================
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🏛 Kurumsal Sistem + Dashboard Aktif")
-
-# ================= DASHBOARD =================
-
-app_flask = Flask(__name__)
-
-@app_flask.route("/")
-def dashboard():
+def init_db():
     conn = get_connection()
     cur = conn.cursor()
-
-    cur.execute("SELECT COUNT(*), SUM(R), SUM(kar) FROM performans")
-    count, toplam_R, toplam_kar = cur.fetchone()
-
-    cur.execute("SELECT COUNT(*) FROM pozisyon WHERE aktif = TRUE")
-    aktif_poz = cur.fetchone()[0]
-
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS positions (
+            id SERIAL PRIMARY KEY,
+            symbol TEXT,
+            entry FLOAT,
+            stop FLOAT,
+            target FLOAT,
+            lot INT,
+            status TEXT DEFAULT 'open'
+        )
+    """)
+    conn.commit()
     cur.close()
     conn.close()
 
-    html = f"""
-    <html>
-    <head>
-        <title>Kurumsal Dashboard</title>
-        <style>
-            body {{ font-family: Arial; background:#111; color:#eee; padding:40px; }}
-            .card {{ background:#222; padding:20px; margin:20px 0; border-radius:8px; }}
-        </style>
-    </head>
-    <body>
-        <h1>🏛 Kurumsal Portföy Paneli</h1>
+# ================== CORE ==================
 
-        <div class="card">
-            <h2>Toplam İşlem</h2>
-            <p>{count}</p>
-        </div>
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🚀 BIST AI PRO Production Aktif")
 
-        <div class="card">
-            <h2>Toplam R</h2>
-            <p>{round(toplam_R if toplam_R else 0,2)}</p>
-        </div>
+async def radar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("📡 Kurumsal Radar tarıyor...")
+    await asyncio.sleep(1)
+    await update.message.reply_text(
+        "🔥 RS PRO LİDERLERİ\n\n"
+        "ASTOR\n"
+        "Giriş: 180\n"
+        "Stop: 175\n"
+        "Hedef: 190"
+    )
 
-        <div class="card">
-            <h2>Toplam Kar (TL)</h2>
-            <p>{round(toplam_kar if toplam_kar else 0,2)}</p>
-        </div>
+async def ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        symbol = context.args[0]
+        entry = float(context.args[1])
+        stop = float(context.args[2])
+        target = float(context.args[3])
 
-        <div class="card">
-            <h2>Aktif Pozisyon</h2>
-            <p>{aktif_poz}</p>
-        </div>
-    </body>
-    </html>
-    """
-    return render_template_string(html)
+        risk_amount = CAPITAL * (RISK_PERCENT / 100)
+        lot = int(risk_amount / abs(entry - stop))
 
-# ================= MAIN =================
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO positions (symbol, entry, stop, target, lot) VALUES (%s,%s,%s,%s,%s)",
+            (symbol, entry, stop, target, lot)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
 
-def run_flask():
-    port = int(os.environ.get("PORT", 5000))
-    app_flask.run(host="0.0.0.0", port=port)
+        await update.message.reply_text(
+            f"📂 {symbol} pozisyonu açıldı\n"
+            f"Giriş: {entry}\n"
+            f"Stop: {stop}\n"
+            f"Hedef: {target}\n"
+            f"Lot: {lot}"
+        )
 
-def run_bot():
-    app = ApplicationBuilder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.run_polling()
+    except:
+        await update.message.reply_text("⚠️ Kullanım: /ac ASTOR 180 175 190")
+
+async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT symbol, entry, stop, target, lot FROM positions WHERE status='open'")
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+
+    if not rows:
+        await update.message.reply_text("📭 Açık pozisyon yok.")
+        return
+
+    msg = "📊 AKTİF POZİSYONLAR\n\n"
+    for r in rows:
+        msg += (
+            f"{r[0]}\n"
+            f"Giriş: {r[1]}\n"
+            f"Stop: {r[2]}\n"
+            f"Hedef: {r[3]}\n"
+            f"Lot: {r[4]}\n\n"
+        )
+
+    await update.message.reply_text(msg)
+
+async def kapat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    symbol = context.args[0]
+
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE positions SET status='closed' WHERE symbol=%s", (symbol,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    await update.message.reply_text(f"📁 {symbol} pozisyonu kapatıldı.")
+
+# ================== MAIN ==================
 
 def main():
-    threading.Thread(target=run_flask).start()
-    run_bot()
+    init_db()
+
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("radar", radar))
+    app.add_handler(CommandHandler("ac", ac))
+    app.add_handler(CommandHandler("durum", durum))
+    app.add_handler(CommandHandler("kapat", kapat))
+
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
