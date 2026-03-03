@@ -5,7 +5,6 @@ import numpy as np
 import io
 from urllib.parse import urlparse
 import matplotlib.pyplot as plt
-
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -15,7 +14,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-RR_RATIO = 2  # 1:2 Sabit Risk Reward
+RR_RATIO = 2
 
 # ================= DB =================
 
@@ -63,11 +62,10 @@ def init_db():
 # ================= COMMANDS =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 BIST AI PRO — Risk Engine Aktif")
+    await update.message.reply_text("🚀 BIST AI PRO v3 — Performance Engine Aktif")
 
 async def setcapital(update: Update, context: ContextTypes.DEFAULT_TYPE):
     capital = float(context.args[0])
-
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("DELETE FROM settings;")
@@ -75,37 +73,29 @@ async def setcapital(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     cur.close()
     conn.close()
-
     await update.message.reply_text(f"💰 Sermaye: {capital}")
 
 async def setrisk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     risk = float(context.args[0])
-
     conn = get_connection()
     cur = conn.cursor()
     cur.execute("UPDATE settings SET risk=%s;", (risk,))
     conn.commit()
     cur.close()
     conn.close()
-
     await update.message.reply_text(f"🎯 Risk: %{risk}")
 
 async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(context.args) != 4:
-        return await update.message.reply_text(
-            "Kullanım: /open EREGL long 42 40"
-        )
+        return await update.message.reply_text("Kullanım: /open EREGL long 42 40")
 
-    symbol = context.args[0]
-    side = context.args[1]
-    entry = float(context.args[2])
-    stop = float(context.args[3])
+    symbol, side = context.args[0], context.args[1]
+    entry, stop = float(context.args[2]), float(context.args[3])
 
     conn = get_connection()
     cur = conn.cursor()
 
-    # Tek açık pozisyon kuralı
     cur.execute("SELECT id FROM trades WHERE exit IS NULL")
     if cur.fetchone():
         return await update.message.reply_text("❌ Zaten açık pozisyon var.")
@@ -118,7 +108,6 @@ async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     capital, risk = settings
     risk_amount = capital * (risk / 100)
-
     stop_distance = abs(entry - stop)
 
     if stop_distance == 0:
@@ -126,10 +115,7 @@ async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     lot = risk_amount / stop_distance
 
-    if side == "long":
-        target = entry + (stop_distance * RR_RATIO)
-    else:
-        target = entry - (stop_distance * RR_RATIO)
+    target = entry + stop_distance * RR_RATIO if side == "long" else entry - stop_distance * RR_RATIO
 
     cur.execute("""
     INSERT INTO trades (symbol, side, entry, stop, target, lot, exit, pnl)
@@ -142,10 +128,7 @@ async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         f"📌 {symbol} {side.upper()}\n"
-        f"Entry: {entry}\n"
-        f"Stop: {stop}\n"
-        f"Target (1:2): {round(target,2)}\n"
-        f"Lot: {round(lot,2)}"
+        f"Entry: {entry}\nStop: {stop}\nTarget: {round(target,2)}\nLot: {round(lot,2)}"
     )
 
 async def close_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -155,13 +138,7 @@ async def close_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("""
-    SELECT id, side, entry, lot
-    FROM trades
-    WHERE exit IS NULL
-    LIMIT 1
-    """)
-
+    cur.execute("SELECT id, side, entry, lot FROM trades WHERE exit IS NULL LIMIT 1")
     trade = cur.fetchone()
 
     if not trade:
@@ -169,16 +146,10 @@ async def close_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     trade_id, side, entry, lot = trade
 
-    if side == "long":
-        pnl = (exit_price - entry) * lot
-    else:
-        pnl = (entry - exit_price) * lot
+    pnl = (exit_price - entry) * lot if side == "long" else (entry - exit_price) * lot
 
-    cur.execute("""
-    UPDATE trades
-    SET exit=%s, pnl=%s
-    WHERE id=%s
-    """, (exit_price, pnl, trade_id))
+    cur.execute("UPDATE trades SET exit=%s, pnl=%s WHERE id=%s",
+                (exit_price, pnl, trade_id))
 
     conn.commit()
     cur.close()
@@ -197,25 +168,42 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not rows:
         return await update.message.reply_text("Trade yok.")
 
-    pnls = [r[0] for r in rows]
+    pnls = np.array([r[0] for r in rows])
     cumulative = np.cumsum(pnls)
+
+    wins = pnls[pnls > 0]
+    losses = pnls[pnls < 0]
+
+    win_rate = len(wins) / len(pnls)
+    profit_factor = abs(sum(wins) / sum(losses)) if len(losses) > 0 else 0
+
+    expectancy = np.mean(pnls)
 
     peak = np.maximum.accumulate(cumulative)
     drawdown = peak - cumulative
     max_dd = np.max(drawdown)
 
-    wins = len([p for p in pnls if p > 0])
-    losses = len([p for p in pnls if p < 0])
+    capital_row = None
+    cur.execute("SELECT capital FROM settings LIMIT 1")
+    capital_row = cur.fetchone()
+    capital = capital_row[0] if capital_row else 1
 
-    net = np.sum(pnls)
+    dd_percent = (max_dd / capital) * 100
+
+    sharpe = np.mean(pnls) / np.std(pnls) if np.std(pnls) != 0 else 0
+
+    growth = (cumulative[-1] / capital) * 100
 
     await update.message.reply_text(
-        f"📊 PERFORMANS\n"
-        f"Toplam: {len(pnls)}\n"
-        f"Kazanan: {wins}\n"
-        f"Kaybeden: {losses}\n"
-        f"Net PnL: {round(net,2)}\n"
-        f"Max DD: {round(max_dd,2)}"
+        f"📊 SYSTEM PERFORMANCE\n\n"
+        f"Trades: {len(pnls)}\n"
+        f"Win Rate: %{round(win_rate*100,2)}\n"
+        f"Profit Factor: {round(profit_factor,2)}\n"
+        f"Expectancy: {round(expectancy,2)}\n\n"
+        f"Net PnL: {round(cumulative[-1],2)}\n"
+        f"Max DD: {round(max_dd,2)} (%{round(dd_percent,2)})\n"
+        f"Sharpe: {round(sharpe,2)}\n"
+        f"Growth: %{round(growth,2)}"
     )
 
     plt.figure()
@@ -238,7 +226,6 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     init_db()
-
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
