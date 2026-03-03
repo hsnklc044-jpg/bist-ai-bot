@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# ---------------- DATABASE ---------------- #
+# ================= DATABASE ================= #
 
 def get_connection():
     url = urlparse(DATABASE_URL)
@@ -50,14 +50,13 @@ def init_db():
     CREATE TABLE IF NOT EXISTS settings (
         id SERIAL PRIMARY KEY,
         capital FLOAT DEFAULT 0,
-        risk_percent FLOAT DEFAULT 1,
-        daily_loss_limit FLOAT DEFAULT 3
+        risk_percent FLOAT DEFAULT 1
     );
     """)
 
     cur.execute("""
-    INSERT INTO settings (capital, risk_percent, daily_loss_limit)
-    SELECT 0,1,3
+    INSERT INTO settings (capital, risk_percent)
+    SELECT 0,1
     WHERE NOT EXISTS (SELECT 1 FROM settings);
     """)
 
@@ -65,12 +64,12 @@ def init_db():
     cur.close()
     conn.close()
 
-# ---------------- SETTINGS ---------------- #
+# ================= SETTINGS ================= #
 
 def get_settings():
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT capital, risk_percent, daily_loss_limit FROM settings LIMIT 1;")
+    cur.execute("SELECT capital, risk_percent FROM settings LIMIT 1;")
     data = cur.fetchone()
     cur.close()
     conn.close()
@@ -84,29 +83,27 @@ def update_setting(field, value):
     cur.close()
     conn.close()
 
-# ---------------- SETTINGS COMMANDS ---------------- #
-
 async def setcapital(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         capital = float(context.args[0])
         update_setting("capital", capital)
-        await update.message.reply_text(f"💰 Sermaye kaydedildi: {capital}")
+        await update.message.reply_text(f"💰 Sermaye: {capital}")
     except:
-        await update.message.reply_text("❌ Kullanım: /setcapital 100000")
+        await update.message.reply_text("❌ /setcapital 100000")
 
 async def setrisk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         risk = float(context.args[0])
         update_setting("risk_percent", risk)
-        await update.message.reply_text(f"🎯 Risk % kaydedildi: %{risk}")
+        await update.message.reply_text(f"🎯 Risk %: %{risk}")
     except:
-        await update.message.reply_text("❌ Kullanım: /setrisk 1")
+        await update.message.reply_text("❌ /setrisk 1")
 
-# ---------------- OPEN TRADE ---------------- #
+# ================= OPEN ================= #
 
 async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        capital, risk_percent, _ = get_settings()
+        capital, risk_percent = get_settings()
 
         if capital == 0:
             await update.message.reply_text("Önce /setcapital gir.")
@@ -114,11 +111,10 @@ async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         parts = update.message.text.split()
         if len(parts) != 5:
-            await update.message.reply_text("❌ Kullanım: /open EREGL long 50 48")
+            await update.message.reply_text("❌ /open EREGL long 50 48")
             return
 
         _, symbol, side, entry, stop = parts
-
         entry = float(entry)
         stop = float(stop)
 
@@ -135,16 +131,13 @@ async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         cur.execute("""
         SELECT SUM(ABS(entry - stop) * lot)
-        FROM trades
-        WHERE status='open';
+        FROM trades WHERE status='open';
         """)
-
         current_risk = cur.fetchone()[0] or 0
 
         if current_risk + risk_amount > capital * 0.05:
-            await update.message.reply_text("🚫 Toplam açık risk limiti (%5) aşılırdı.")
-            cur.close()
-            conn.close()
+            await update.message.reply_text("🚫 %5 toplam açık risk limiti.")
+            cur.close(); conn.close()
             return
 
         cur.execute("""
@@ -153,26 +146,17 @@ async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """, (symbol.upper(), side.lower(), entry, stop, lot))
 
         conn.commit()
-        cur.close()
-        conn.close()
+        cur.close(); conn.close()
 
         await update.message.reply_text(
-            f"""
-📥 POZİSYON AÇILDI
-
-{symbol} {side}
-Entry: {entry}
-Stop: {stop}
-Risk: {round(risk_amount,2)}
-Lot: {round(lot,2)}
-"""
+            f"📥 {symbol} {side}\nEntry:{entry}\nStop:{stop}\nLot:{round(lot,2)}"
         )
 
     except Exception as e:
         logger.error(e)
         await update.message.reply_text("❌ Sistem hatası.")
 
-# ---------------- CLOSE TRADE ---------------- #
+# ================= CLOSE ================= #
 
 async def close_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -183,11 +167,9 @@ async def close_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         cur.execute("""
         SELECT id, symbol, side, entry, lot
-        FROM trades
-        WHERE status='open'
+        FROM trades WHERE status='open'
         ORDER BY id DESC LIMIT 1;
         """)
-
         trade = cur.fetchone()
 
         if not trade:
@@ -196,10 +178,7 @@ async def close_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         trade_id, symbol, side, entry, lot = trade
 
-        if side == "long":
-            pnl = (exit_price - entry) * lot
-        else:
-            pnl = (entry - exit_price) * lot
+        pnl = (exit_price - entry) * lot if side=="long" else (entry - exit_price) * lot
 
         cur.execute("""
         UPDATE trades
@@ -208,99 +187,16 @@ async def close_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """, (exit_price, pnl, trade_id))
 
         conn.commit()
-        cur.close()
-        conn.close()
+        cur.close(); conn.close()
 
         await update.message.reply_text(
-            f"""
-📤 POZİSYON KAPANDI
-
-{symbol} {side}
-Exit: {exit_price}
-PnL: {round(pnl,2)}
-"""
+            f"📤 {symbol} kapandı\nPnL: {round(pnl,2)}"
         )
 
     except:
-        await update.message.reply_text("❌ Kullanım: /close 45")
+        await update.message.reply_text("❌ /close 45")
 
-# ---------------- POSITIONS ---------------- #
-
-async def positions(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-    SELECT symbol, side, entry, stop, lot
-    FROM trades
-    WHERE status='open'
-    ORDER BY id;
-    """)
-
-    rows = cur.fetchall()
-
-    if not rows:
-        await update.message.reply_text("Açık pozisyon yok.")
-        return
-
-    msg = "📂 AÇIK POZİSYONLAR\n\n"
-    for r in rows:
-        msg += f"{r[0]} {r[1]} @ {r[2]} Stop:{r[3]} Lot:{round(r[4],2)}\n"
-
-    await update.message.reply_text(msg)
-
-    cur.close()
-    conn.close()
-
-# ---------------- FLOATING ---------------- #
-
-async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        current_price = float(context.args[0])
-
-        conn = get_connection()
-        cur = conn.cursor()
-
-        cur.execute("""
-        SELECT symbol, side, entry, lot
-        FROM trades
-        WHERE status='open'
-        ORDER BY id DESC LIMIT 1;
-        """)
-
-        trade = cur.fetchone()
-
-        if not trade:
-            await update.message.reply_text("Açık pozisyon yok.")
-            return
-
-        symbol, side, entry, lot = trade
-
-        if side == "long":
-            floating = (current_price - entry) * lot
-        else:
-            floating = (entry - current_price) * lot
-
-        await update.message.reply_text(
-            f"""
-📡 FLOATING
-
-{symbol} {side}
-Entry: {entry}
-Current: {current_price}
-Lot: {round(lot,2)}
-
-Floating: {round(floating,2)}
-"""
-        )
-
-        cur.close()
-        conn.close()
-
-    except:
-        await update.message.reply_text("❌ Kullanım: /price 47")
-
-# ---------------- EQUITY ---------------- #
+# ================= EQUITY ================= #
 
 async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
@@ -310,48 +206,29 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rows = cur.fetchall()
 
     if not rows:
-        await update.message.reply_text("Henüz kapanmış trade yok.")
+        await update.message.reply_text("Kapanmış trade yok.")
         return
 
-    pnls = [r[0] for r in rows]
-
-    cumulative = 0
-    peak = 0
-    max_dd = 0
-    equity_curve = []
-
-    for p in pnls:
-        cumulative += p
-        equity_curve.append(cumulative)
-        peak = max(peak, cumulative)
-        max_dd = max(max_dd, peak - cumulative)
+    pnls = np.array([r[0] for r in rows])
+    cumulative = np.cumsum(pnls)
+    peak = np.maximum.accumulate(cumulative)
+    max_dd = np.max(peak - cumulative)
 
     plt.figure()
-    plt.plot(equity_curve)
-    plt.title("Equity Curve")
-    plt.xlabel("Trade")
-    plt.ylabel("Cumulative PnL")
-
+    plt.plot(cumulative)
     buffer = io.BytesIO()
     plt.savefig(buffer, format="png")
     buffer.seek(0)
     plt.close()
 
-    msg = f"""
-📊 PERFORMANS
-
-Total: {len(pnls)}
-Net PnL: {round(sum(pnls),2)}
-Max DD: {round(max_dd,2)}
-"""
-
-    await update.message.reply_text(msg)
+    await update.message.reply_text(
+        f"📊 Net: {round(np.sum(pnls),2)}\nMaxDD: {round(max_dd,2)}"
+    )
     await update.message.reply_photo(photo=buffer)
 
-    cur.close()
-    conn.close()
+    cur.close(); conn.close()
 
-# ---------------- KELLY ---------------- #
+# ================= KELLY ================= #
 
 async def kelly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
@@ -360,42 +237,28 @@ async def kelly(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur.execute("SELECT pnl FROM trades WHERE status='closed';")
     rows = cur.fetchall()
 
-    if not rows or len(rows) < 5:
-        await update.message.reply_text("Kelly için en az 5 kapanmış trade gerekli.")
+    if len(rows) < 5:
+        await update.message.reply_text("En az 5 trade gerekli.")
         return
 
-    pnls = [r[0] for r in rows]
-    wins = [p for p in pnls if p > 0]
-    losses = [p for p in pnls if p < 0]
+    pnls = np.array([r[0] for r in rows])
+    wins = pnls[pnls>0]
+    losses = pnls[pnls<0]
 
-    win_rate = len(wins) / len(pnls)
-    avg_win = sum(wins)/len(wins)
-    avg_loss = abs(sum(losses)/len(losses))
+    win_rate = len(wins)/len(pnls)
+    avg_win = np.mean(wins)
+    avg_loss = abs(np.mean(losses))
 
-    if avg_loss == 0:
-        await update.message.reply_text("Zarar yok. Kelly hesaplanamaz.")
-        return
+    rr = avg_win/avg_loss if avg_loss!=0 else 0
+    kelly_fraction = win_rate - ((1-win_rate)/rr) if rr!=0 else 0
 
-    rr = avg_win / avg_loss
-    kelly_fraction = win_rate - ((1 - win_rate) / rr)
-    conservative = kelly_fraction * 0.5
+    await update.message.reply_text(
+        f"📊 Kelly Optimal: %{round(kelly_fraction*100,2)}"
+    )
 
-    msg = f"""
-📊 KELLY ANALİZİ
+    cur.close(); conn.close()
 
-Win Rate: %{round(win_rate*100,2)}
-RR: {round(rr,2)}
-
-Kelly Optimal: %{round(kelly_fraction*100,2)}
-Önerilen Risk: %{round(conservative*100,2)}
-"""
-
-    await update.message.reply_text(msg)
-
-    cur.close()
-    conn.close()
-
-# ---------------- MONTE CARLO ---------------- #
+# ================= MONTE CARLO ================= #
 
 async def montecarlo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
@@ -404,110 +267,27 @@ async def montecarlo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur.execute("SELECT pnl FROM trades WHERE status='closed';")
     rows = cur.fetchall()
 
-    if not rows or len(rows) < 5:
-        await update.message.reply_text("Monte Carlo için en az 5 kapanmış trade gerekli.")
+    if len(rows) < 5:
+        await update.message.reply_text("En az 5 trade gerekli.")
         return
 
     pnls = [r[0] for r in rows]
-
     simulations = 1000
     trade_count = len(pnls)
 
-    final_results = []
-    worst_dd = 0
+    results = []
 
     for _ in range(simulations):
-        shuffled = random.choices(pnls, k=trade_count)
+        sample = random.choices(pnls, k=trade_count)
+        results.append(sum(sample))
 
-        cumulative = 0
-        peak = 0
-        max_dd = 0
+    await update.message.reply_text(
+        f"🎲 Ortalama Final: {round(np.mean(results),2)}\nEn Kötü: {round(min(results),2)}"
+    )
 
-        for p in shuffled:
-            cumulative += p
-            peak = max(peak, cumulative)
-            max_dd = max(max_dd, peak - cumulative)
+    cur.close(); conn.close()
 
-        final_results.append(cumulative)
-        worst_dd = max(worst_dd, max_dd)
-
-    avg_final = np.mean(final_results)
-    worst_case = min(final_results)
-
-    msg = f"""
-🎲 MONTE CARLO
-
-Simülasyon: {simulations}
-Trade Sayısı: {trade_count}
-
-Ortalama Final: {round(avg_final,2)}
-En Kötü Final: {round(worst_case,2)}
-En Kötü Drawdown: {round(worst_dd,2)}
-"""
-
-    await update.message.reply_text(msg)
-
-    cur.close()
-    conn.close()
-
-# ---------------- RISK OF RUIN ---------------- #
-
-async def riskofruin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("SELECT pnl FROM trades WHERE status='closed';")
-    rows = cur.fetchall()
-
-    if not rows or len(rows) < 10:
-        await update.message.reply_text("Risk of Ruin için en az 10 kapanmış trade gerekli.")
-        return
-
-    pnls = [r[0] for r in rows]
-    wins = [p for p in pnls if p > 0]
-    losses = [p for p in pnls if p < 0]
-
-    if not wins or not losses:
-        await update.message.reply_text("Yeterli veri yok.")
-        return
-
-    capital, risk_percent, _ = get_settings()
-
-    win_rate = len(wins) / len(pnls)
-    loss_rate = 1 - win_rate
-
-    avg_win = sum(wins) / len(wins)
-    avg_loss = abs(sum(losses) / len(losses))
-
-    edge = (win_rate * avg_win) - (loss_rate * avg_loss)
-
-    if edge <= 0:
-        await update.message.reply_text("Negatif edge. Batma riski çok yüksek.")
-        return
-
-    risk_per_trade = capital * (risk_percent / 100)
-
-    ruin_probability = ((avg_loss - edge) / (avg_loss + edge)) ** (capital / risk_per_trade)
-    ruin_probability = max(0, min(1, ruin_probability))
-
-    msg = f"""
-📉 RISK OF RUIN
-
-Win Rate: %{round(win_rate*100,2)}
-Edge: {round(edge,2)}
-
-Risk/Trade: {round(risk_per_trade,2)}
-Sermaye: {capital}
-
-Batma Olasılığı: %{round(ruin_probability*100,4)}
-"""
-
-    await update.message.reply_text(msg)
-
-    cur.close()
-    conn.close()
-
-# ---------------- METRICS (SHARPE & SORTINO) ---------------- #
+# ================= METRICS ================= #
 
 async def metrics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
@@ -516,37 +296,27 @@ async def metrics(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur.execute("SELECT pnl FROM trades WHERE status='closed';")
     rows = cur.fetchall()
 
-    if not rows or len(rows) < 5:
-        await update.message.reply_text("Metrics için en az 5 kapanmış trade gerekli.")
+    if len(rows) < 5:
+        await update.message.reply_text("En az 5 trade gerekli.")
         return
 
     pnls = np.array([r[0] for r in rows])
 
-    mean_return = np.mean(pnls)
-    std_dev = np.std(pnls)
+    mean = np.mean(pnls)
+    std = np.std(pnls)
+    downside = pnls[pnls<0]
+    downside_std = np.std(downside) if len(downside)>0 else 0
 
-    downside = pnls[pnls < 0]
-    downside_std = np.std(downside) if len(downside) > 0 else 0
+    sharpe = mean/std if std!=0 else 0
+    sortino = mean/downside_std if downside_std!=0 else 0
 
-    sharpe = mean_return / std_dev if std_dev != 0 else 0
-    sortino = mean_return / downside_std if downside_std != 0 else 0
+    await update.message.reply_text(
+        f"📊 Sharpe: {round(sharpe,3)}\nSortino: {round(sortino,3)}"
+    )
 
-    msg = f"""
-📊 FUND METRICS
+    cur.close(); conn.close()
 
-Ortalama Getiri: {round(mean_return,2)}
-Standart Sapma: {round(std_dev,2)}
-
-Sharpe Ratio: {round(sharpe,3)}
-Sortino Ratio: {round(sortino,3)}
-"""
-
-    await update.message.reply_text(msg)
-
-    cur.close()
-    conn.close()
-
-# ---------------- MAIN ---------------- #
+# ================= MAIN ================= #
 
 def main():
     init_db()
@@ -556,12 +326,9 @@ def main():
     app.add_handler(CommandHandler("setrisk", setrisk))
     app.add_handler(CommandHandler("open", open_trade))
     app.add_handler(CommandHandler("close", close_trade))
-    app.add_handler(CommandHandler("positions", positions))
-    app.add_handler(CommandHandler("price", price))
     app.add_handler(CommandHandler("equity", equity))
     app.add_handler(CommandHandler("kelly", kelly))
     app.add_handler(CommandHandler("montecarlo", montecarlo))
-    app.add_handler(CommandHandler("riskofruin", riskofruin))
     app.add_handler(CommandHandler("metrics", metrics))
 
     app.run_polling(drop_pending_updates=True)
