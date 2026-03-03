@@ -5,6 +5,9 @@ import yfinance as yf
 from urllib.parse import urlparse
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfgen import canvas
+from datetime import datetime, time
 
 logging.basicConfig(level=logging.INFO)
 
@@ -14,9 +17,9 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 CAPITAL = float(os.getenv("CAPITAL", 100000))
 RISK_PERCENT = float(os.getenv("RISK_PERCENT", 1.5))
-MAX_PORTFOLIO_RISK = 0.05  # %5 toplam risk
+MAX_PORTFOLIO_RISK = 0.05  # %5
 
-# ================= DB =================
+# ================= DATABASE =================
 
 def get_connection():
     url = urlparse(DATABASE_URL)
@@ -88,10 +91,30 @@ def toplam_portfoy_risk():
     conn.close()
     return row[0] if row[0] else 0
 
+# ================= PDF =================
+
+def pdf_olustur(islem_sayisi, toplam_R, toplam_kar, ortalama_R):
+    dosya_adi = "gunluk_rapor.pdf"
+    c = canvas.Canvas(dosya_adi, pagesize=A4)
+    width, height = A4
+
+    c.setFont("Helvetica", 14)
+    c.drawString(50, height - 50, "KURUMSAL GUNLUK RAPOR")
+
+    c.setFont("Helvetica", 12)
+    c.drawString(50, height - 100, f"Tarih: {datetime.now().strftime('%d-%m-%Y')}")
+    c.drawString(50, height - 130, f"Toplam Islem: {islem_sayisi}")
+    c.drawString(50, height - 160, f"Toplam R: {round(toplam_R,2)}")
+    c.drawString(50, height - 190, f"Toplam Kar: {round(toplam_kar,2)} TL")
+    c.drawString(50, height - 220, f"Ortalama R: {round(ortalama_R,2)}")
+
+    c.save()
+    return dosya_adi
+
 # ================= KOMUTLAR =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🏛 Kurumsal Motor v4 Aktif")
+    await update.message.reply_text("🏛 Kurumsal Motor v5 Aktif")
 
 async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
@@ -131,8 +154,8 @@ Risk: {risk_para} TL"""
 async def performans(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*), SUM(R), SUM(kar) FROM performans")
-    count, toplam_R, toplam_kar = cur.fetchone()
+    cur.execute("SELECT COUNT(*), SUM(R), SUM(kar), AVG(R) FROM performans")
+    count, toplam_R, toplam_kar, ortalama_R = cur.fetchone()
     cur.close()
     conn.close()
 
@@ -144,6 +167,23 @@ Toplam R: {round(toplam_R if toplam_R else 0,2)}
 Toplam Kar: {round(toplam_kar if toplam_kar else 0,2)} TL"""
     )
 
+async def rapor(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*), SUM(R), SUM(kar), AVG(R) FROM performans")
+    count, toplam_R, toplam_kar, ortalama_R = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    dosya = pdf_olustur(
+        count if count else 0,
+        toplam_R if toplam_R else 0,
+        toplam_kar if toplam_kar else 0,
+        ortalama_R if ortalama_R else 0
+    )
+
+    await update.message.reply_document(document=open(dosya, "rb"))
+
 # ================= OTOMATİK MOTOR =================
 
 async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
@@ -151,11 +191,11 @@ async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("SELECT id, sembol, giris, stop, hedef, lot, risk_tutar FROM pozisyon WHERE aktif = TRUE")
+    cur.execute("SELECT id, sembol, giris, stop, hedef, lot FROM pozisyon WHERE aktif = TRUE")
     rows = cur.fetchall()
 
     for row in rows:
-        poz_id, sembol, giris, stop, hedef, lot, risk_para = row
+        poz_id, sembol, giris, stop, hedef, lot = row
         fiyat = fiyat_getir(sembol)
 
         if fiyat is None:
@@ -189,6 +229,7 @@ def main():
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ac", pozisyon_ac))
     app.add_handler(CommandHandler("performans", performans))
+    app.add_handler(CommandHandler("rapor", rapor))
 
     app.job_queue.run_repeating(
         otomatik_kontrol,
@@ -196,8 +237,31 @@ def main():
         first=10
     )
 
-    print("🏛 Kurumsal Motor v4 Başladı")
+    # Her gün 18:10 otomatik rapor
+    app.job_queue.run_daily(
+        lambda ctx: rapor_oto(ctx),
+        time=time(hour=18, minute=10)
+    )
+
+    print("🏛 Kurumsal Motor v5 Başladı")
     app.run_polling()
+
+async def rapor_oto(context: ContextTypes.DEFAULT_TYPE):
+    conn = get_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*), SUM(R), SUM(kar), AVG(R) FROM performans")
+    count, toplam_R, toplam_kar, ortalama_R = cur.fetchone()
+    cur.close()
+    conn.close()
+
+    dosya = pdf_olustur(
+        count if count else 0,
+        toplam_R if toplam_R else 0,
+        toplam_kar if toplam_kar else 0,
+        ortalama_R if ortalama_R else 0
+    )
+
+    await context.bot.send_document(chat_id=CHAT_ID, document=open(dosya, "rb"))
 
 if __name__ == "__main__":
     main()
