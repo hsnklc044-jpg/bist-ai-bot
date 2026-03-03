@@ -46,7 +46,7 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
             progress=False
         )
 
-        if veri.empty:
+        if veri is None or veri.empty:
             return await update.message.reply_text("Veri alınamadı.")
 
         endeks = veri["XU100.IS"].dropna()
@@ -55,7 +55,6 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
         adaylar = []
 
         for sembol in HISSELER:
-
             try:
                 df = veri[sembol].dropna()
                 if len(df) < 30:
@@ -71,8 +70,8 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                 if son["Close"] > son["EMA20"] and son["RSI"] > 50 and rs_skor > 0:
 
-                    giris = son["Close"]
-                    stop = df["Low"].rolling(5).min().iloc[-1]
+                    giris = float(son["Close"])
+                    stop = float(df["Low"].rolling(5).min().iloc[-1])
                     risk = giris - stop
 
                     if risk <= 0:
@@ -92,7 +91,8 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
                     adaylar.append(mesaj)
 
-            except:
+            except Exception as e:
+                logger.error(f"{sembol} hata: {e}")
                 continue
 
         if not adaylar:
@@ -127,9 +127,7 @@ async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"📂 {sembol} pozisyonu açıldı.")
 
     except:
-        await update.message.reply_text(
-            "Kullanım:\n/ac ASTOR 180 176 190"
-        )
+        await update.message.reply_text("Kullanım:\n/ac ASTOR 180 176 190")
 
 # ================= POZİSYON DURUM =================
 
@@ -140,19 +138,25 @@ async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text("Açık pozisyon yok.")
 
     try:
-        sembol = acik_pozisyon["sembol"] + ".IS"
+        sembol = acik_pozisyon["sembol"]
+        sembol_yf = sembol + ".IS"
 
         veri = yf.download(
-            sembol,
+            sembol_yf,
             period="5d",
             interval="1d",
-            progress=False
+            progress=False,
+            auto_adjust=False
         )
 
-        if veri.empty:
+        if veri is None or veri.empty:
             return await update.message.reply_text("Fiyat verisi alınamadı.")
 
-        guncel = float(veri["Close"].dropna().iloc[-1])
+        # MultiIndex kontrolü
+        if isinstance(veri.columns, pd.MultiIndex):
+            guncel = float(veri[sembol_yf]["Close"].dropna().iloc[-1])
+        else:
+            guncel = float(veri["Close"].dropna().iloc[-1])
 
         giris = acik_pozisyon["giris"]
         stop = acik_pozisyon["stop"]
@@ -169,7 +173,7 @@ async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         mesaj = (
             f"{durum_mesaj}\n\n"
-            f"Hisse: {acik_pozisyon['sembol']}\n"
+            f"Hisse: {sembol}\n"
             f"Güncel Fiyat: {round(guncel,2)}\n"
             f"Kâr/Zarar: %{round(kar_zarar,2)}\n"
             f"Stop: {stop}\n"
@@ -179,8 +183,8 @@ async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(mesaj)
 
     except Exception as e:
-        logger.error(e)
-        await update.message.reply_text("⚠️ Durum kontrolünde hata oluştu.")
+        logger.error(f"Durum Hatası: {e}")
+        await update.message.reply_text("⚠️ Fiyat kontrol edilirken hata oluştu.")
 
 # ================= POZİSYON KAPAT =================
 
