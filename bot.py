@@ -1,12 +1,8 @@
 import os
 import logging
-import psycopg2
-import numpy as np
-import io
-from urllib.parse import urlparse
-import matplotlib.pyplot as plt
 import yfinance as yf
 import pandas as pd
+import numpy as np
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
@@ -14,30 +10,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-DATABASE_URL = os.getenv("DATABASE_URL")
 
-# ================= DB =================
-
-def get_connection():
-    url = urlparse(DATABASE_URL)
-    return psycopg2.connect(
-        host=url.hostname,
-        port=url.port,
-        user=url.username,
-        password=url.password,
-        dbname=url.path[1:]
-    )
-
-# ================= INDICATORS =================
-
-def compute_rsi(series, period=14):
-    delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
-
-# ================= TAM BIST LİSTESİ (İlk 200 Aktif Hisse) =================
+# ================= BIST SYMBOLS =================
 
 BIST_SYMBOLS = [
     "AEFES.IS","AKBNK.IS","AKSA.IS","AKSEN.IS","ALARK.IS","ALBRK.IS","ALFAS.IS",
@@ -51,38 +25,60 @@ BIST_SYMBOLS = [
     "ULKER.IS","VAKBN.IS","YKBNK.IS","ZOREN.IS"
 ]
 
-# ================= SCOUT PRO =================
+# ================= RSI =================
+
+def compute_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0).rolling(period).mean()
+    loss = -delta.clip(upper=0).rolling(period).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+# ================= BATCH SCOUT =================
 
 async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("🚀 TAM BIST PRO tarıyor...")
+    await update.message.reply_text("🚀 Batch PRO tarıyor...")
+
+    try:
+        data = yf.download(
+            tickers=" ".join(BIST_SYMBOLS),
+            period="3mo",
+            interval="1d",
+            group_by="ticker",
+            progress=False
+        )
+    except Exception as e:
+        return await update.message.reply_text("Veri çekilemedi.")
 
     candidates = []
 
     for symbol in BIST_SYMBOLS:
 
         try:
-            df = yf.download(symbol, period="3mo", interval="1d", progress=False)
+            df = data[symbol].dropna()
 
             if len(df) < 30:
                 continue
 
-            df["RSI"] = compute_rsi(df["Close"], 14)
             df["EMA20"] = df["Close"].ewm(span=20).mean()
             df["Mom5"] = df["Close"].pct_change(5) * 100
             df["VolAvg20"] = df["Volume"].rolling(20).mean()
+            df["RSI"] = compute_rsi(df["Close"], 14)
 
             last = df.iloc[-1]
 
-            # PROFESYONEL SKORLAMA
-            trend = 1 if last["Close"] > last["EMA20"] else 0
+            trend = last["Close"] > last["EMA20"]
             momentum = last["Mom5"]
-            volume_score = last["Volume"] / last["VolAvg20"] if last["VolAvg20"] != 0 else 0
-            rsi_score = last["RSI"]
+            volume_boost = last["Volume"] > last["VolAvg20"] * 1.1
 
-            score = (momentum * 0.4) + (volume_score * 20 * 0.3) + (rsi_score * 0.3)
+            if trend and momentum > 1 and volume_boost:
 
-            if trend == 1 and momentum > 1:
+                score = (
+                    momentum * 0.5 +
+                    (last["Volume"] / last["VolAvg20"]) * 10 * 0.3 +
+                    last["RSI"] * 0.2
+                )
 
                 entry = last["Close"]
                 stop = df["Low"].rolling(5).min().iloc[-1]
@@ -101,15 +97,16 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
             continue
 
     if not candidates:
-        return await update.message.reply_text("❌ Güçlü momentum yok.")
+        return await update.message.reply_text("❌ Momentum yok.")
 
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:10]
 
-    message = "🔥 TAM BIST MOMENTUM LİSTESİ\n\n"
+    message = "🔥 BATCH MOMENTUM LİSTESİ\n\n"
 
     for c in candidates:
         message += (
-            f"{c['symbol']} | Entry:{c['entry']} | Stop:{c['stop']} | Target:{c['target']}\n"
+            f"{c['symbol']} | Entry:{c['entry']} | "
+            f"Stop:{c['stop']} | Target:{c['target']}\n"
         )
 
     await update.message.reply_text(message)
