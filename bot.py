@@ -10,8 +10,10 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
+CAPITAL = float(os.getenv("CAPITAL", 100000))
+RISK_PERCENT = float(os.getenv("RISK_PERCENT", 1))
 
-# ================= BIST SYMBOLS =================
+# ================= SYMBOLS =================
 
 BIST_SYMBOLS = [
     "AEFES.IS","AKBNK.IS","AKSA.IS","AKSEN.IS","ALARK.IS","ALBRK.IS","ALFAS.IS",
@@ -34,30 +36,24 @@ def compute_rsi(series, period=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-# ================= RELATIVE STRENGTH ENGINE =================
+# ================= MAIN ENGINE =================
 
 async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("🔥 RS PRO tarıyor...")
+    await update.message.reply_text("🔥 RS PRO + LOT tarıyor...")
 
-    try:
-        tickers = BIST_SYMBOLS + ["XU100.IS"]
+    tickers = BIST_SYMBOLS + ["XU100.IS"]
 
-        data = yf.download(
-            tickers=" ".join(tickers),
-            period="3mo",
-            interval="1d",
-            group_by="ticker",
-            progress=False
-        )
-    except:
-        return await update.message.reply_text("Veri çekilemedi.")
+    data = yf.download(
+        tickers=" ".join(tickers),
+        period="3mo",
+        interval="1d",
+        group_by="ticker",
+        progress=False
+    )
 
-    try:
-        index_df = data["XU100.IS"].dropna()
-        index_return = (index_df["Close"].iloc[-1] / index_df["Close"].iloc[-20]) - 1
-    except:
-        return await update.message.reply_text("Endeks verisi alınamadı.")
+    index_df = data["XU100.IS"].dropna()
+    index_return = (index_df["Close"].iloc[-20:].pct_change().sum())
 
     candidates = []
 
@@ -72,7 +68,7 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
             df["EMA20"] = df["Close"].ewm(span=20).mean()
             df["RSI"] = compute_rsi(df["Close"], 14)
 
-            stock_return = (df["Close"].iloc[-1] / df["Close"].iloc[-20]) - 1
+            stock_return = df["Close"].iloc[-20:].pct_change().sum()
             relative_strength = stock_return - index_return
 
             last = df.iloc[-1]
@@ -86,7 +82,18 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 entry = last["Close"]
                 stop = df["Low"].rolling(5).min().iloc[-1]
                 risk = entry - stop
+
+                if risk <= 0:
+                    continue
+
                 target = entry + risk * 2
+                rr = (target - entry) / risk
+
+                if rr < 1.5:
+                    continue
+
+                risk_amount = CAPITAL * (RISK_PERCENT / 100)
+                lot = risk_amount / risk
 
                 score = relative_strength * 100
 
@@ -95,23 +102,28 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "entry": round(entry,2),
                     "stop": round(stop,2),
                     "target": round(target,2),
-                    "score": score
+                    "lot": int(lot),
+                    "score": round(score,2)
                 })
 
         except:
             continue
 
     if not candidates:
-        return await update.message.reply_text("❌ Endeksten güçlü hisse yok.")
+        return await update.message.reply_text("❌ Trade edilebilir lider yok.")
 
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:10]
 
-    message = "🔥 RELATIVE STRENGTH LİDERLERİ\n\n"
+    message = "🔥 RS PRO TRADING LİDERLERİ\n\n"
 
     for c in candidates:
         message += (
-            f"{c['symbol']} | Entry:{c['entry']} | "
-            f"Stop:{c['stop']} | Target:{c['target']}\n"
+            f"{c['symbol']}\n"
+            f"RS: {c['score']}%\n"
+            f"Entry: {c['entry']}\n"
+            f"Stop: {c['stop']}\n"
+            f"Target: {c['target']}\n"
+            f"Lot: {c['lot']}\n\n"
         )
 
     await update.message.reply_text(message)
