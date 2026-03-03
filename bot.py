@@ -73,7 +73,7 @@ def compute_rsi(series, period=14):
 # ================= COMMANDS =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🚀 BIST AI PRO v4 Aktif")
+    await update.message.reply_text("🚀 BIST AI PRO v5 Aktif")
 
 async def setcapital(update: Update, context: ContextTypes.DEFAULT_TYPE):
     capital = float(context.args[0])
@@ -97,9 +97,6 @@ async def setrisk(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🎯 Risk: %{risk}")
 
 async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if len(context.args) != 4:
-        return await update.message.reply_text("Kullanım: /open EREGL long 42 40")
-
     symbol, side = context.args[0], context.args[1]
     entry, stop = float(context.args[2]), float(context.args[3])
 
@@ -108,21 +105,13 @@ async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cur.execute("SELECT id FROM trades WHERE exit IS NULL")
     if cur.fetchone():
-        return await update.message.reply_text("❌ Zaten açık pozisyon var.")
+        return await update.message.reply_text("❌ Açık pozisyon var.")
 
     cur.execute("SELECT capital, risk FROM settings LIMIT 1")
-    settings = cur.fetchone()
+    capital, risk = cur.fetchone()
 
-    if not settings:
-        return await update.message.reply_text("Önce /setcapital gir.")
-
-    capital, risk = settings
     risk_amount = capital * (risk / 100)
     stop_distance = abs(entry - stop)
-
-    if stop_distance == 0:
-        return await update.message.reply_text("Stop mesafesi 0 olamaz.")
-
     lot = risk_amount / stop_distance
     target = entry + stop_distance * RR_RATIO if side == "long" else entry - stop_distance * RR_RATIO
 
@@ -146,12 +135,8 @@ async def close_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cur = conn.cursor()
 
     cur.execute("SELECT id, side, entry, lot FROM trades WHERE exit IS NULL LIMIT 1")
-    trade = cur.fetchone()
+    trade_id, side, entry, lot = cur.fetchone()
 
-    if not trade:
-        return await update.message.reply_text("Açık pozisyon yok.")
-
-    trade_id, side, entry, lot = trade
     pnl = (exit_price - entry) * lot if side == "long" else (entry - exit_price) * lot
 
     cur.execute("UPDATE trades SET exit=%s, pnl=%s WHERE id=%s",
@@ -176,36 +161,6 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     pnls = np.array([r[0] for r in rows])
     cumulative = np.cumsum(pnls)
 
-    wins = pnls[pnls > 0]
-    losses = pnls[pnls < 0]
-
-    win_rate = len(wins) / len(pnls)
-    profit_factor = abs(sum(wins) / sum(losses)) if len(losses) > 0 else 0
-    expectancy = np.mean(pnls)
-
-    peak = np.maximum.accumulate(cumulative)
-    drawdown = peak - cumulative
-    max_dd = np.max(drawdown)
-
-    cur.execute("SELECT capital FROM settings LIMIT 1")
-    capital = cur.fetchone()[0]
-
-    dd_percent = (max_dd / capital) * 100 if capital != 0 else 0
-    sharpe = np.mean(pnls) / np.std(pnls) if np.std(pnls) != 0 else 0
-    growth = (cumulative[-1] / capital) * 100 if capital != 0 else 0
-
-    await update.message.reply_text(
-        f"📊 SYSTEM PERFORMANCE\n\n"
-        f"Trades: {len(pnls)}\n"
-        f"Win Rate: %{round(win_rate*100,2)}\n"
-        f"Profit Factor: {round(profit_factor,2)}\n"
-        f"Expectancy: {round(expectancy,2)}\n\n"
-        f"Net PnL: {round(cumulative[-1],2)}\n"
-        f"Max DD: {round(max_dd,2)} (%{round(dd_percent,2)})\n"
-        f"Sharpe: {round(sharpe,2)}\n"
-        f"Growth: %{round(growth,2)}"
-    )
-
     plt.figure()
     plt.plot(cumulative)
     buffer = io.BytesIO()
@@ -213,6 +168,7 @@ async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     buffer.seek(0)
     plt.close()
 
+    await update.message.reply_text(f"Net PnL: {round(cumulative[-1],2)}")
     await update.message.reply_photo(photo=buffer)
 
     cur.close()
@@ -229,14 +185,13 @@ BIST_SYMBOLS = [
 
 async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    await update.message.reply_text("🔍 Bebek motoru tarıyor...")
+    await update.message.reply_text("🟡 SCOUT tarıyor...")
 
     candidates = []
 
     for symbol in BIST_SYMBOLS:
         try:
             df = yf.download(symbol, period="3mo", interval="1d", progress=False)
-
             if len(df) < 30:
                 continue
 
@@ -246,46 +201,36 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             last = df.iloc[-1]
 
-            cond_breakout = last["Close"] >= df["High"].rolling(20).max().iloc[-2]
-            cond_rsi = 55 <= last["RSI"] <= 75
-            cond_mom = last["Mom10"] > 5
-            cond_day = (df["Close"].pct_change().iloc[-1] * 100) > 2
-            cond_vol = last["Volume"] > last["VolAvg20"] * 1.5
+            cond_rsi = last["RSI"] > 52
+            cond_mom = last["Mom10"] > 3
+            cond_vol = last["Volume"] > last["VolAvg20"] * 1.2
 
-            if cond_breakout and cond_rsi and cond_mom and cond_day and cond_vol:
+            if cond_rsi and cond_mom and cond_vol:
 
                 entry = last["Close"]
                 stop = df["Low"].rolling(5).min().iloc[-1]
                 risk = entry - stop
                 target = entry + risk * 2
 
-                score = last["Mom10"]
-
                 candidates.append({
                     "symbol": symbol.replace(".IS",""),
                     "entry": round(entry,2),
                     "stop": round(stop,2),
                     "target": round(target,2),
-                    "score": score
+                    "score": last["Mom10"]
                 })
 
         except:
             continue
 
     if not candidates:
-        return await update.message.reply_text("❌ Bebek bulunamadı.")
+        return await update.message.reply_text("❌ Aday yok.")
 
     candidates = sorted(candidates, key=lambda x: x["score"], reverse=True)[:5]
 
-    message = "🐣 BEBEK BREAKOUT LİSTESİ\n\n"
-
+    message = "🐣 BEBEK LİSTESİ\n\n"
     for c in candidates:
-        message += (
-            f"{c['symbol']}\n"
-            f"Entry: {c['entry']}\n"
-            f"Stop: {c['stop']}\n"
-            f"Target(1:2): {c['target']}\n\n"
-        )
+        message += f"{c['symbol']} | Entry:{c['entry']} | Stop:{c['stop']} | Target:{c['target']}\n"
 
     await update.message.reply_text(message)
 
@@ -293,7 +238,6 @@ async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     init_db()
-
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
