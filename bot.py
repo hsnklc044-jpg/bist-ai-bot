@@ -2,11 +2,14 @@ import os
 import logging
 import psycopg2
 import numpy as np
+import io
 from urllib.parse import urlparse
+import matplotlib.pyplot as plt
+
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-import matplotlib.pyplot as plt
-import io
+
+# ================== CONFIG ==================
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -14,7 +17,7 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-# ================= DB ================= #
+# ================== DB ==================
 
 def get_connection():
     url = urlparse(DATABASE_URL)
@@ -26,220 +29,185 @@ def get_connection():
         dbname=url.path[1:]
     )
 
-def ensure_user(user_id):
+def init_db():
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("SELECT 1 FROM settings WHERE user_id=%s;", (user_id,))
-    exists = cur.fetchone()
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS trades (
+        id SERIAL PRIMARY KEY,
+        symbol TEXT,
+        side TEXT,
+        entry FLOAT,
+        exit FLOAT,
+        pnl FLOAT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
 
-    if not exists:
-        cur.execute(
-            "INSERT INTO settings (user_id, capital, risk_percent) VALUES (%s,0,1);",
-            (user_id,)
-        )
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS settings (
+        id SERIAL PRIMARY KEY,
+        capital FLOAT DEFAULT 0,
+        risk FLOAT DEFAULT 0
+    )
+    """)
 
     conn.commit()
     cur.close()
     conn.close()
 
-def get_settings(user_id):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT capital, risk_percent FROM settings WHERE user_id=%s;",
-        (user_id,)
-    )
-    data = cur.fetchone()
-    cur.close()
-    conn.close()
-    return data
+# ================== COMMANDS ==================
 
-def update_setting(user_id, field, value):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute(
-        f"UPDATE settings SET {field}=%s WHERE user_id=%s;",
-        (value, user_id)
-    )
-    conn.commit()
-    cur.close()
-    conn.close()
-
-# ================= COMMANDS ================= #
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🚀 BIST AI Pro Bot Aktif!")
 
 async def setcapital(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    ensure_user(user_id)
+    if len(context.args) != 1:
+        return await update.message.reply_text("Kullanım: /setcapital 100000")
 
-    try:
-        capital = float(context.args[0])
-        update_setting(user_id, "capital", capital)
-        await update.message.reply_text(f"💰 Sermaye: {capital}")
-    except:
-        await update.message.reply_text("❌ /setcapital 100000")
+    capital = float(context.args[0])
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("DELETE FROM settings;")
+    cur.execute("INSERT INTO settings (capital, risk) VALUES (%s, %s)", (capital, 0))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    await update.message.reply_text(f"💰 Sermaye ayarlandı: {capital}")
 
 async def setrisk(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    ensure_user(user_id)
+    if len(context.args) != 1:
+        return await update.message.reply_text("Kullanım: /setrisk 1")
 
-    try:
-        risk = float(context.args[0])
-        update_setting(user_id, "risk_percent", risk)
-        await update.message.reply_text(f"🎯 Risk %: %{risk}")
-    except:
-        await update.message.reply_text("❌ /setrisk 1")
+    risk = float(context.args[0])
 
-# ================= OPEN ================= #
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("UPDATE settings SET risk=%s;", (risk,))
+    conn.commit()
+
+    cur.close()
+    conn.close()
+
+    await update.message.reply_text(f"🎯 Risk yüzdesi: %{risk}")
 
 async def open_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    ensure_user(user_id)
+    if len(context.args) != 3:
+        return await update.message.reply_text("Kullanım: /open EREGL long 42")
 
-    try:
-        capital, risk_percent = get_settings(user_id)
-
-        if capital == 0:
-            await update.message.reply_text("Önce /setcapital gir.")
-            return
-
-        parts = update.message.text.split()
-        if len(parts) != 5:
-            await update.message.reply_text("❌ /open EREGL long 50 48")
-            return
-
-        _, symbol, side, entry, stop = parts
-        entry = float(entry)
-        stop = float(stop)
-
-        stop_distance = abs(entry - stop)
-        risk_amount = capital * (risk_percent / 100)
-        lot = risk_amount / stop_distance
-
-        conn = get_connection()
-        cur = conn.cursor()
-
-        cur.execute("""
-        SELECT SUM(ABS(entry - stop) * lot)
-        FROM trades
-        WHERE user_id=%s AND status='open';
-        """, (user_id,))
-
-        current_risk = cur.fetchone()[0] or 0
-
-        if current_risk + risk_amount > capital * 0.05:
-            await update.message.reply_text("🚫 %5 açık risk limiti.")
-            return
-
-        cur.execute("""
-        INSERT INTO trades (user_id, symbol, side, entry, stop, lot, status)
-        VALUES (%s,%s,%s,%s,%s,%s,'open')
-        """, (user_id, symbol.upper(), side.lower(), entry, stop, lot))
-
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        await update.message.reply_text(
-            f"📥 {symbol} {side}\nLot:{round(lot,2)}"
-        )
-
-    except Exception as e:
-        logger.error(e)
-        await update.message.reply_text("❌ Sistem hatası.")
-
-# ================= CLOSE ================= #
-
-async def close_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    ensure_user(user_id)
-
-    try:
-        exit_price = float(context.args[0])
-
-        conn = get_connection()
-        cur = conn.cursor()
-
-        cur.execute("""
-        SELECT id, symbol, side, entry, lot
-        FROM trades
-        WHERE user_id=%s AND status='open'
-        ORDER BY id DESC LIMIT 1;
-        """, (user_id,))
-
-        trade = cur.fetchone()
-
-        if not trade:
-            await update.message.reply_text("Açık pozisyon yok.")
-            return
-
-        trade_id, symbol, side, entry, lot = trade
-
-        pnl = (exit_price - entry) * lot if side=="long" else (entry - exit_price) * lot
-
-        cur.execute("""
-        UPDATE trades
-        SET exit=%s, pnl=%s, status='closed'
-        WHERE id=%s;
-        """, (exit_price, pnl, trade_id))
-
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        await update.message.reply_text(
-            f"📤 {symbol} kapandı\nPnL: {round(pnl,2)}"
-        )
-
-    except:
-        await update.message.reply_text("❌ /close 45")
-
-# ================= EQUITY ================= #
-
-async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    ensure_user(user_id)
+    symbol = context.args[0]
+    side = context.args[1]
+    entry = float(context.args[2])
 
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute("""
-    SELECT pnl FROM trades
-    WHERE user_id=%s AND status='closed'
-    ORDER BY id;
-    """, (user_id,))
+    INSERT INTO trades (symbol, side, entry, exit, pnl)
+    VALUES (%s, %s, %s, %s, %s)
+    """, (symbol, side, entry, None, 0))
 
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    await update.message.reply_text(f"📌 Pozisyon açıldı: {symbol} {side} @ {entry}")
+
+async def close_trade(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if len(context.args) != 1:
+        return await update.message.reply_text("Kullanım: /close 45")
+
+    exit_price = float(context.args[0])
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("""
+    SELECT id, symbol, side, entry
+    FROM trades
+    WHERE exit IS NULL
+    ORDER BY id DESC
+    LIMIT 1
+    """)
+
+    trade = cur.fetchone()
+
+    if not trade:
+        return await update.message.reply_text("Açık pozisyon yok.")
+
+    trade_id, symbol, side, entry = trade
+
+    if side == "long":
+        pnl = exit_price - entry
+    else:
+        pnl = entry - exit_price
+
+    cur.execute("""
+    UPDATE trades
+    SET exit=%s, pnl=%s
+    WHERE id=%s
+    """, (exit_price, pnl, trade_id))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    await update.message.reply_text(f"✅ Pozisyon kapandı\nPnL: {round(pnl,2)}")
+
+async def equity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT pnl FROM trades WHERE exit IS NOT NULL ORDER BY id")
     rows = cur.fetchall()
 
     if not rows:
-        await update.message.reply_text("Kapanmış trade yok.")
-        return
+        return await update.message.reply_text("Trade yok.")
 
-    pnls = np.array([r[0] for r in rows])
+    pnls = [r[0] for r in rows]
     cumulative = np.cumsum(pnls)
+
     peak = np.maximum.accumulate(cumulative)
-    max_dd = np.max(peak - cumulative)
+    drawdown = peak - cumulative
+    max_dd = np.max(drawdown)
+
+    net = np.sum(pnls)
+
+    await update.message.reply_text(
+        f"📊 PERFORMANS\nToplam Trade: {len(pnls)}\nNet PnL: {round(net,2)}\nMax Drawdown: {round(max_dd,2)}"
+    )
 
     plt.figure()
     plt.plot(cumulative)
+    plt.title("Equity Curve")
+    plt.xlabel("Trade")
+    plt.ylabel("Cumulative PnL")
+
     buffer = io.BytesIO()
     plt.savefig(buffer, format="png")
     buffer.seek(0)
     plt.close()
 
-    await update.message.reply_text(
-        f"📊 Net: {round(np.sum(pnls),2)}\nMaxDD: {round(max_dd,2)}"
-    )
     await update.message.reply_photo(photo=buffer)
 
     cur.close()
     conn.close()
 
-# ================= MAIN ================= #
+# ================== MAIN ==================
 
 def main():
+    init_db()
+
     app = ApplicationBuilder().token(TOKEN).build()
 
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("setcapital", setcapital))
     app.add_handler(CommandHandler("setrisk", setrisk))
     app.add_handler(CommandHandler("open", open_trade))
