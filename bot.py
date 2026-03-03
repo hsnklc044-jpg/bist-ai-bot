@@ -1,197 +1,177 @@
 import os
-import logging
 import asyncio
-import yfinance as yf
-import pandas as pd
-import numpy as np
+import logging
+import psycopg2
+from urllib.parse import urlparse
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-SERMAYE = float(os.getenv("CAPITAL", 100000))
-RISK_YUZDE = float(os.getenv("RISK_PERCENT", 1))
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-acik_pozisyon = {}
-son_bildirim = None
+# ================= DATABASE =================
 
-# ================= RSI =================
+def get_connection():
+    url = urlparse(DATABASE_URL)
+    return psycopg2.connect(
+        host=url.hostname,
+        port=url.port,
+        user=url.username,
+        password=url.password,
+        dbname=url.path[1:]
+    )
 
-def rsi_hesapla(seri, periyot=14):
-    delta = seri.diff()
-    kazanc = delta.clip(lower=0).rolling(periyot).mean()
-    kayip = -delta.clip(upper=0).rolling(periyot).mean()
-    rs = kazanc / kayip
-    return 100 - (100 / (1 + rs))
+def tablo_olustur():
+    conn = get_connection()
+    cur = conn.cursor()
 
-# ================= LİDER TARAMA =================
-
-HISSELER = [
-    "ASTOR.IS","ASELS.IS","EREGL.IS",
-    "BRLSM.IS","KRDMD.IS","GUBRF.IS","GLYHO.IS"
-]
-
-async def bebek(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    await update.message.reply_text("🔥 Güçlü trend liderleri taranıyor...")
-
-    try:
-        semboller = HISSELER + ["XU100.IS"]
-
-        veri = yf.download(
-            " ".join(semboller),
-            period="3mo",
-            interval="1d",
-            group_by="ticker",
-            progress=False
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS pozisyon (
+            id SERIAL PRIMARY KEY,
+            sembol TEXT,
+            giris FLOAT,
+            stop FLOAT,
+            hedef FLOAT,
+            aktif BOOLEAN DEFAULT TRUE
         )
+    """)
 
-        if veri is None or veri.empty:
-            return await update.message.reply_text("Veri alınamadı.")
+    conn.commit()
+    cur.close()
+    conn.close()
 
-        endeks = veri["XU100.IS"].dropna()
-        endeks_getiri = endeks["Close"].pct_change().iloc[-20:].sum()
+# ================= KOMUTLAR =================
 
-        adaylar = []
-
-        for sembol in HISSELER:
-            try:
-                df = veri[sembol].dropna()
-                if len(df) < 30:
-                    continue
-
-                df["EMA20"] = df["Close"].ewm(span=20).mean()
-                df["RSI"] = rsi_hesapla(df["Close"])
-
-                hisse_getiri = df["Close"].pct_change().iloc[-20:].sum()
-                rs_skor = (hisse_getiri - endeks_getiri) * 100
-
-                son = df.iloc[-1]
-
-                if son["Close"] > son["EMA20"] and son["RSI"] > 50 and rs_skor > 0:
-
-                    giris = float(son["Close"])
-                    stop = float(df["Low"].rolling(5).min().iloc[-1])
-                    risk = giris - stop
-
-                    if risk <= 0:
-                        continue
-
-                    hedef = giris + risk * 2
-                    lot = (SERMAYE * (RISK_YUZDE / 100)) / risk
-
-                    mesaj = (
-                        f"📈 {sembol.replace('.IS','')}\n"
-                        f"Göreceli Güç: %{round(rs_skor,2)}\n"
-                        f"Giriş: {round(giris,2)}\n"
-                        f"Stop: {round(stop,2)}\n"
-                        f"Hedef: {round(hedef,2)}\n"
-                        f"Önerilen Lot: {int(lot)}\n"
-                    )
-
-                    adaylar.append(mesaj)
-
-            except:
-                continue
-
-        if not adaylar:
-            return await update.message.reply_text("❌ Güçlü trend bulunamadı.")
-
-        await update.message.reply_text(
-            "🔥 GÜÇLÜ TREND LİDERLERİ\n\n" + "\n".join(adaylar)
-        )
-
-    except Exception as e:
-        logger.error(e)
-        await update.message.reply_text("⚠️ Tarama sırasında hata oluştu.")
-
-# ================= POZİSYON AÇ =================
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("🚀 BIST AI PRO vFinal Aktif")
 
 async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global acik_pozisyon
-
     try:
         sembol = context.args[0].upper()
         giris = float(context.args[1])
         stop = float(context.args[2])
         hedef = float(context.args[3])
 
-        acik_pozisyon = {
-            "sembol": sembol,
-            "giris": giris,
-            "stop": stop,
-            "hedef": hedef,
-            "chat_id": update.effective_chat.id
-        }
+        conn = get_connection()
+        cur = conn.cursor()
+
+        cur.execute("DELETE FROM pozisyon WHERE aktif = TRUE")
+
+        cur.execute("""
+            INSERT INTO pozisyon (sembol, giris, stop, hedef, aktif)
+            VALUES (%s, %s, %s, %s, TRUE)
+        """, (sembol, giris, stop, hedef))
+
+        conn.commit()
+        cur.close()
+        conn.close()
 
         await update.message.reply_text(f"📂 {sembol} pozisyonu açıldı.")
 
     except:
-        await update.message.reply_text("Kullanım:\n/ac ASTOR 180 176 190")
+        await update.message.reply_text("⚠️ Kullanım: /ac ASTOR 180 175 190")
+
+async def pozisyon_kapat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("DELETE FROM pozisyon WHERE aktif = TRUE")
+
+    conn.commit()
+    cur.close()
+    conn.close()
+
+    await update.message.reply_text("📴 Pozisyon kapatıldı.")
+
+async def durum(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    conn = get_connection()
+    cur = conn.cursor()
+
+    cur.execute("SELECT sembol, giris, stop, hedef FROM pozisyon WHERE aktif = TRUE")
+    row = cur.fetchone()
+
+    cur.close()
+    conn.close()
+
+    if not row:
+        await update.message.reply_text("📭 Aktif pozisyon yok.")
+        return
+
+    sembol, giris, stop, hedef = row
+
+    await update.message.reply_text(
+        f"""📊 AKTİF POZİSYON
+
+Sembol: {sembol}
+Giriş: {giris}
+Stop: {stop}
+Hedef: {hedef}"""
+    )
 
 # ================= OTOMATİK KONTROL =================
 
-async def otomatik_kontrol(app):
+async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
+    conn = get_connection()
+    cur = conn.cursor()
 
-    global acik_pozisyon
+    cur.execute("SELECT id, sembol, giris, stop, hedef FROM pozisyon WHERE aktif = TRUE")
+    row = cur.fetchone()
 
-    while True:
+    if not row:
+        cur.close()
+        conn.close()
+        return
 
-        if acik_pozisyon:
+    poz_id, sembol, giris, stop, hedef = row
 
-            try:
-                sembol = acik_pozisyon["sembol"]
-                sembol_yf = sembol + ".IS"
+    # 🔥 ŞİMDİLİK FİYAT SİMÜLASYON (Sonra API bağlarız)
+    import random
+    fiyat = round(random.uniform(giris * 0.95, giris * 1.05), 2)
 
-                veri = yf.download(
-                    sembol_yf,
-                    period="1d",
-                    interval="1m",
-                    progress=False
-                )
+    if fiyat <= stop:
+        cur.execute("DELETE FROM pozisyon WHERE id = %s", (poz_id,))
+        conn.commit()
 
-                if veri is None or veri.empty:
-                    await asyncio.sleep(60)
-                    continue
+        await context.bot.send_message(
+            chat_id=os.getenv("CHAT_ID"),
+            text=f"🔴 STOP ÇALIŞTI!\n{sembol}\nFiyat: {fiyat}"
+        )
 
-                guncel = float(veri["Close"].dropna().iloc[-1])
+    elif fiyat >= hedef:
+        cur.execute("DELETE FROM pozisyon WHERE id = %s", (poz_id,))
+        conn.commit()
 
-                stop = acik_pozisyon["stop"]
-                hedef = acik_pozisyon["hedef"]
-                chat_id = acik_pozisyon["chat_id"]
+        await context.bot.send_message(
+            chat_id=os.getenv("CHAT_ID"),
+            text=f"🎯 HEDEF GERÇEKLEŞTİ!\n{sembol}\nFiyat: {fiyat}"
+        )
 
-                if guncel <= stop:
-                    await app.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"🔴 STOP ÇALIŞTI!\n{sembol}\nFiyat: {round(guncel,2)}"
-                    )
-                    acik_pozisyon = {}
-
-                elif guncel >= hedef:
-                    await app.bot.send_message(
-                        chat_id=chat_id,
-                        text=f"🎯 HEDEF GERÇEKLEŞTİ!\n{sembol}\nFiyat: {round(guncel,2)}"
-                    )
-                    acik_pozisyon = {}
-
-            except Exception as e:
-                logger.error(f"Otomatik kontrol hatası: {e}")
-
-        await asyncio.sleep(60)
+    cur.close()
+    conn.close()
 
 # ================= MAIN =================
 
 def main():
+    tablo_olustur()
+
     app = ApplicationBuilder().token(TOKEN).build()
 
-    app.add_handler(CommandHandler("bebek", bebek))
+    app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("ac", pozisyon_ac))
+    app.add_handler(CommandHandler("kapat", pozisyon_kapat))
+    app.add_handler(CommandHandler("durum", durum))
 
-    app.create_task(otomatik_kontrol(app))
+    # 💎 PROFESYONEL OTOMATİK MOTOR
+    app.job_queue.run_repeating(
+        otomatik_kontrol,
+        interval=60,
+        first=10
+    )
 
-    app.run_polling(drop_pending_updates=True)
+    print("🚀 Sistem başlatıldı...")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
