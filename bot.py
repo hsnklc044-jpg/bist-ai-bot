@@ -7,7 +7,9 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfgen import canvas
-from datetime import datetime, time
+from datetime import datetime
+from flask import Flask, render_template_string
+import threading
 
 logging.basicConfig(level=logging.INFO)
 
@@ -17,7 +19,6 @@ CHAT_ID = os.getenv("CHAT_ID")
 
 CAPITAL = float(os.getenv("CAPITAL", 100000))
 RISK_PERCENT = float(os.getenv("RISK_PERCENT", 1.5))
-MAX_PORTFOLIO_RISK = 0.05  # %5
 
 # ================= DATABASE =================
 
@@ -31,37 +32,6 @@ def get_connection():
         dbname=url.path[1:]
     )
 
-def tablo_olustur():
-    conn = get_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS pozisyon (
-            id SERIAL PRIMARY KEY,
-            sembol TEXT,
-            giris FLOAT,
-            stop FLOAT,
-            hedef FLOAT,
-            lot FLOAT,
-            risk_tutar FLOAT,
-            aktif BOOLEAN DEFAULT TRUE
-        )
-    """)
-
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS performans (
-            id SERIAL PRIMARY KEY,
-            sembol TEXT,
-            R FLOAT,
-            kar FLOAT,
-            tarih TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-
-    conn.commit()
-    cur.close()
-    conn.close()
-
 # ================= FİYAT =================
 
 def fiyat_getir(sembol):
@@ -74,194 +44,79 @@ def fiyat_getir(sembol):
         pass
     return None
 
-# ================= RİSK =================
-
-def hesapla_lot(giris, stop):
-    risk_mesafe = giris - stop
-    risk_para = CAPITAL * (RISK_PERCENT / 100)
-    lot = risk_para / risk_mesafe
-    return round(lot,2), risk_para
-
-def toplam_portfoy_risk():
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT SUM(risk_tutar) FROM pozisyon WHERE aktif = TRUE")
-    row = cur.fetchone()
-    cur.close()
-    conn.close()
-    return row[0] if row[0] else 0
-
-# ================= PDF =================
-
-def pdf_olustur(islem_sayisi, toplam_R, toplam_kar, ortalama_R):
-    dosya_adi = "gunluk_rapor.pdf"
-    c = canvas.Canvas(dosya_adi, pagesize=A4)
-    width, height = A4
-
-    c.setFont("Helvetica", 14)
-    c.drawString(50, height - 50, "KURUMSAL GUNLUK RAPOR")
-
-    c.setFont("Helvetica", 12)
-    c.drawString(50, height - 100, f"Tarih: {datetime.now().strftime('%d-%m-%Y')}")
-    c.drawString(50, height - 130, f"Toplam Islem: {islem_sayisi}")
-    c.drawString(50, height - 160, f"Toplam R: {round(toplam_R,2)}")
-    c.drawString(50, height - 190, f"Toplam Kar: {round(toplam_kar,2)} TL")
-    c.drawString(50, height - 220, f"Ortalama R: {round(ortalama_R,2)}")
-
-    c.save()
-    return dosya_adi
-
-# ================= KOMUTLAR =================
+# ================= TELEGRAM =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🏛 Kurumsal Motor v5 Aktif")
+    await update.message.reply_text("🏛 Kurumsal Sistem + Dashboard Aktif")
 
-async def pozisyon_ac(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    try:
-        sembol = context.args[0].upper()
-        giris = float(context.args[1])
-        stop = float(context.args[2])
-        hedef = float(context.args[3])
+# ================= DASHBOARD =================
 
-        lot, risk_para = hesapla_lot(giris, stop)
+app_flask = Flask(__name__)
 
-        if toplam_portfoy_risk() + risk_para > CAPITAL * MAX_PORTFOLIO_RISK:
-            await update.message.reply_text("⚠️ Portföy toplam risk limiti aşılıyor.")
-            return
-
-        conn = get_connection()
-        cur = conn.cursor()
-
-        cur.execute("""
-            INSERT INTO pozisyon (sembol, giris, stop, hedef, lot, risk_tutar, aktif)
-            VALUES (%s, %s, %s, %s, %s, %s, TRUE)
-        """, (sembol, giris, stop, hedef, lot, risk_para))
-
-        conn.commit()
-        cur.close()
-        conn.close()
-
-        await update.message.reply_text(
-            f"""📂 {sembol} açıldı
-
-Lot: {lot}
-Risk: {risk_para} TL"""
-        )
-
-    except:
-        await update.message.reply_text("⚠️ Kullanım: /ac ASTOR 180 175 190")
-
-async def performans(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*), SUM(R), SUM(kar), AVG(R) FROM performans")
-    count, toplam_R, toplam_kar, ortalama_R = cur.fetchone()
-    cur.close()
-    conn.close()
-
-    await update.message.reply_text(
-        f"""📊 Performans
-
-İşlem: {count}
-Toplam R: {round(toplam_R if toplam_R else 0,2)}
-Toplam Kar: {round(toplam_kar if toplam_kar else 0,2)} TL"""
-    )
-
-async def rapor(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*), SUM(R), SUM(kar), AVG(R) FROM performans")
-    count, toplam_R, toplam_kar, ortalama_R = cur.fetchone()
-    cur.close()
-    conn.close()
-
-    dosya = pdf_olustur(
-        count if count else 0,
-        toplam_R if toplam_R else 0,
-        toplam_kar if toplam_kar else 0,
-        ortalama_R if ortalama_R else 0
-    )
-
-    await update.message.reply_document(document=open(dosya, "rb"))
-
-# ================= OTOMATİK MOTOR =================
-
-async def otomatik_kontrol(context: ContextTypes.DEFAULT_TYPE):
-
+@app_flask.route("/")
+def dashboard():
     conn = get_connection()
     cur = conn.cursor()
 
-    cur.execute("SELECT id, sembol, giris, stop, hedef, lot FROM pozisyon WHERE aktif = TRUE")
-    rows = cur.fetchall()
+    cur.execute("SELECT COUNT(*), SUM(R), SUM(kar) FROM performans")
+    count, toplam_R, toplam_kar = cur.fetchone()
 
-    for row in rows:
-        poz_id, sembol, giris, stop, hedef, lot = row
-        fiyat = fiyat_getir(sembol)
-
-        if fiyat is None:
-            continue
-
-        R = (fiyat - giris) / (giris - stop)
-        kar = (fiyat - giris) * lot
-
-        if fiyat <= stop or fiyat >= hedef:
-
-            cur.execute("UPDATE pozisyon SET aktif = FALSE WHERE id = %s", (poz_id,))
-            cur.execute("INSERT INTO performans (sembol, R, kar) VALUES (%s, %s, %s)",
-                        (sembol, R, kar))
-            conn.commit()
-
-            await context.bot.send_message(
-                chat_id=CHAT_ID,
-                text=f"🔔 {sembol} kapandı\nR: {round(R,2)}\nKar: {round(kar,2)} TL"
-            )
+    cur.execute("SELECT COUNT(*) FROM pozisyon WHERE aktif = TRUE")
+    aktif_poz = cur.fetchone()[0]
 
     cur.close()
     conn.close()
+
+    html = f"""
+    <html>
+    <head>
+        <title>Kurumsal Dashboard</title>
+        <style>
+            body {{ font-family: Arial; background:#111; color:#eee; padding:40px; }}
+            .card {{ background:#222; padding:20px; margin:20px 0; border-radius:8px; }}
+        </style>
+    </head>
+    <body>
+        <h1>🏛 Kurumsal Portföy Paneli</h1>
+
+        <div class="card">
+            <h2>Toplam İşlem</h2>
+            <p>{count}</p>
+        </div>
+
+        <div class="card">
+            <h2>Toplam R</h2>
+            <p>{round(toplam_R if toplam_R else 0,2)}</p>
+        </div>
+
+        <div class="card">
+            <h2>Toplam Kar (TL)</h2>
+            <p>{round(toplam_kar if toplam_kar else 0,2)}</p>
+        </div>
+
+        <div class="card">
+            <h2>Aktif Pozisyon</h2>
+            <p>{aktif_poz}</p>
+        </div>
+    </body>
+    </html>
+    """
+    return render_template_string(html)
 
 # ================= MAIN =================
 
-def main():
-    tablo_olustur()
+def run_flask():
+    port = int(os.environ.get("PORT", 5000))
+    app_flask.run(host="0.0.0.0", port=port)
 
+def run_bot():
     app = ApplicationBuilder().token(TOKEN).build()
-
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("ac", pozisyon_ac))
-    app.add_handler(CommandHandler("performans", performans))
-    app.add_handler(CommandHandler("rapor", rapor))
-
-    app.job_queue.run_repeating(
-        otomatik_kontrol,
-        interval=60,
-        first=10
-    )
-
-    # Her gün 18:10 otomatik rapor
-    app.job_queue.run_daily(
-        lambda ctx: rapor_oto(ctx),
-        time=time(hour=18, minute=10)
-    )
-
-    print("🏛 Kurumsal Motor v5 Başladı")
     app.run_polling()
 
-async def rapor_oto(context: ContextTypes.DEFAULT_TYPE):
-    conn = get_connection()
-    cur = conn.cursor()
-    cur.execute("SELECT COUNT(*), SUM(R), SUM(kar), AVG(R) FROM performans")
-    count, toplam_R, toplam_kar, ortalama_R = cur.fetchone()
-    cur.close()
-    conn.close()
-
-    dosya = pdf_olustur(
-        count if count else 0,
-        toplam_R if toplam_R else 0,
-        toplam_kar if toplam_kar else 0,
-        ortalama_R if ortalama_R else 0
-    )
-
-    await context.bot.send_document(chat_id=CHAT_ID, document=open(dosya, "rb"))
+def main():
+    threading.Thread(target=run_flask).start()
+    run_bot()
 
 if __name__ == "__main__":
     main()
