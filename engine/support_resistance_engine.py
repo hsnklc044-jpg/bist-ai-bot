@@ -3,30 +3,22 @@ import yfinance as yf
 
 def get_support_resistance(symbol):
 
-    try:
+    ticker = f"{symbol}.IS"
 
-        ticker = f"{symbol}.IS"
+    data = yf.download(ticker, period="6mo", interval="1d")
 
-        df = yf.download(ticker, period="6mo", interval="1d")
+    if data.empty:
+        return None
 
-        if df.empty:
-            return "Veri bulunamadı."
+    fiyat = float(data["Close"].iloc[-1])
 
-        support = df["Low"].min()
-        resistance = df["High"].max()
-        price = df["Close"].iloc[-1]
+    destek = float(data["Low"].rolling(20).min().iloc[-1])
 
-        text = f"""
-📊 {symbol}
+    direnc = float(data["High"].rolling(20).max().iloc[-1])
 
-Fiyat: {round(price,2)}
-
-🟢 Destek: {round(support,2)}
-🔴 Direnç: {round(resistance,2)}
-"""
-
-        return text
-
-    except Exception as e:
-
-        return f"Hata: {str(e)}"
+    return {
+        "hisse": symbol,
+        "fiyat": round(fiyat, 2),
+        "destek": round(destek, 2),
+        "direnc": round(direnc, 2)
+    }
