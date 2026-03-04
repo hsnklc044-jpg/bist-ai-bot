@@ -5,6 +5,7 @@ from engine.market_regime_engine import get_market_regime
 from engine.institutional_money_detector import detect_institutional_activity
 from engine.relative_strength_engine import relative_strength_vs_index
 from engine.risk_engine import calculate_trade_levels
+from engine.elite_signal_filter import filter_elite_signals
 from engine.pro_trading_signal_formatter import format_signal
 
 from app.bist100 import BIST100
@@ -66,7 +67,7 @@ def run_ultimate_scan():
 
     results = []
 
-    # MARKET REGIME
+    # Market durumu
     try:
 
         regime = get_market_regime()
@@ -76,7 +77,7 @@ def run_ultimate_scan():
 
         print("Market regime okunamadı:", e)
 
-    # HİSSE TARAMA
+    # Hisse tarama
     for symbol in BIST100:
 
         ticker = f"{symbol}.IS"
@@ -108,6 +109,7 @@ def run_ultimate_scan():
             if trade is None:
                 continue
 
+            # Radar şartı
             if score >= 60 or (vol_spike and squeeze) or inst_flag or rs_flag:
 
                 results.append({
@@ -128,7 +130,11 @@ def run_ultimate_scan():
 
             print("Hata:", symbol, e)
 
+    # skor sıralama
     results = sorted(results, key=lambda x: x["score"], reverse=True)
+
+    # elit filtre
+    results = filter_elite_signals(results)
 
     print("✅ Ultimate Radar tamamlandı")
 
@@ -138,7 +144,7 @@ def run_ultimate_scan():
 
         print("🏆 En güçlü hisseler:")
 
-        for r in results[:5]:
+        for r in results:
 
             print(
                 r["symbol"],
