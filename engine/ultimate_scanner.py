@@ -11,6 +11,7 @@ from engine.risk_engine import calculate_trade_levels
 from engine.elite_signal_filter import filter_elite_signals
 from engine.volume_anomaly_engine import detect_volume_anomaly
 from engine.signal_memory import is_new_signal
+from engine.liquidity_engine import check_liquidity
 from engine.pro_trading_signal_formatter import format_signal
 
 from app.bist100 import BIST100
@@ -76,11 +77,13 @@ def run_ultimate_scan():
     try:
 
         market_mode = get_market_mode()
+
         print("📊 Market Mode:", market_mode)
 
     except Exception as e:
 
         print("Market mode okunamadı:", e)
+
         market_mode = "SIDEWAYS"
 
     for symbol in BIST100:
@@ -93,6 +96,10 @@ def run_ultimate_scan():
             continue
 
         if len(df) < 80:
+            continue
+
+        # Liquidity filtresi
+        if not check_liquidity(df):
             continue
 
         try:
@@ -126,7 +133,7 @@ def run_ultimate_scan():
             if trade is None:
                 continue
 
-            # Market mode stratejisi
+            # Market Mode stratejisi
             if market_mode == "BULL":
 
                 condition = trend_flag or trade_score >= 70
@@ -142,7 +149,7 @@ def run_ultimate_scan():
             # Multi timeframe filtresi
             if condition and mtf_flag:
 
-                # Signal memory (spam önleme)
+                # aynı sinyal tekrar gönderilmesin
                 if not is_new_signal(symbol):
                     continue
 
