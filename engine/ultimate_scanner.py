@@ -1,12 +1,14 @@
 import yfinance as yf
 
 from engine.ai_scoring_engine import score_stock
+from engine.ai_trade_score import calculate_trade_score
 from engine.market_regime_engine import get_market_regime
 from engine.institutional_money_detector import detect_institutional_activity
 from engine.relative_strength_engine import relative_strength_vs_index
 from engine.trend_engine import detect_trend
 from engine.risk_engine import calculate_trade_levels
 from engine.elite_signal_filter import filter_elite_signals
+from engine.volume_anomaly_engine import detect_volume_anomaly
 from engine.pro_trading_signal_formatter import format_signal
 
 from app.bist100 import BIST100
@@ -68,7 +70,6 @@ def run_ultimate_scan():
 
     results = []
 
-    # Market durumu
     try:
 
         regime = get_market_regime()
@@ -78,7 +79,6 @@ def run_ultimate_scan():
 
         print("Market regime okunamadı:", e)
 
-    # Hisse tarama
     for symbol in BIST100:
 
         ticker = f"{symbol}.IS"
@@ -95,9 +95,14 @@ def run_ultimate_scan():
 
             score = score_stock(df)
 
+            trade_score = calculate_trade_score(df)
+
             vol_spike = volume_spike(df)
 
             squeeze = volatility_squeeze(df)
+
+            anomaly = detect_volume_anomaly(df)
+            anomaly_flag = anomaly["volume_anomaly"]
 
             institutional = detect_institutional_activity(df)
             inst_flag = institutional["institutional_activity"]
@@ -113,14 +118,23 @@ def run_ultimate_scan():
             if trade is None:
                 continue
 
-            if score >= 60 or (vol_spike and squeeze) or inst_flag or rs_flag or trend_flag:
+            if (
+                score >= 60
+                or trend_flag
+                or inst_flag
+                or rs_flag
+                or anomaly_flag
+                or (vol_spike and squeeze)
+            ):
 
                 results.append({
                     "symbol": symbol,
                     "score": score,
+                    "ai_score": trade_score,
                     "price": float(df["Close"].iloc[-1]),
                     "volume_spike": vol_spike,
                     "squeeze": squeeze,
+                    "volume_anomaly": anomaly_flag,
                     "institutional": inst_flag,
                     "relative_strength": rs_flag,
                     "trend": trend_flag,
@@ -134,36 +148,16 @@ def run_ultimate_scan():
 
             print("Hata:", symbol, e)
 
-    # skor sıralama
-    results = sorted(results, key=lambda x: x["score"], reverse=True)
+    results = sorted(results, key=lambda x: x["ai_score"], reverse=True)
 
-    # elit sinyal filtresi
     results = filter_elite_signals(results)
 
     print("✅ Ultimate Radar tamamlandı")
 
     formatted_signals = []
 
-    if len(results) > 0:
+    for r in results:
 
-        print("🏆 En güçlü hisseler:")
-
-        for r in results:
-
-            print(
-                r["symbol"],
-                "Score:", r["score"],
-                "Trend:", r["trend"],
-                "RS:", r["relative_strength"],
-                "VolumeSpike:", r["volume_spike"],
-                "Institutional:", r["institutional"],
-                "RR:", r["rr"]
-            )
-
-            formatted_signals.append(format_signal(r))
-
-    else:
-
-        print("⚠️ Sinyal bulunamadı")
+        formatted_signals.append(format_signal(r))
 
     return formatted_signals
