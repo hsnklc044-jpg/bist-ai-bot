@@ -1,238 +1,77 @@
 import yfinance as yf
-from concurrent.futures import ThreadPoolExecutor
 
-from engine.ai_scoring_engine import score_stock
-from engine.ai_trade_score import calculate_trade_score
-from engine.market_mode_ai import get_market_mode
-from engine.multi_timeframe_ai import multi_timeframe_trend
-from engine.institutional_money_detector import detect_institutional_activity
-from engine.relative_strength_engine import relative_strength_vs_index
-from engine.trend_engine import detect_trend
-from engine.risk_engine import calculate_trade_levels
-from engine.elite_signal_filter import filter_elite_signals
-from engine.volume_anomaly_engine import detect_volume_anomaly
-from engine.signal_memory import is_new_signal
-from engine.liquidity_engine import check_liquidity
-from engine.sector_rotation_ai import sector_strength
-from engine.position_sizing_engine import calculate_position_size
-from engine.performance_tracker import record_signal
-from engine.portfolio_ai import build_portfolio
-from engine.breakout_detector_ai import detect_breakout
-from engine.pro_trading_signal_formatter import format_signal
-
-from app.bist100 import BIST100
+from engine.bist_symbols import BIST_SYMBOLS
+from engine.ai_scoring_engine import calculate_ai_score
 
 
-LOOKBACK_PERIOD = "3mo"
+# --------------------------------
+# FİYAT ÇEK
+# --------------------------------
 
-
-def download_data(symbol):
+def get_price(symbol):
 
     try:
 
-        df = yf.download(
-            symbol,
-            period=LOOKBACK_PERIOD,
-            interval="1d",
-            progress=False
-        )
+        ticker = f"{symbol}.IS"
 
-        if df is None or df.empty:
+        data = yf.download(ticker, period="5d", interval="1d")
+
+        if data.empty:
             return None
 
-        df.dropna(inplace=True)
-
-        return df
+        return round(float(data["Close"].iloc[-1]), 2)
 
     except Exception as e:
 
-        print("Veri indirilemedi:", symbol, e)
-        return None
-
-
-def volume_spike(df):
-
-    avg_volume = df["Volume"].rolling(20).mean()
-
-    return df["Volume"].iloc[-1] > avg_volume.iloc[-1] * 1.7
-
-
-def volatility_squeeze(df):
-
-    rolling_std = df["Close"].rolling(20).std()
-
-    current_vol = rolling_std.iloc[-1]
-    avg_vol = rolling_std.mean()
-
-    return current_vol < avg_vol * 0.8
-
-
-def analyze_symbol(symbol, strong_sector, market_mode):
-
-    ticker = f"{symbol}.IS"
-
-    df = download_data(ticker)
-
-    if df is None or len(df) < 80:
-        return None
-
-    if not check_liquidity(df):
-        return None
-
-    try:
-
-        score = score_stock(df)
-        trade_score = calculate_trade_score(df)
-
-        vol_spike = volume_spike(df)
-        squeeze = volatility_squeeze(df)
-
-        anomaly = detect_volume_anomaly(df)
-        anomaly_flag = anomaly["volume_anomaly"]
-
-        breakout_data = detect_breakout(df)
-        breakout_flag = breakout_data["breakout"]
-
-        institutional = detect_institutional_activity(df)
-        inst_flag = institutional["institutional_activity"]
-
-        rs_data = relative_strength_vs_index(df)
-        rs_flag = rs_data["stronger_than_index"]
-
-        trend_data = detect_trend(df)
-        trend_flag = trend_data["trend"]
-
-        mtf = multi_timeframe_trend(symbol)
-        mtf_flag = mtf["strong_trend"]
-
-        trade = calculate_trade_levels(df)
-
-        if trade is None:
-            return None
-
-        # market stratejisi
-
-        if market_mode == "BULL":
-
-            condition = trend_flag or trade_score >= 70
-
-        elif market_mode == "SIDEWAYS":
-
-            condition = vol_spike or anomaly_flag or squeeze or breakout_flag
-
-        else:
-
-            condition = rs_flag or inst_flag
-
-        if not (condition and mtf_flag):
-            return None
-
-        if not is_new_signal(symbol):
-            return None
-
-        result = {
-            "symbol": symbol,
-            "score": score,
-            "ai_score": trade_score,
-            "price": float(df["Close"].iloc[-1]),
-            "sector": strong_sector,
-            "volume_spike": vol_spike,
-            "squeeze": squeeze,
-            "volume_anomaly": anomaly_flag,
-            "breakout": breakout_flag,
-            "institutional": inst_flag,
-            "relative_strength": rs_flag,
-            "trend": trend_flag,
-            "mtf_trend": mtf_flag,
-            "entry": trade["entry"],
-            "stop": trade["stop"],
-            "target": trade["target"],
-            "rr": trade["risk_reward"]
-        }
-
-        position_data = calculate_position_size(result)
-
-        result["position_size"] = position_data["position"]
-        result["risk_level"] = position_data["risk"]
-        result["confidence"] = position_data["confidence"]
-
-        record_signal(result)
-
-        return result
-
-    except Exception as e:
-
-        print("Hata:", symbol, e)
+        print(symbol, "fiyat hatası:", e)
 
         return None
 
+
+# --------------------------------
+# ULTRA RADAR SCAN
+# --------------------------------
 
 def run_ultimate_scan():
 
-    print("🚀 ULTIMATE BIST AI RADAR BAŞLADI")
+    print("🚀 ULTRA BIST RADAR BAŞLADI")
 
     results = []
 
-    try:
+    for symbol in BIST_SYMBOLS:
 
-        strong_sector = sector_strength()
+        try:
 
-        print("🏭 Strong Sector:", strong_sector)
+            score = calculate_ai_score(symbol)
 
-    except Exception as e:
+            if score is None:
+                continue
 
-        print("Sector analysis error:", e)
+            # düşük skorları filtrele
+            if score < 70:
+                continue
 
-        strong_sector = None
+            price = get_price(symbol)
 
-    try:
+            if price is None:
+                continue
 
-        market_mode = get_market_mode()
+            signal = {
+                "symbol": symbol,
+                "price": price,
+                "score": score,
+                "signal": "AI AL SİNYALİ"
+            }
 
-        print("📊 Market Mode:", market_mode)
+            results.append(signal)
 
-    except Exception as e:
+        except Exception as e:
 
-        print("Market mode error:", e)
+            print(symbol, "scan hatası:", e)
 
-        market_mode = "SIDEWAYS"
+    # en yüksek skorlar
+    results.sort(key=lambda x: x["score"], reverse=True)
 
-    with ThreadPoolExecutor(max_workers=10) as executor:
+    print("✅ Radar tamamlandı")
 
-        futures = [
-            executor.submit(analyze_symbol, s, strong_sector, market_mode)
-            for s in BIST100
-        ]
-
-        for f in futures:
-
-            result = f.result()
-
-            if result:
-                results.append(result)
-
-    results = sorted(results, key=lambda x: x["ai_score"], reverse=True)
-
-    results = filter_elite_signals(results)
-
-    portfolio = build_portfolio(results)
-
-    print("✅ Ultimate Radar tamamlandı")
-
-    formatted_signals = []
-
-    for r in results:
-
-        formatted_signals.append(format_signal(r))
-
-    if portfolio:
-
-        portfolio_text = "\n📊 Suggested Portfolio\n"
-
-        for p in portfolio:
-
-            portfolio_text += f"{p['symbol']}  %{p['weight']}\n"
-
-        formatted_signals.append(portfolio_text)
-
-    return formatted_signals
+    return results[:5]
