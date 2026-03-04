@@ -1,74 +1,76 @@
-# app/scanner.py
-
+import yfinance as yf
 import pandas as pd
-from app.data_utils import get_data
+
 from app.bist30 import BIST30
+from app.scoring_engine import score_stock
+
+from engine.market_regime_engine import get_market_regime
 
 
-def calculate_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -1 * delta.clip(upper=0)
-
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-
-    return rsi
+LOOKBACK_PERIOD = "6mo"
 
 
-def scan_market():
+def download_data(symbol):
+
+    try:
+
+        df = yf.download(symbol, period=LOOKBACK_PERIOD, interval="1d")
+
+        if df.empty:
+            return None
+
+        return df
+
+    except Exception as e:
+
+        print(f"Veri indirilemedi: {symbol}", e)
+
+        return None
+
+
+def run_scanner():
+
+    print("📡 BIST Radar başlıyor...")
+
+    # MARKET REGIME KONTROLÜ
+    regime = get_market_regime()
+
+    if regime == "BEAR":
+
+        print("📉 Piyasa düşüş trendinde. Radar durduruldu.")
+
+        return []
 
     results = []
 
     for symbol in BIST30:
 
-        df = get_data(symbol=symbol, period="3mo")
+        ticker = f"{symbol}.IS"
 
-        if df is None or df.empty:
+        df = download_data(ticker)
+
+        if df is None:
             continue
 
-        if "close" not in df.columns:
+        if len(df) < 100:
             continue
 
-        if len(df) < 20:
-            continue
+        try:
 
-        # Close'u garanti düz hale getir
-        close = pd.Series(df["close"]).astype(float).values
+            score = score_stock(df)
 
-        # RSI hesapla
-        rsi_series = calculate_rsi(pd.Series(close))
-        rsi = rsi_series.values
+            results.append({
+                "symbol": symbol,
+                "score": score
+            })
 
-        if len(close) < 20 or len(rsi) < 20:
-            continue
+        except Exception as e:
 
-        latest_close = float(close[-1])
-        latest_rsi = float(rsi[-1])
+            print("Skor hesaplanamadı:", symbol, e)
 
-        ma20 = float(pd.Series(close).rolling(20).mean().iloc[-1])
-        momentum = latest_close - float(close[-5])
+    # SKOR SIRALAMA
+    results = sorted(results, key=lambda x: x["score"], reverse=True)
 
-        score = 0
+    print("Radar tamamlandı")
 
-        if latest_close > ma20:
-            score += 1
-
-        if latest_rsi > 50:
-            score += 1
-
-        if momentum > 0:
-            score += 1
-
-        results.append({
-            "symbol": symbol.replace(".IS", ""),
-            "rsi": round(latest_rsi, 2),
-            "score": score
-        })
-
-    sorted_results = sorted(results, key=lambda x: x["score"], reverse=True)
-
-    return sorted_results[:3]
+    return results
