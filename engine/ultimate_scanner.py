@@ -1,4 +1,5 @@
 import yfinance as yf
+from concurrent.futures import ThreadPoolExecutor
 
 from engine.ai_scoring_engine import score_stock
 from engine.ai_trade_score import calculate_trade_score
@@ -52,10 +53,7 @@ def volume_spike(df):
 
     avg_volume = df["Volume"].rolling(20).mean()
 
-    if df["Volume"].iloc[-1] > avg_volume.iloc[-1] * 1.7:
-        return True
-
-    return False
+    return df["Volume"].iloc[-1] > avg_volume.iloc[-1] * 1.7
 
 
 def volatility_squeeze(df):
@@ -65,10 +63,97 @@ def volatility_squeeze(df):
     current_vol = rolling_std.iloc[-1]
     avg_vol = rolling_std.mean()
 
-    if current_vol < avg_vol * 0.8:
-        return True
+    return current_vol < avg_vol * 0.8
 
-    return False
+
+def analyze_symbol(symbol, strong_sector, market_mode):
+
+    ticker = f"{symbol}.IS"
+
+    df = download_data(ticker)
+
+    if df is None or len(df) < 80:
+        return None
+
+    if not check_liquidity(df):
+        return None
+
+    try:
+
+        score = score_stock(df)
+        trade_score = calculate_trade_score(df)
+
+        vol_spike = volume_spike(df)
+        squeeze = volatility_squeeze(df)
+
+        anomaly = detect_volume_anomaly(df)
+        anomaly_flag = anomaly["volume_anomaly"]
+
+        institutional = detect_institutional_activity(df)
+        inst_flag = institutional["institutional_activity"]
+
+        rs_data = relative_strength_vs_index(df)
+        rs_flag = rs_data["stronger_than_index"]
+
+        trend_data = detect_trend(df)
+        trend_flag = trend_data["trend"]
+
+        mtf = multi_timeframe_trend(symbol)
+        mtf_flag = mtf["strong_trend"]
+
+        trade = calculate_trade_levels(df)
+
+        if trade is None:
+            return None
+
+        if market_mode == "BULL":
+            condition = trend_flag or trade_score >= 70
+
+        elif market_mode == "SIDEWAYS":
+            condition = vol_spike or anomaly_flag or squeeze
+
+        else:
+            condition = rs_flag or inst_flag
+
+        if not (condition and mtf_flag):
+            return None
+
+        if not is_new_signal(symbol):
+            return None
+
+        result = {
+            "symbol": symbol,
+            "score": score,
+            "ai_score": trade_score,
+            "price": float(df["Close"].iloc[-1]),
+            "sector": strong_sector,
+            "volume_spike": vol_spike,
+            "squeeze": squeeze,
+            "volume_anomaly": anomaly_flag,
+            "institutional": inst_flag,
+            "relative_strength": rs_flag,
+            "trend": trend_flag,
+            "mtf_trend": mtf_flag,
+            "entry": trade["entry"],
+            "stop": trade["stop"],
+            "target": trade["target"],
+            "rr": trade["risk_reward"]
+        }
+
+        position_data = calculate_position_size(result)
+
+        result["position_size"] = position_data["position"]
+        result["risk_level"] = position_data["risk"]
+        result["confidence"] = position_data["confidence"]
+
+        record_signal(result)
+
+        return result
+
+    except Exception as e:
+
+        print("Hata:", symbol, e)
+        return None
 
 
 def run_ultimate_scan():
@@ -77,135 +162,48 @@ def run_ultimate_scan():
 
     results = []
 
-    # sektör analizi
     try:
 
         strong_sector = sector_strength()
+
         print("🏭 Strong Sector:", strong_sector)
 
     except Exception as e:
 
         print("Sector analysis error:", e)
+
         strong_sector = None
 
-    # piyasa modu
     try:
 
         market_mode = get_market_mode()
+
         print("📊 Market Mode:", market_mode)
 
     except Exception as e:
 
-        print("Market mode okunamadı:", e)
+        print("Market mode error:", e)
+
         market_mode = "SIDEWAYS"
 
-    for symbol in BIST100:
+    with ThreadPoolExecutor(max_workers=10) as executor:
 
-        ticker = f"{symbol}.IS"
+        futures = [
+            executor.submit(analyze_symbol, s, strong_sector, market_mode)
+            for s in BIST100
+        ]
 
-        df = download_data(ticker)
+        for f in futures:
 
-        if df is None:
-            continue
+            result = f.result()
 
-        if len(df) < 80:
-            continue
-
-        # Liquidity filtresi
-        if not check_liquidity(df):
-            continue
-
-        try:
-
-            score = score_stock(df)
-
-            trade_score = calculate_trade_score(df)
-
-            vol_spike = volume_spike(df)
-
-            squeeze = volatility_squeeze(df)
-
-            anomaly = detect_volume_anomaly(df)
-            anomaly_flag = anomaly["volume_anomaly"]
-
-            institutional = detect_institutional_activity(df)
-            inst_flag = institutional["institutional_activity"]
-
-            rs_data = relative_strength_vs_index(df)
-            rs_flag = rs_data["stronger_than_index"]
-
-            trend_data = detect_trend(df)
-            trend_flag = trend_data["trend"]
-
-            # Multi timeframe trend
-            mtf = multi_timeframe_trend(symbol)
-            mtf_flag = mtf["strong_trend"]
-
-            trade = calculate_trade_levels(df)
-
-            if trade is None:
-                continue
-
-            # Market stratejisi
-            if market_mode == "BULL":
-
-                condition = trend_flag or trade_score >= 70
-
-            elif market_mode == "SIDEWAYS":
-
-                condition = vol_spike or anomaly_flag or squeeze
-
-            else:
-
-                condition = rs_flag or inst_flag
-
-            if condition and mtf_flag:
-
-                if not is_new_signal(symbol):
-                    continue
-
-                result = {
-                    "symbol": symbol,
-                    "score": score,
-                    "ai_score": trade_score,
-                    "price": float(df["Close"].iloc[-1]),
-                    "sector": strong_sector,
-                    "volume_spike": vol_spike,
-                    "squeeze": squeeze,
-                    "volume_anomaly": anomaly_flag,
-                    "institutional": inst_flag,
-                    "relative_strength": rs_flag,
-                    "trend": trend_flag,
-                    "mtf_trend": mtf_flag,
-                    "entry": trade["entry"],
-                    "stop": trade["stop"],
-                    "target": trade["target"],
-                    "rr": trade["risk_reward"]
-                }
-
-                # Position sizing
-                position_data = calculate_position_size(result)
-
-                result["position_size"] = position_data["position"]
-                result["risk_level"] = position_data["risk"]
-                result["confidence"] = position_data["confidence"]
-
-                # Performance tracking
-                record_signal(result)
-
+            if result:
                 results.append(result)
 
-        except Exception as e:
-
-            print("Hata:", symbol, e)
-
-    # AI score sıralama
     results = sorted(results, key=lambda x: x["ai_score"], reverse=True)
 
-    # Elite filter
     results = filter_elite_signals(results)
 
-    # Portfolio oluşturma
     portfolio = build_portfolio(results)
 
     print("✅ Ultimate Radar tamamlandı")
@@ -216,7 +214,6 @@ def run_ultimate_scan():
 
         formatted_signals.append(format_signal(r))
 
-    # Portföy mesajı
     if portfolio:
 
         portfolio_text = "\n📊 Suggested Portfolio\n"
