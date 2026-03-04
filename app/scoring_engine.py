@@ -1,54 +1,51 @@
-import pandas as pd
-
-from engine.institutional_money_flow import institutional_score
+import yfinance as yf
 
 
-def calculate_indicators(df):
+def calculate_ai_score(symbol):
 
-    df["EMA20"] = df["Close"].ewm(span=20).mean()
-    df["EMA50"] = df["Close"].ewm(span=50).mean()
-    df["EMA200"] = df["Close"].ewm(span=200).mean()
+    try:
 
-    df["momentum"] = df["Close"].pct_change(20)
+        ticker = f"{symbol}.IS"
 
-    df["volume_avg"] = df["Volume"].rolling(20).mean()
+        data = yf.download(ticker, period="3mo", interval="1d")
 
-    return df
+        if data.empty:
+            return None
 
+        close = data["Close"]
+        volume = data["Volume"]
 
-def score_stock(df):
+        price = float(close.iloc[-1])
 
-    score = 0
+        ma20 = float(close.rolling(20).mean().iloc[-1])
+        ma50 = float(close.rolling(50).mean().iloc[-1])
 
-    df = calculate_indicators(df)
+        score = 50
 
-    latest = df.iloc[-1]
+        # trend
+        if price > ma20:
+            score += 10
 
-    # TREND
-    if latest["EMA20"] > latest["EMA50"]:
-        score += 15
+        if price > ma50:
+            score += 10
 
-    if latest["EMA50"] > latest["EMA200"]:
-        score += 20
+        if ma20 > ma50:
+            score += 10
 
-    # MOMENTUM
-    if latest["momentum"] > 0:
-        score += 15
+        # momentum
+        momentum = close.pct_change(10).iloc[-1]
 
-    if latest["momentum"] > 0.10:
-        score += 10
+        if momentum > 0.05:
+            score += 10
 
-    # VOLUME EXPANSION
-    if latest["Volume"] > 1.5 * latest["volume_avg"]:
-        score += 15
+        # volume spike
+        if volume.iloc[-1] > volume.mean():
+            score += 10
 
-    # BREAKOUT
-    recent_high = df["Close"].rolling(20).max().iloc[-2]
+        return score
 
-    if latest["Close"] > recent_high:
-        score += 15
+    except Exception as e:
 
-    # INSTITUTIONAL FLOW
-    score += institutional_score(df)
+        print(symbol, "AI skor hatası:", e)
 
-    return score
+        return None
