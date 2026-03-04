@@ -2,7 +2,7 @@ import yfinance as yf
 
 from engine.ai_scoring_engine import score_stock
 from engine.ai_trade_score import calculate_trade_score
-from engine.market_regime_engine import get_market_regime
+from engine.market_mode_ai import get_market_mode
 from engine.institutional_money_detector import detect_institutional_activity
 from engine.relative_strength_engine import relative_strength_vs_index
 from engine.trend_engine import detect_trend
@@ -71,14 +71,18 @@ def run_ultimate_scan():
 
     results = []
 
+    # Market mode belirleme
     try:
 
-        regime = get_market_regime()
-        print("📊 Market Regime:", regime)
+        market_mode = get_market_mode()
+
+        print("📊 Market Mode:", market_mode)
 
     except Exception as e:
 
-        print("Market regime okunamadı:", e)
+        print("Market mode okunamadı:", e)
+
+        market_mode = "SIDEWAYS"
 
     for symbol in BIST100:
 
@@ -119,17 +123,22 @@ def run_ultimate_scan():
             if trade is None:
                 continue
 
-            # radar şartı
-            if (
-                score >= 60
-                or trend_flag
-                or inst_flag
-                or rs_flag
-                or anomaly_flag
-                or (vol_spike and squeeze)
-            ):
+            # Market mode stratejisi
+            if market_mode == "BULL":
 
-                # signal memory kontrolü
+                condition = trend_flag or trade_score >= 70
+
+            elif market_mode == "SIDEWAYS":
+
+                condition = vol_spike or anomaly_flag or squeeze
+
+            else:  # BEAR
+
+                condition = rs_flag or inst_flag
+
+            if condition:
+
+                # aynı sinyal tekrar gönderilmesin
                 if not is_new_signal(symbol):
                     continue
 
@@ -157,7 +166,7 @@ def run_ultimate_scan():
     # AI skoruna göre sıralama
     results = sorted(results, key=lambda x: x["ai_score"], reverse=True)
 
-    # elite filtre
+    # elit sinyal filtresi
     results = filter_elite_signals(results)
 
     print("✅ Ultimate Radar tamamlandı")
