@@ -12,18 +12,17 @@ CHAT_ID = os.getenv("CHAT_ID")
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 
 
-# -----------------------------
-# TELEGRAM MESAJ GÖNDERME
-# -----------------------------
+# ---------------------------------
+# TELEGRAM MESAJ GÖNDER
+# ---------------------------------
 
-def send_telegram_message(text):
+def send_message(text):
 
     url = f"{BASE_URL}/sendMessage"
 
     payload = {
         "chat_id": CHAT_ID,
-        "text": text,
-        "parse_mode": "HTML"
+        "text": text
     }
 
     try:
@@ -32,9 +31,9 @@ def send_telegram_message(text):
         print("Telegram mesaj hatası:", e)
 
 
-# -----------------------------
+# ---------------------------------
 # RADAR KOMUTU
-# -----------------------------
+# ---------------------------------
 
 def radar_command():
 
@@ -61,9 +60,9 @@ def radar_command():
     return message
 
 
-# -----------------------------
+# ---------------------------------
 # DESTEK / DİRENÇ KOMUTU
-# -----------------------------
+# ---------------------------------
 
 def support_command(symbol):
 
@@ -84,9 +83,9 @@ def support_command(symbol):
     return message
 
 
-# -----------------------------
+# ---------------------------------
 # TELEGRAM KOMUTLARINI DİNLE
-# -----------------------------
+# ---------------------------------
 
 def listen_commands():
 
@@ -131,7 +130,7 @@ def listen_commands():
 
                     result = radar_command()
 
-                    send_telegram_message(result)
+                    send_message(result)
 
                 # SUPPORT
                 elif text.startswith("/support"):
@@ -140,7 +139,7 @@ def listen_commands():
 
                     if len(parts) < 2:
 
-                        send_telegram_message(
+                        send_message(
                             "Kullanım:\n/support THYAO"
                         )
 
@@ -150,21 +149,10 @@ def listen_commands():
 
                         result = support_command(symbol)
 
-                        send_telegram_message(result)
+                        send_message(result)
 
         except Exception as e:
 
             print("Komut dinleme hatası:", e)
 
         time.sleep(2)
-
-
-# -----------------------------
-# BOT BAŞLAT
-# -----------------------------
-
-if __name__ == "__main__":
-
-    print("🤖 BIST AI BOT BAŞLADI")
-
-    listen_commands()
