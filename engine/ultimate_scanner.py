@@ -13,6 +13,7 @@ from engine.volume_anomaly_engine import detect_volume_anomaly
 from engine.signal_memory import is_new_signal
 from engine.liquidity_engine import check_liquidity
 from engine.sector_rotation_ai import sector_strength
+from engine.position_sizing_engine import calculate_position_size
 from engine.pro_trading_signal_formatter import format_signal
 
 from app.bist100 import BIST100
@@ -78,26 +79,22 @@ def run_ultimate_scan():
     try:
 
         strong_sector = sector_strength()
-
         print("🏭 Strong Sector:", strong_sector)
 
     except Exception as e:
 
         print("Sector analysis error:", e)
-
         strong_sector = None
 
     # piyasa modu
     try:
 
         market_mode = get_market_mode()
-
         print("📊 Market Mode:", market_mode)
 
     except Exception as e:
 
         print("Market mode okunamadı:", e)
-
         market_mode = "SIDEWAYS"
 
     for symbol in BIST100:
@@ -138,7 +135,7 @@ def run_ultimate_scan():
             trend_data = detect_trend(df)
             trend_flag = trend_data["trend"]
 
-            # multi timeframe
+            # multi timeframe trend
             mtf = multi_timeframe_trend(symbol)
             mtf_flag = mtf["strong_trend"]
 
@@ -156,16 +153,17 @@ def run_ultimate_scan():
 
                 condition = vol_spike or anomaly_flag or squeeze
 
-            else:  # BEAR
+            else:
 
                 condition = rs_flag or inst_flag
 
             if condition and mtf_flag:
 
+                # aynı sinyal tekrar gönderilmesin
                 if not is_new_signal(symbol):
                     continue
 
-                results.append({
+                result = {
                     "symbol": symbol,
                     "score": score,
                     "ai_score": trade_score,
@@ -182,7 +180,16 @@ def run_ultimate_scan():
                     "stop": trade["stop"],
                     "target": trade["target"],
                     "rr": trade["risk_reward"]
-                })
+                }
+
+                # pozisyon büyüklüğü hesaplama
+                position_data = calculate_position_size(result)
+
+                result["position_size"] = position_data["position"]
+                result["risk_level"] = position_data["risk"]
+                result["confidence"] = position_data["confidence"]
+
+                results.append(result)
 
         except Exception as e:
 
@@ -191,7 +198,7 @@ def run_ultimate_scan():
     # AI score sıralama
     results = sorted(results, key=lambda x: x["ai_score"], reverse=True)
 
-    # elit filtre
+    # elite filter
     results = filter_elite_signals(results)
 
     print("✅ Ultimate Radar tamamlandı")
