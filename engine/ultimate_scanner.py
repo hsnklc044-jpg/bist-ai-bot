@@ -14,6 +14,7 @@ from engine.signal_memory import is_new_signal
 from engine.liquidity_engine import check_liquidity
 from engine.sector_rotation_ai import sector_strength
 from engine.position_sizing_engine import calculate_position_size
+from engine.performance_tracker import record_signal
 from engine.pro_trading_signal_formatter import format_signal
 
 from app.bist100 import BIST100
@@ -135,7 +136,7 @@ def run_ultimate_scan():
             trend_data = detect_trend(df)
             trend_flag = trend_data["trend"]
 
-            # multi timeframe trend
+            # multi timeframe
             mtf = multi_timeframe_trend(symbol)
             mtf_flag = mtf["strong_trend"]
 
@@ -159,7 +160,6 @@ def run_ultimate_scan():
 
             if condition and mtf_flag:
 
-                # aynı sinyal tekrar gönderilmesin
                 if not is_new_signal(symbol):
                     continue
 
@@ -182,12 +182,15 @@ def run_ultimate_scan():
                     "rr": trade["risk_reward"]
                 }
 
-                # pozisyon büyüklüğü hesaplama
+                # position sizing
                 position_data = calculate_position_size(result)
 
                 result["position_size"] = position_data["position"]
                 result["risk_level"] = position_data["risk"]
                 result["confidence"] = position_data["confidence"]
+
+                # performans kaydı
+                record_signal(result)
 
                 results.append(result)
 
