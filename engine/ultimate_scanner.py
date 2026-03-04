@@ -5,6 +5,8 @@ from engine.market_regime_engine import get_market_regime
 from engine.institutional_money_detector import detect_institutional_activity
 from engine.relative_strength_engine import relative_strength_vs_index
 from engine.risk_engine import calculate_trade_levels
+from engine.pro_trading_signal_formatter import format_signal
+
 from app.bist100 import BIST100
 
 
@@ -130,11 +132,13 @@ def run_ultimate_scan():
 
     print("✅ Ultimate Radar tamamlandı")
 
+    formatted_signals = []
+
     if len(results) > 0:
 
         print("🏆 En güçlü hisseler:")
 
-        for r in results[:10]:
+        for r in results[:5]:
 
             print(
                 r["symbol"],
@@ -145,8 +149,10 @@ def run_ultimate_scan():
                 "RR:", r["rr"]
             )
 
+            formatted_signals.append(format_signal(r))
+
     else:
 
         print("⚠️ Sinyal bulunamadı")
 
-    return results
+    return formatted_signals
