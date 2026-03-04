@@ -40,7 +40,7 @@ def calculate_position_size(signal):
             "position": 5,
             "risk": "MEDIUM",
             "confidence": 50
-        }def calculate_position_size(signal):
+        def calculate_position_size(signal):
 
     try:
 
