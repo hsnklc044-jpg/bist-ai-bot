@@ -3,6 +3,7 @@ import yfinance as yf
 from engine.ai_scoring_engine import score_stock
 from engine.market_regime_engine import get_market_regime
 from engine.institutional_money_detector import detect_institutional_activity
+from engine.relative_strength_engine import relative_strength_vs_index
 from app.bist100 import BIST100
 
 
@@ -95,10 +96,12 @@ def run_ultimate_scan():
             squeeze = volatility_squeeze(df)
 
             institutional = detect_institutional_activity(df)
-
             inst_flag = institutional["institutional_activity"]
 
-            if score >= 60 or (vol_spike and squeeze) or inst_flag:
+            rs_data = relative_strength_vs_index(df)
+            rs_flag = rs_data["stronger_than_index"]
+
+            if score >= 60 or (vol_spike and squeeze) or inst_flag or rs_flag:
 
                 results.append({
                     "symbol": symbol,
@@ -106,7 +109,8 @@ def run_ultimate_scan():
                     "price": float(df["Close"].iloc[-1]),
                     "volume_spike": vol_spike,
                     "squeeze": squeeze,
-                    "institutional": inst_flag
+                    "institutional": inst_flag,
+                    "relative_strength": rs_flag
                 })
 
         except Exception as e:
@@ -128,7 +132,8 @@ def run_ultimate_scan():
                 "Score:", r["score"],
                 "VolumeSpike:", r["volume_spike"],
                 "Squeeze:", r["squeeze"],
-                "Institutional:", r["institutional"]
+                "Institutional:", r["institutional"],
+                "RS:", r["relative_strength"]
             )
 
     else:
