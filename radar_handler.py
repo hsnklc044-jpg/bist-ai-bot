@@ -1,49 +1,37 @@
-from telegram import Update
-from telegram.ext import ContextTypes
-import os
-import pandas as pd
+from app.scanner import run_scanner
+from app.telegram_sender import send_telegram_message
 
-from signal_engine import radar_scan
+from engine.portfolio_engine import build_portfolio, format_portfolio_message
 
 
-DATA_FOLDER = "data"
+def run_radar():
 
+    print("📡 Radar taraması başlıyor...")
 
-def load_data():
+    try:
 
-    data = {}
+        # hisseleri tara
+        results = run_scanner()
 
-    for file in os.listdir(DATA_FOLDER):
+        if not results:
+            send_telegram_message("Radar sonuç bulamadı.")
+            return
 
-        if file.endswith(".csv"):
+        # portföy oluştur
+        portfolio = build_portfolio(results)
 
-            symbol = file.replace(".csv","")
+        # mesaj formatla
+        message = format_portfolio_message(portfolio)
 
-            df = pd.read_csv(os.path.join(DATA_FOLDER,file))
+        # telegram gönder
+        send_telegram_message(message)
 
-            df["Date"] = pd.to_datetime(df["Date"])
+        print("✅ Radar tamamlandı")
 
-            df.set_index("Date", inplace=True)
+    except Exception as e:
 
-            data[symbol] = df
+        error_msg = f"Radar hata verdi: {str(e)}"
 
-    return data
+        print(error_msg)
 
-
-async def radar(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
-    await update.message.reply_text("📡 Radar taraması yapılıyor...")
-
-    data = load_data()
-
-    results = radar_scan(data)
-
-    message = "🔥 BIST RADAR\n\n"
-
-    top = results[:10]
-
-    for i,(symbol,score) in enumerate(top,1):
-
-        message += f"{i}. {symbol}  |  Score: {score}\n"
-
-    await update.message.reply_text(message)
+        send_telegram_message(error_msg)
