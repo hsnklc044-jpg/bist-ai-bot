@@ -4,6 +4,7 @@ from engine.ai_scoring_engine import score_stock
 from engine.market_regime_engine import get_market_regime
 from engine.institutional_money_detector import detect_institutional_activity
 from engine.relative_strength_engine import relative_strength_vs_index
+from engine.trend_engine import detect_trend
 from engine.risk_engine import calculate_trade_levels
 from engine.elite_signal_filter import filter_elite_signals
 from engine.pro_trading_signal_formatter import format_signal
@@ -104,13 +105,15 @@ def run_ultimate_scan():
             rs_data = relative_strength_vs_index(df)
             rs_flag = rs_data["stronger_than_index"]
 
+            trend_data = detect_trend(df)
+            trend_flag = trend_data["trend"]
+
             trade = calculate_trade_levels(df)
 
             if trade is None:
                 continue
 
-            # Radar şartı
-            if score >= 60 or (vol_spike and squeeze) or inst_flag or rs_flag:
+            if score >= 60 or (vol_spike and squeeze) or inst_flag or rs_flag or trend_flag:
 
                 results.append({
                     "symbol": symbol,
@@ -120,6 +123,7 @@ def run_ultimate_scan():
                     "squeeze": squeeze,
                     "institutional": inst_flag,
                     "relative_strength": rs_flag,
+                    "trend": trend_flag,
                     "entry": trade["entry"],
                     "stop": trade["stop"],
                     "target": trade["target"],
@@ -133,7 +137,7 @@ def run_ultimate_scan():
     # skor sıralama
     results = sorted(results, key=lambda x: x["score"], reverse=True)
 
-    # elit filtre
+    # elit sinyal filtresi
     results = filter_elite_signals(results)
 
     print("✅ Ultimate Radar tamamlandı")
@@ -149,6 +153,7 @@ def run_ultimate_scan():
             print(
                 r["symbol"],
                 "Score:", r["score"],
+                "Trend:", r["trend"],
                 "RS:", r["relative_strength"],
                 "VolumeSpike:", r["volume_spike"],
                 "Institutional:", r["institutional"],
