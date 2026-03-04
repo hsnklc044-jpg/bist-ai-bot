@@ -1,7 +1,10 @@
 import os
 import requests
+import time
+import threading
 
 from engine.ultimate_scanner import run_ultimate_scan
+from engine.support_resistance_engine import get_support_resistance
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
@@ -9,95 +12,153 @@ CHAT_ID = os.getenv("CHAT_ID")
 BASE_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
 
-def send_telegram_message(message):
-
-    url = f"{BASE_URL}/sendMessage"
-
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message,
-        "parse_mode": "HTML"
-    }
+def send_message(text):
 
     try:
+
+        url = f"{BASE_URL}/sendMessage"
+
+        payload = {
+            "chat_id": CHAT_ID,
+            "text": text,
+            "parse_mode": "HTML"
+        }
+
         requests.post(url, json=payload)
 
     except Exception as e:
-        print("Telegram gönderim hatası:", e)
+        print("Telegram send error:", e)
 
 
-def get_updates(offset=None):
+# ---------------------------------------------------
+# RADAR
+# ---------------------------------------------------
 
-    url = f"{BASE_URL}/getUpdates"
+def radar():
 
-    params = {"timeout": 100}
+    print("🚀 Radar başlatıldı")
 
-    if offset:
-        params["offset"] = offset
+    try:
 
-    r = requests.get(url, params=params)
+        signals = run_ultimate_scan()
 
-    return r.json()
+        if not signals:
+            send_message("Radar sinyal bulamadı.")
+            return
 
+        for signal in signals[:5]:
 
-def handle_command(text):
+            text = f"""
+📊 <b>{signal['symbol']}</b>
 
-    if text == "/help":
+Fiyat: {signal['price']}
 
-        return """
-Komutlar:
+Skor: {signal['score']}
 
-/radar → anlık radar taraması
-/top → en güçlü hisseler
-/support HİSSE → destek direnç
+🎯 Hedef: {signal['target']}
+
+🛑 Stop: {signal['stop']}
 """
 
-    if text == "/radar":
+            send_message(text)
 
-        signals = run_ultimate_scan()
+    except Exception as e:
 
-        if not signals:
-            return "Sinyal bulunamadı."
+        print("Radar error:", e)
+        send_message("Radar hata verdi.")
 
-        return "\n\n".join(signals)
 
-    if text == "/top":
-
-        signals = run_ultimate_scan()
-
-        if not signals:
-            return "Güçlü hisse yok."
-
-        return "\n\n".join(signals[:3])
-
-    if text.startswith("/support"):
-
-        return "Support/Resistance modülü yakında eklenecek."
-
-    return "Komut tanınmadı. /help yaz."
-
+# ---------------------------------------------------
+# TELEGRAM COMMAND LISTENER
+# ---------------------------------------------------
 
 def listen_commands():
 
-    print("🤖 Telegram komut dinleyici başladı")
+    print("📡 Telegram dinleniyor...")
 
     offset = None
 
     while True:
 
-        updates = get_updates(offset)
+        try:
 
-        for update in updates["result"]:
+            url = f"{BASE_URL}/getUpdates"
 
-            offset = update["update_id"] + 1
+            params = {}
 
-            try:
+            if offset:
+                params["offset"] = offset
 
-                text = update["message"]["text"]
+            response = requests.get(url, params=params).json()
 
-                response = handle_command(text)
+            # 🔴 FIX (KeyError önleme)
+            if "result" not in response:
+                time.sleep(2)
+                continue
 
-                send_telegram_message(response)
+            updates = response["result"]
 
-            except:
-                pass
+            for update in updates:
+
+                offset = update["update_id"] + 1
+
+                if "message" not in update:
+                    continue
+
+                message = update["message"]
+
+                if "text" not in message:
+                    continue
+
+                text = message["text"]
+
+                # ---------------------
+
+                if text.startswith("/radar"):
+
+                    radar()
+
+                # ---------------------
+
+                elif text.startswith("/support"):
+
+                    parts = text.split()
+
+                    if len(parts) < 2:
+
+                        send_message("Kullanım: /support THYAO")
+                        continue
+
+                    symbol = parts[1].upper()
+
+                    result = get_support_resistance(symbol)
+
+                    send_message(result)
+
+        except Exception as e:
+
+            print("Command listener error:", e)
+
+        time.sleep(2)
+
+
+# ---------------------------------------------------
+# THREAD START
+# ---------------------------------------------------
+
+def start_bot():
+
+    thread = threading.Thread(target=listen_commands)
+    thread.start()
+
+
+# ---------------------------------------------------
+
+if __name__ == "__main__":
+
+    print("🤖 BIST AI BOT BAŞLADI")
+
+    start_bot()
+
+    while True:
+        time.sleep(60)
