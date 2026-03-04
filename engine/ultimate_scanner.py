@@ -4,9 +4,9 @@ from engine.bist_symbols import BIST_SYMBOLS
 from engine.ai_scoring_engine import calculate_ai_score
 
 
-# --------------------------------
+# ---------------------------------------
 # FİYAT ÇEK
-# --------------------------------
+# ---------------------------------------
 
 def get_price(symbol):
 
@@ -19,7 +19,9 @@ def get_price(symbol):
         if data.empty:
             return None
 
-        return round(float(data["Close"].iloc[-1]), 2)
+        price = float(data["Close"].iloc[-1])
+
+        return round(price, 2)
 
     except Exception as e:
 
@@ -28,9 +30,9 @@ def get_price(symbol):
         return None
 
 
-# --------------------------------
-# ULTRA RADAR SCAN
-# --------------------------------
+# ---------------------------------------
+# ULTRA RADAR
+# ---------------------------------------
 
 def run_ultimate_scan():
 
@@ -47,7 +49,7 @@ def run_ultimate_scan():
             if score is None:
                 continue
 
-            # düşük skorları filtrele
+            # düşük skor filtre
             if score < 70:
                 continue
 
@@ -69,7 +71,6 @@ def run_ultimate_scan():
 
             print(symbol, "scan hatası:", e)
 
-    # en yüksek skorlar
     results.sort(key=lambda x: x["score"], reverse=True)
 
     print("✅ Radar tamamlandı")
