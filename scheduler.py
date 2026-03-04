@@ -1,4 +1,4 @@
-from bot import send_message, listen_commands
+from bot import send_telegram_message, listen_commands
 from engine.ultimate_scanner import run_ultimate_scan
 
 import schedule
