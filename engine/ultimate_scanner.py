@@ -9,6 +9,7 @@ from engine.trend_engine import detect_trend
 from engine.risk_engine import calculate_trade_levels
 from engine.elite_signal_filter import filter_elite_signals
 from engine.volume_anomaly_engine import detect_volume_anomaly
+from engine.signal_memory import is_new_signal
 from engine.pro_trading_signal_formatter import format_signal
 
 from app.bist100 import BIST100
@@ -118,6 +119,7 @@ def run_ultimate_scan():
             if trade is None:
                 continue
 
+            # radar şartı
             if (
                 score >= 60
                 or trend_flag
@@ -126,6 +128,10 @@ def run_ultimate_scan():
                 or anomaly_flag
                 or (vol_spike and squeeze)
             ):
+
+                # signal memory kontrolü
+                if not is_new_signal(symbol):
+                    continue
 
                 results.append({
                     "symbol": symbol,
@@ -148,8 +154,10 @@ def run_ultimate_scan():
 
             print("Hata:", symbol, e)
 
+    # AI skoruna göre sıralama
     results = sorted(results, key=lambda x: x["ai_score"], reverse=True)
 
+    # elite filtre
     results = filter_elite_signals(results)
 
     print("✅ Ultimate Radar tamamlandı")
