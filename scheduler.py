@@ -10,6 +10,7 @@ def market_is_open():
 
     now = datetime.datetime.now()
 
+    # hafta sonu çalışmasın
     if now.weekday() >= 5:
         return False
 
@@ -23,25 +24,30 @@ def radar_job():
 
     if not market_is_open():
 
-        print("Piyasa kapalı. Radar çalışmadı.")
+        print("Piyasa kapalı, radar çalışmadı.")
         return
 
     print("📡 Radar taraması başladı")
 
-    signals = run_ultimate_scan()
+    try:
 
-    for signal in signals:
+        signals = run_ultimate_scan()
 
-        send_telegram_message(signal)
+        for signal in signals:
+
+            send_telegram_message(signal)
+
+    except Exception as e:
+
+        print("Radar hatası:", e)
 
     print("✅ Radar tamamlandı")
 
 
-# 15 dakikada bir çalıştır
+# 15 dakikada bir çalış
 schedule.every(15).minutes.do(radar_job)
 
-
-print("🚀 AI Radar Scheduler başlatıldı")
+print("🚀 BIST AI Radar başlatıldı")
 
 while True:
 
