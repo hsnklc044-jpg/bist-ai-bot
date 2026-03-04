@@ -15,6 +15,7 @@ from engine.liquidity_engine import check_liquidity
 from engine.sector_rotation_ai import sector_strength
 from engine.position_sizing_engine import calculate_position_size
 from engine.performance_tracker import record_signal
+from engine.portfolio_ai import build_portfolio
 from engine.pro_trading_signal_formatter import format_signal
 
 from app.bist100 import BIST100
@@ -110,7 +111,7 @@ def run_ultimate_scan():
         if len(df) < 80:
             continue
 
-        # liquidity filtresi
+        # Liquidity filtresi
         if not check_liquidity(df):
             continue
 
@@ -136,7 +137,7 @@ def run_ultimate_scan():
             trend_data = detect_trend(df)
             trend_flag = trend_data["trend"]
 
-            # multi timeframe
+            # Multi timeframe trend
             mtf = multi_timeframe_trend(symbol)
             mtf_flag = mtf["strong_trend"]
 
@@ -145,7 +146,7 @@ def run_ultimate_scan():
             if trade is None:
                 continue
 
-            # market stratejisi
+            # Market stratejisi
             if market_mode == "BULL":
 
                 condition = trend_flag or trade_score >= 70
@@ -182,14 +183,14 @@ def run_ultimate_scan():
                     "rr": trade["risk_reward"]
                 }
 
-                # position sizing
+                # Position sizing
                 position_data = calculate_position_size(result)
 
                 result["position_size"] = position_data["position"]
                 result["risk_level"] = position_data["risk"]
                 result["confidence"] = position_data["confidence"]
 
-                # performans kaydı
+                # Performance tracking
                 record_signal(result)
 
                 results.append(result)
@@ -201,8 +202,11 @@ def run_ultimate_scan():
     # AI score sıralama
     results = sorted(results, key=lambda x: x["ai_score"], reverse=True)
 
-    # elite filter
+    # Elite filter
     results = filter_elite_signals(results)
+
+    # Portfolio oluşturma
+    portfolio = build_portfolio(results)
 
     print("✅ Ultimate Radar tamamlandı")
 
@@ -211,5 +215,16 @@ def run_ultimate_scan():
     for r in results:
 
         formatted_signals.append(format_signal(r))
+
+    # Portföy mesajı
+    if portfolio:
+
+        portfolio_text = "\n📊 Suggested Portfolio\n"
+
+        for p in portfolio:
+
+            portfolio_text += f"{p['symbol']}  %{p['weight']}\n"
+
+        formatted_signals.append(portfolio_text)
 
     return formatted_signals
