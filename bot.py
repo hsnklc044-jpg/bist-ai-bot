@@ -6,11 +6,16 @@ import threading
 from engine.ultimate_scanner import run_ultimate_scan
 from engine.support_resistance_engine import get_support_resistance
 
+
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 BASE_URL = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 
+
+# ---------------------------------------------------
+# TELEGRAM MESSAGE
+# ---------------------------------------------------
 
 def send_message(text):
 
@@ -27,6 +32,7 @@ def send_message(text):
         requests.post(url, json=payload)
 
     except Exception as e:
+
         print("Telegram send error:", e)
 
 
@@ -43,7 +49,8 @@ def radar():
         signals = run_ultimate_scan()
 
         if not signals:
-            send_message("Radar sinyal bulamadı.")
+
+            send_message("Sinyal bulunamadı.")
             return
 
         for signal in signals[:5]:
@@ -56,7 +63,6 @@ Fiyat: {signal['price']}
 Skor: {signal['score']}
 
 🎯 Hedef: {signal['target']}
-
 🛑 Stop: {signal['stop']}
 """
 
@@ -65,16 +71,17 @@ Skor: {signal['score']}
     except Exception as e:
 
         print("Radar error:", e)
-        send_message("Radar hata verdi.")
+
+        send_message("Radar çalışırken hata oluştu.")
 
 
 # ---------------------------------------------------
-# TELEGRAM COMMAND LISTENER
+# COMMAND LISTENER
 # ---------------------------------------------------
 
 def listen_commands():
 
-    print("📡 Telegram dinleniyor...")
+    print("📡 Telegram komutları dinleniyor...")
 
     offset = None
 
@@ -91,7 +98,7 @@ def listen_commands():
 
             response = requests.get(url, params=params).json()
 
-            # 🔴 FIX (KeyError önleme)
+            # KeyError fix
             if "result" not in response:
                 time.sleep(2)
                 continue
@@ -112,13 +119,17 @@ def listen_commands():
 
                 text = message["text"]
 
-                # ---------------------
+                # -------------------------
+                # RADAR
+                # -------------------------
 
                 if text.startswith("/radar"):
 
                     radar()
 
-                # ---------------------
+                # -------------------------
+                # SUPPORT
+                # -------------------------
 
                 elif text.startswith("/support"):
 
@@ -149,6 +160,7 @@ def listen_commands():
 def start_bot():
 
     thread = threading.Thread(target=listen_commands)
+
     thread.start()
 
 
@@ -161,4 +173,5 @@ if __name__ == "__main__":
     start_bot()
 
     while True:
+
         time.sleep(60)
