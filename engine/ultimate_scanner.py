@@ -12,6 +12,7 @@ from engine.elite_signal_filter import filter_elite_signals
 from engine.volume_anomaly_engine import detect_volume_anomaly
 from engine.signal_memory import is_new_signal
 from engine.liquidity_engine import check_liquidity
+from engine.sector_rotation_ai import sector_strength
 from engine.pro_trading_signal_formatter import format_signal
 
 from app.bist100 import BIST100
@@ -73,7 +74,20 @@ def run_ultimate_scan():
 
     results = []
 
-    # Market Mode belirleme
+    # sektör analizi
+    try:
+
+        strong_sector = sector_strength()
+
+        print("🏭 Strong Sector:", strong_sector)
+
+    except Exception as e:
+
+        print("Sector analysis error:", e)
+
+        strong_sector = None
+
+    # piyasa modu
     try:
 
         market_mode = get_market_mode()
@@ -98,7 +112,7 @@ def run_ultimate_scan():
         if len(df) < 80:
             continue
 
-        # Liquidity filtresi
+        # liquidity filtresi
         if not check_liquidity(df):
             continue
 
@@ -124,7 +138,7 @@ def run_ultimate_scan():
             trend_data = detect_trend(df)
             trend_flag = trend_data["trend"]
 
-            # Multi Timeframe trend
+            # multi timeframe
             mtf = multi_timeframe_trend(symbol)
             mtf_flag = mtf["strong_trend"]
 
@@ -133,7 +147,7 @@ def run_ultimate_scan():
             if trade is None:
                 continue
 
-            # Market Mode stratejisi
+            # market stratejisi
             if market_mode == "BULL":
 
                 condition = trend_flag or trade_score >= 70
@@ -146,10 +160,8 @@ def run_ultimate_scan():
 
                 condition = rs_flag or inst_flag
 
-            # Multi timeframe filtresi
             if condition and mtf_flag:
 
-                # aynı sinyal tekrar gönderilmesin
                 if not is_new_signal(symbol):
                     continue
 
@@ -158,6 +170,7 @@ def run_ultimate_scan():
                     "score": score,
                     "ai_score": trade_score,
                     "price": float(df["Close"].iloc[-1]),
+                    "sector": strong_sector,
                     "volume_spike": vol_spike,
                     "squeeze": squeeze,
                     "volume_anomaly": anomaly_flag,
@@ -175,10 +188,10 @@ def run_ultimate_scan():
 
             print("Hata:", symbol, e)
 
-    # AI skoruna göre sıralama
+    # AI score sıralama
     results = sorted(results, key=lambda x: x["ai_score"], reverse=True)
 
-    # Elite filter
+    # elit filtre
     results = filter_elite_signals(results)
 
     print("✅ Ultimate Radar tamamlandı")
