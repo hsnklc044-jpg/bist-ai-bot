@@ -1,38 +1,54 @@
-def calculate_score(latest):
+import pandas as pd
+
+from engine.institutional_money_flow import institutional_score
+
+
+def calculate_indicators(df):
+
+    df["EMA20"] = df["Close"].ewm(span=20).mean()
+    df["EMA50"] = df["Close"].ewm(span=50).mean()
+    df["EMA200"] = df["Close"].ewm(span=200).mean()
+
+    df["momentum"] = df["Close"].pct_change(20)
+
+    df["volume_avg"] = df["Volume"].rolling(20).mean()
+
+    return df
+
+
+def score_stock(df):
 
     score = 0
 
-    close = float(latest["Close"])
-    ma20 = float(latest["MA20"])
-    ma50 = float(latest["MA50"])
-    rsi = float(latest["RSI"])
+    df = calculate_indicators(df)
 
-    # Trend gücü
-    if close > ma20:
-        score += 2
-    if ma20 > ma50:
-        score += 2
-    if rsi > 55:
-        score += 2
+    latest = df.iloc[-1]
 
-    # Momentum
-    if rsi > 60:
-        score += 2
-    if rsi > 65:
-        score += 1
+    # TREND
+    if latest["EMA20"] > latest["EMA50"]:
+        score += 15
 
-    # Zayıflık
-    if rsi < 40:
-        score -= 2
+    if latest["EMA50"] > latest["EMA200"]:
+        score += 20
 
-    # Sinyal üret
-    if score >= 7:
-        signal = "GÜÇLÜ TREND"
-    elif score >= 5:
-        signal = "TREND"
-    elif score >= 3:
-        signal = "NÖTR"
-    else:
-        signal = "ZAYIF"
+    # MOMENTUM
+    if latest["momentum"] > 0:
+        score += 15
 
-    return score, signal
+    if latest["momentum"] > 0.10:
+        score += 10
+
+    # VOLUME EXPANSION
+    if latest["Volume"] > 1.5 * latest["volume_avg"]:
+        score += 15
+
+    # BREAKOUT
+    recent_high = df["Close"].rolling(20).max().iloc[-2]
+
+    if latest["Close"] > recent_high:
+        score += 15
+
+    # INSTITUTIONAL FLOW
+    score += institutional_score(df)
+
+    return score
