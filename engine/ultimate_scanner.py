@@ -17,6 +17,7 @@ from engine.sector_rotation_ai import sector_strength
 from engine.position_sizing_engine import calculate_position_size
 from engine.performance_tracker import record_signal
 from engine.portfolio_ai import build_portfolio
+from engine.breakout_detector_ai import detect_breakout
 from engine.pro_trading_signal_formatter import format_signal
 
 from app.bist100 import BIST100
@@ -89,6 +90,9 @@ def analyze_symbol(symbol, strong_sector, market_mode):
         anomaly = detect_volume_anomaly(df)
         anomaly_flag = anomaly["volume_anomaly"]
 
+        breakout_data = detect_breakout(df)
+        breakout_flag = breakout_data["breakout"]
+
         institutional = detect_institutional_activity(df)
         inst_flag = institutional["institutional_activity"]
 
@@ -106,13 +110,18 @@ def analyze_symbol(symbol, strong_sector, market_mode):
         if trade is None:
             return None
 
+        # market stratejisi
+
         if market_mode == "BULL":
+
             condition = trend_flag or trade_score >= 70
 
         elif market_mode == "SIDEWAYS":
-            condition = vol_spike or anomaly_flag or squeeze
+
+            condition = vol_spike or anomaly_flag or squeeze or breakout_flag
 
         else:
+
             condition = rs_flag or inst_flag
 
         if not (condition and mtf_flag):
@@ -130,6 +139,7 @@ def analyze_symbol(symbol, strong_sector, market_mode):
             "volume_spike": vol_spike,
             "squeeze": squeeze,
             "volume_anomaly": anomaly_flag,
+            "breakout": breakout_flag,
             "institutional": inst_flag,
             "relative_strength": rs_flag,
             "trend": trend_flag,
@@ -153,6 +163,7 @@ def analyze_symbol(symbol, strong_sector, market_mode):
     except Exception as e:
 
         print("Hata:", symbol, e)
+
         return None
 
 
