@@ -1,90 +1,48 @@
-import pandas as pd
-import numpy as np
-
-
-def calculate_rsi(df, period=14):
-
-    delta = df["Close"].diff()
-
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-
-    rs = gain / loss
-
-    rsi = 100 - (100 / (1 + rs))
-
-    return rsi
-
-
-def calculate_macd(df):
-
-    exp1 = df["Close"].ewm(span=12, adjust=False).mean()
-    exp2 = df["Close"].ewm(span=26, adjust=False).mean()
-
-    macd = exp1 - exp2
-    signal = macd.ewm(span=9, adjust=False).mean()
-
-    return macd, signal
-
-
-def volume_spike(df):
-
-    avg_volume = df["Volume"].rolling(20).mean()
-
-    if df["Volume"].iloc[-1] > avg_volume.iloc[-1] * 1.5:
-        return True
-
-    return False
-
-
-def ema_trend(df):
-
-    ema20 = df["Close"].ewm(span=20).mean()
-    ema50 = df["Close"].ewm(span=50).mean()
-
-    if ema20.iloc[-1] > ema50.iloc[-1]:
-        return True
-
-    return False
-
-
-def relative_strength(df):
-
-    returns = df["Close"].pct_change()
-
-    strength = returns.rolling(20).mean()
-
-    return strength.iloc[-1]
+from engine.adaptive_ai_engine import load_weights
 
 
 def score_stock(df):
 
+    weights = load_weights()
+
     score = 0
 
-    rsi = calculate_rsi(df)
+    close = df["Close"]
+    volume = df["Volume"]
 
-    macd, signal = calculate_macd(df)
+    # EMA hesaplama
+    ema20 = close.ewm(span=20).mean().iloc[-1]
+    ema50 = close.ewm(span=50).mean().iloc[-1]
 
-    # RSI MOMENTUM
-    if 50 < rsi.iloc[-1] < 70:
-        score += 20
+    price = close.iloc[-1]
 
-    # MACD TREND
-    if macd.iloc[-1] > signal.iloc[-1]:
-        score += 20
+    # TREND
+    trend = price > ema20 and ema20 > ema50
 
-    # EMA TREND
-    if ema_trend(df):
-        score += 25
+    if trend:
+        score += 20 * weights["trend"]
 
     # VOLUME SPIKE
-    if volume_spike(df):
-        score += 20
+    avg_volume = volume.rolling(20).mean().iloc[-1]
 
-    # RELATIVE STRENGTH
-    rs = relative_strength(df)
+    volume_spike = volume.iloc[-1] > avg_volume * 1.5
 
-    if rs > 0:
-        score += 15
+    if volume_spike:
+        score += 15 * weights["volume"]
+
+    # INSTITUTIONAL ACTIVITY
+    inst_activity = volume.iloc[-1] > avg_volume * 2
+
+    if inst_activity:
+        score += 20 * weights["institutional"]
+
+    # RELATIVE STRENGTH (basit momentum)
+    momentum = close.iloc[-1] > close.iloc[-20]
+
+    if momentum:
+        score += 15 * weights["relative_strength"]
+
+    # skor normalize
+    score = min(int(score), 100)
 
     return score
