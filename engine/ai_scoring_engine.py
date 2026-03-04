@@ -1,48 +1,51 @@
-from engine.adaptive_ai_engine import load_weights
+import yfinance as yf
 
 
-def score_stock(df):
+def calculate_ai_score(symbol):
 
-    weights = load_weights()
+    try:
 
-    score = 0
+        ticker = f"{symbol}.IS"
 
-    close = df["Close"]
-    volume = df["Volume"]
+        data = yf.download(ticker, period="3mo", interval="1d")
 
-    # EMA hesaplama
-    ema20 = close.ewm(span=20).mean().iloc[-1]
-    ema50 = close.ewm(span=50).mean().iloc[-1]
+        if data.empty:
+            return None
 
-    price = close.iloc[-1]
+        close = data["Close"]
+        volume = data["Volume"]
 
-    # TREND
-    trend = price > ema20 and ema20 > ema50
+        price = float(close.iloc[-1])
 
-    if trend:
-        score += 20 * weights["trend"]
+        ma20 = float(close.rolling(20).mean().iloc[-1])
+        ma50 = float(close.rolling(50).mean().iloc[-1])
 
-    # VOLUME SPIKE
-    avg_volume = volume.rolling(20).mean().iloc[-1]
+        score = 50
 
-    volume_spike = volume.iloc[-1] > avg_volume * 1.5
+        # trend kontrolü
+        if price > ma20:
+            score += 10
 
-    if volume_spike:
-        score += 15 * weights["volume"]
+        if price > ma50:
+            score += 10
 
-    # INSTITUTIONAL ACTIVITY
-    inst_activity = volume.iloc[-1] > avg_volume * 2
+        if ma20 > ma50:
+            score += 10
 
-    if inst_activity:
-        score += 20 * weights["institutional"]
+        # momentum
+        momentum = close.pct_change(10).iloc[-1]
 
-    # RELATIVE STRENGTH (basit momentum)
-    momentum = close.iloc[-1] > close.iloc[-20]
+        if momentum > 0.05:
+            score += 10
 
-    if momentum:
-        score += 15 * weights["relative_strength"]
+        # hacim artışı
+        if volume.iloc[-1] > volume.mean():
+            score += 10
 
-    # skor normalize
-    score = min(int(score), 100)
+        return score
 
-    return score
+    except Exception as e:
+
+        print(symbol, "AI skor hatası:", e)
+
+        return None
