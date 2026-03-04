@@ -1,35 +1,43 @@
-from app.scanner import scan_market
-from app.telegram_sender import send_telegram
+import logging
+from telegram import Update
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    ContextTypes
+)
+
+from radar_handler import radar
+
+TOKEN = "BURAYA_BOT_TOKEN"
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
 
-def run():
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    print("🚀 BIST AI BOT ÇALIŞIYOR...")
+    message = (
+        "📈 BIST AI BOT\n\n"
+        "Komutlar:\n"
+        "/radar  → Güçlü hisseleri tara\n"
+    )
 
-    try:
-        top3 = scan_market()
+    await update.message.reply_text(message)
 
-        if not top3:
-            send_telegram("Bugün uygun sinyal bulunamadı.")
-            print("Sinyal bulunamadı.")
-            return
 
-        message = "🚀 BIST30 GÜNLÜK TARAMA\n\n"
+def main():
 
-        for i, stock in enumerate(top3, 1):
-            message += (
-                f"{i}. {stock['symbol']} | "
-                f"RSI: {round(float(stock['rsi']),2)} | "
-                f"Skor: {round(float(stock['score']),2)}\n"
-            )
+    app = ApplicationBuilder().token(TOKEN).build()
 
-        send_telegram(message)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("radar", radar))
 
-        print("Telegram mesajı gönderildi.")
+    print("Bot çalışıyor...")
 
-    except Exception as e:
-        print("HATA:", str(e))
+    app.run_polling()
 
 
 if __name__ == "__main__":
-    run()
+    main()
