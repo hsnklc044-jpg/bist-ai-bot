@@ -3,6 +3,7 @@ import yfinance as yf
 from engine.ai_scoring_engine import score_stock
 from engine.ai_trade_score import calculate_trade_score
 from engine.market_mode_ai import get_market_mode
+from engine.multi_timeframe_ai import multi_timeframe_trend
 from engine.institutional_money_detector import detect_institutional_activity
 from engine.relative_strength_engine import relative_strength_vs_index
 from engine.trend_engine import detect_trend
@@ -71,17 +72,15 @@ def run_ultimate_scan():
 
     results = []
 
-    # Market mode belirleme
+    # Market Mode belirleme
     try:
 
         market_mode = get_market_mode()
-
         print("📊 Market Mode:", market_mode)
 
     except Exception as e:
 
         print("Market mode okunamadı:", e)
-
         market_mode = "SIDEWAYS"
 
     for symbol in BIST100:
@@ -118,6 +117,10 @@ def run_ultimate_scan():
             trend_data = detect_trend(df)
             trend_flag = trend_data["trend"]
 
+            # Multi Timeframe trend
+            mtf = multi_timeframe_trend(symbol)
+            mtf_flag = mtf["strong_trend"]
+
             trade = calculate_trade_levels(df)
 
             if trade is None:
@@ -136,9 +139,10 @@ def run_ultimate_scan():
 
                 condition = rs_flag or inst_flag
 
-            if condition:
+            # Multi timeframe filtresi
+            if condition and mtf_flag:
 
-                # aynı sinyal tekrar gönderilmesin
+                # Signal memory (spam önleme)
                 if not is_new_signal(symbol):
                     continue
 
@@ -153,6 +157,7 @@ def run_ultimate_scan():
                     "institutional": inst_flag,
                     "relative_strength": rs_flag,
                     "trend": trend_flag,
+                    "mtf_trend": mtf_flag,
                     "entry": trade["entry"],
                     "stop": trade["stop"],
                     "target": trade["target"],
@@ -166,7 +171,7 @@ def run_ultimate_scan():
     # AI skoruna göre sıralama
     results = sorted(results, key=lambda x: x["ai_score"], reverse=True)
 
-    # elit sinyal filtresi
+    # Elite filter
     results = filter_elite_signals(results)
 
     print("✅ Ultimate Radar tamamlandı")
