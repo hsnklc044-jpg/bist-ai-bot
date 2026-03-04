@@ -4,6 +4,7 @@ from engine.ai_scoring_engine import score_stock
 from engine.market_regime_engine import get_market_regime
 from engine.institutional_money_detector import detect_institutional_activity
 from engine.relative_strength_engine import relative_strength_vs_index
+from engine.risk_engine import calculate_trade_levels
 from app.bist100 import BIST100
 
 
@@ -67,7 +68,6 @@ def run_ultimate_scan():
     try:
 
         regime = get_market_regime()
-
         print("📊 Market Regime:", regime)
 
     except Exception as e:
@@ -101,6 +101,11 @@ def run_ultimate_scan():
             rs_data = relative_strength_vs_index(df)
             rs_flag = rs_data["stronger_than_index"]
 
+            trade = calculate_trade_levels(df)
+
+            if trade is None:
+                continue
+
             if score >= 60 or (vol_spike and squeeze) or inst_flag or rs_flag:
 
                 results.append({
@@ -110,7 +115,11 @@ def run_ultimate_scan():
                     "volume_spike": vol_spike,
                     "squeeze": squeeze,
                     "institutional": inst_flag,
-                    "relative_strength": rs_flag
+                    "relative_strength": rs_flag,
+                    "entry": trade["entry"],
+                    "stop": trade["stop"],
+                    "target": trade["target"],
+                    "rr": trade["risk_reward"]
                 })
 
         except Exception as e:
@@ -130,10 +139,10 @@ def run_ultimate_scan():
             print(
                 r["symbol"],
                 "Score:", r["score"],
+                "RS:", r["relative_strength"],
                 "VolumeSpike:", r["volume_spike"],
-                "Squeeze:", r["squeeze"],
                 "Institutional:", r["institutional"],
-                "RS:", r["relative_strength"]
+                "RR:", r["rr"]
             )
 
     else:
