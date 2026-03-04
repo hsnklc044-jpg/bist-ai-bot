@@ -12,9 +12,9 @@ CHAT_ID = os.getenv("CHAT_ID")
 BASE_URL = f"https://api.telegram.org/bot{TOKEN}"
 
 
-# ---------------------------------
+# ---------------------------------------------------
 # TELEGRAM MESAJ GÖNDER
-# ---------------------------------
+# ---------------------------------------------------
 
 def send_message(text):
 
@@ -31,9 +31,14 @@ def send_message(text):
         print("Telegram mesaj hatası:", e)
 
 
-# ---------------------------------
+# scheduler uyumluluğu için alias
+def send_telegram_message(text):
+    send_message(text)
+
+
+# ---------------------------------------------------
 # RADAR KOMUTU
-# ---------------------------------
+# ---------------------------------------------------
 
 def radar_command():
 
@@ -46,7 +51,7 @@ def radar_command():
 
     message = "🚨 BIST AI RADAR SİNYALLERİ\n\n"
 
-    for s in signals[:5]:
+    for s in signals:
 
         message += f"""
 📊 {s['symbol']}
@@ -60,9 +65,9 @@ def radar_command():
     return message
 
 
-# ---------------------------------
+# ---------------------------------------------------
 # DESTEK / DİRENÇ KOMUTU
-# ---------------------------------
+# ---------------------------------------------------
 
 def support_command(symbol):
 
@@ -83,9 +88,9 @@ def support_command(symbol):
     return message
 
 
-# ---------------------------------
+# ---------------------------------------------------
 # TELEGRAM KOMUTLARINI DİNLE
-# ---------------------------------
+# ---------------------------------------------------
 
 def listen_commands():
 
@@ -139,9 +144,7 @@ def listen_commands():
 
                     if len(parts) < 2:
 
-                        send_message(
-                            "Kullanım:\n/support THYAO"
-                        )
+                        send_message("Kullanım:\n/support THYAO")
 
                     else:
 
@@ -156,3 +159,14 @@ def listen_commands():
             print("Komut dinleme hatası:", e)
 
         time.sleep(2)
+
+
+# ---------------------------------------------------
+# BOT BAŞLAT
+# ---------------------------------------------------
+
+if __name__ == "__main__":
+
+    print("🤖 BIST AI BOT BAŞLADI")
+
+    listen_commands()
