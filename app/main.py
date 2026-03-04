@@ -1,14 +1,9 @@
 import logging
-from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    ContextTypes
-)
+import asyncio
 
-from radar_handler import radar
+from scanner import run_scanner
+from telegram_sender import send_telegram_message
 
-TOKEN = "BURAYA_BOT_TOKEN"
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -16,28 +11,31 @@ logging.basicConfig(
 )
 
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def radar():
 
-    message = (
-        "📈 BIST AI BOT\n\n"
-        "Komutlar:\n"
-        "/radar  → Güçlü hisseleri tara\n"
-    )
+    print("Radar çalışıyor...")
 
-    await update.message.reply_text(message)
+    results = run_scanner()
+
+    message = "📡 BIST AI RADAR\n\n"
+
+    for i, r in enumerate(results[:10], 1):
+
+        symbol = r["symbol"]
+        score = r["score"]
+
+        message += f"{i}. {symbol}  |  Score: {score}\n"
+
+    await send_telegram_message(message)
 
 
-def main():
+async def main():
 
-    app = ApplicationBuilder().token(TOKEN).build()
+    print("Bot başlatıldı")
 
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("radar", radar))
-
-    print("Bot çalışıyor...")
-
-    app.run_polling()
+    await radar()
 
 
 if __name__ == "__main__":
-    main()
+
+    asyncio.run(main())
