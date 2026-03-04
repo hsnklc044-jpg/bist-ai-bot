@@ -1,47 +1,33 @@
 def format_signal(signal):
 
-    symbol = signal["symbol"]
-    score = signal["score"]
+    text = f"""
+🚀 <b>ULTIMATE TRADE SIGNAL</b>
 
-    entry = signal["entry"]
-    target = signal["target"]
-    stop = signal["stop"]
-    rr = signal["rr"]
+📈 <b>Hisse:</b> {signal["symbol"]}
+💰 <b>Fiyat:</b> {signal["price"]}
 
-    rs = signal["relative_strength"]
-    vol = signal["volume_spike"]
-    inst = signal["institutional"]
-    squeeze = signal["squeeze"]
+🧠 <b>AI Score:</b> {signal["ai_score"]}/100
 
-    tags = []
+🎯 <b>Entry:</b> {signal["entry"]}
+🚀 <b>Target:</b> {signal["target"]}
+🛑 <b>Stop:</b> {signal["stop"]}
 
-    if rs:
-        tags.append("📊 Relative Strength")
-
-    if vol:
-        tags.append("⚡ Volume Spike")
-
-    if inst:
-        tags.append("💰 Institutional Flow")
-
-    if squeeze:
-        tags.append("🔥 Volatility Squeeze")
-
-    tag_text = "\n".join(tags)
-
-    message = f"""
-🚀 ULTIMATE TRADE SIGNAL
-
-📈 Hisse: {symbol}
-🧠 AI Score: {score}
-
-🎯 Entry: {entry}
-🚀 Target: {target}
-🛑 Stop: {stop}
-
-⚖️ Risk/Reward: {rr}
-
-{tag_text}
+⚖️ <b>Risk/Reward:</b> {round(signal["rr"],2)}
 """
 
-    return message.strip()
+    if signal["trend"]:
+        text += "\n📈 Trend Detected"
+
+    if signal["relative_strength"]:
+        text += "\n📊 Relative Strength"
+
+    if signal["volume_spike"]:
+        text += "\n⚡ Volume Spike"
+
+    if signal["volume_anomaly"]:
+        text += "\n🔥 Volume Anomaly"
+
+    if signal["institutional"]:
+        text += "\n💰 Institutional Activity"
+
+    return text
