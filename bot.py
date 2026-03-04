@@ -4,7 +4,7 @@ from telegram import Bot
 from config import TELEGRAM_TOKEN, CHAT_ID, BIST_SYMBOLS
 from data_service import get_data
 from indicators import add_indicators
-from scoring import calculate_score
+from app.scoring_engine import score_stock
 from filters import classify
 from market_filter import market_is_positive
 from report_formatter import format_report
