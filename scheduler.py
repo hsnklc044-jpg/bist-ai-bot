@@ -15,31 +15,52 @@ def home():
 
 
 def radar_job():
-    print("BIST radar çalışıyor...")
+
+    print("🚨 BIST radar çalışıyor...")
+
     try:
+
         results = ultimate_scanner()
-        print("Radar sonucu:", results)
+
+        if results:
+
+            print("Sinyaller bulundu:")
+
+            for r in results:
+                print(r)
+
+        else:
+            print("Radar sinyal bulamadı")
+
     except Exception as e:
+
         print("Radar hata:", e)
 
 
 def run_scheduler():
+
     print("Scheduler başlatıldı")
 
-    schedule.every(30).minutes.do(radar_job)
+    # BOT BAŞLAR BAŞLAMAZ RADAR
+    radar_job()
+
+    # test için 1 dakika
+    schedule.every(1).minutes.do(radar_job)
 
     while True:
+
         schedule.run_pending()
         time.sleep(1)
 
 
-if __name__ == "__main__":
-    # Scheduler thread
-    scheduler_thread = threading.Thread(target=run_scheduler)
-    scheduler_thread.daemon = True
-    scheduler_thread.start()
+# scheduler thread
+scheduler_thread = threading.Thread(target=run_scheduler)
+scheduler_thread.daemon = True
+scheduler_thread.start()
 
-    # Render PORT
+
+if __name__ == "__main__":
+
     port = int(os.environ.get("PORT", 10000))
 
     print("Web server başlatılıyor... Port:", port)
