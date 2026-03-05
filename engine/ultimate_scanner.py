@@ -1,78 +1,36 @@
 import yfinance as yf
 
-from engine.bist_symbols import BIST_SYMBOLS
-from engine.ai_scoring_engine import calculate_ai_score
+def run_ultimate_scanner():
 
+    tickers = [
+        "ASELS.IS",
+        "THYAO.IS",
+        "EREGL.IS",
+        "KCHOL.IS",
+        "SISE.IS"
+    ]
 
-# ---------------------------------------
-# FİYAT ÇEK
-# ---------------------------------------
+    signals = []
 
-def get_price(symbol):
-
-    try:
-
-        ticker = f"{symbol}.IS"
-
-        data = yf.download(ticker, period="5d", interval="1d")
-
-        if data.empty:
-            return None
-
-        price = float(data["Close"].iloc[-1])
-
-        return round(price, 2)
-
-    except Exception as e:
-
-        print(symbol, "fiyat hatası:", e)
-
-        return None
-
-
-# ---------------------------------------
-# ULTRA RADAR
-# ---------------------------------------
-
-def run_ultimate_scan():
-
-    print("🚀 ULTRA BIST RADAR BAŞLADI")
-
-    results = []
-
-    for symbol in BIST_SYMBOLS:
+    for ticker in tickers:
 
         try:
 
-            score = calculate_ai_score(symbol)
+            data = yf.download(ticker, period="5d", interval="1h")
 
-            if score is None:
+            if data.empty:
                 continue
 
-            # düşük skor filtre
-            if score < 70:
-                continue
+            close = data["Close"]
 
-            price = get_price(symbol)
+            if close.iloc[-1] > close.iloc[-5]:
 
-            if price is None:
-                continue
-
-            signal = {
-                "symbol": symbol,
-                "price": price,
-                "score": score,
-                "signal": "AI AL SİNYALİ"
-            }
-
-            results.append(signal)
+                signals.append(
+                    f"📈 {ticker} momentum yükseliyor"
+                )
 
         except Exception as e:
 
-            print(symbol, "scan hatası:", e)
+            print("Scanner error:", ticker, e)
 
-    results.sort(key=lambda x: x["score"], reverse=True)
-
-    print("✅ Radar tamamlandı")
-
-    return results[:5]
+    return signals
