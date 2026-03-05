@@ -1,4 +1,5 @@
 import yfinance as yf
+import time
 
 
 def ultimate_scanner():
@@ -25,10 +26,14 @@ def ultimate_scanner():
                 ticker,
                 period="5d",
                 interval="1h",
-                progress=False
+                progress=False,
+                threads=False
             )
 
+            time.sleep(2)   # Yahoo block yememek için
+
             if data.empty or len(data) < 6:
+
                 print("Veri yetersiz:", ticker)
                 continue
 
