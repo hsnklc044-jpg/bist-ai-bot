@@ -4,22 +4,28 @@ import time
 
 def get_data(ticker):
 
-    try:
-        stock = yf.Ticker(ticker)
+    for i in range(3):
 
-        data = stock.history(
-            period="5d",
-            interval="1h"
-        )
+        try:
 
-        if data is None or data.empty:
-            return None
+            data = yf.download(
+                ticker,
+                period="5d",
+                interval="1h",
+                progress=False,
+                threads=False
+            )
 
-        return data
+            if data is not None and not data.empty:
+                return data
 
-    except Exception as e:
-        print("Veri çekme hatası:", ticker, e)
-        return None
+        except Exception as e:
+
+            print("Veri çekme hatası:", ticker, e)
+
+        time.sleep(2)
+
+    return None
 
 
 def ultimate_scanner():
@@ -41,7 +47,8 @@ def ultimate_scanner():
         data = get_data(ticker)
 
         if data is None:
-            print("Veri yetersiz:", ticker)
+
+            print("Veri alınamadı:", ticker)
             continue
 
         try:
@@ -50,7 +57,6 @@ def ultimate_scanner():
             volume = data["Volume"]
 
             if len(close) < 5:
-                print("Veri yetersiz:", ticker)
                 continue
 
             last_price = float(close.iloc[-1])
@@ -61,11 +67,9 @@ def ultimate_scanner():
 
             score = 0
 
-            # Momentum kontrolü
             if close.iloc[-1] > close.iloc[-5]:
                 score += 1
 
-            # Hacim artışı
             if last_volume > avg_volume:
                 score += 1
 
@@ -76,6 +80,7 @@ def ultimate_scanner():
                 )
 
         except Exception as e:
+
             print("Scanner error:", ticker, e)
 
         time.sleep(1)
@@ -83,7 +88,7 @@ def ultimate_scanner():
     print("Scanner tamamlandı")
 
     if len(results) == 0:
-        print("Radar sinyal bulunmadı")
+        print("Radar sinyal bulamadı")
 
     else:
         print("Radar sonucu:", results)
@@ -92,4 +97,5 @@ def ultimate_scanner():
 
 
 def run_ultimate_scanner():
+
     return ultimate_scanner()
