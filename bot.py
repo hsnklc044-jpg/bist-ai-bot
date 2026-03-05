@@ -13,4 +13,6 @@ def send_telegram_message(message):
         "text": message
     }
 
-    requests.post(url, data=payload)
+    response = requests.post(url, data=payload)
+
+    print("Telegram response:", response.text)
