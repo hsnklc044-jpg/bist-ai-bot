@@ -4,7 +4,7 @@ import time
 
 def get_data(ticker):
 
-    for i in range(3):
+    for attempt in range(5):
 
         try:
 
@@ -21,7 +21,7 @@ def get_data(ticker):
 
         except Exception as e:
 
-            print("Retry", ticker)
+            print("Retry:", ticker)
 
         time.sleep(3)
 
@@ -42,13 +42,13 @@ def ultimate_scanner():
 
     for ticker in tickers:
 
-        print("Hisse taranıyor:", ticker)
+        print("📡 Hisse taranıyor:", ticker)
 
         data = get_data(ticker)
 
         if data is None:
 
-            print("Veri alınamadı:", ticker)
+            print("⚠️ Veri alınamadı:", ticker)
             continue
 
         close = data["Close"]
@@ -78,10 +78,10 @@ def ultimate_scanner():
 
         time.sleep(2)
 
-    print("Scanner tamamlandı")
+    print("✅ Scanner tamamlandı")
 
     if len(results) == 0:
-        print("Radar sinyal bulunamadı")
+        print("📭 Radar sinyal bulunamadı")
 
     return results
 
