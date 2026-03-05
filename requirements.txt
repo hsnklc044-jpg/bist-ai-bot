@@ -1,6 +1,6 @@
 python-telegram-bot==20.7
-pandas
-yfinance
-schedule
-flask
-requests
+pandas==2.2.2
+yfinance==0.2.37
+schedule==1.2.1
+flask==3.0.2
+requests==2.31.0
