@@ -24,7 +24,7 @@ def radar_job():
 
         send_telegram_message(message)
 
-        print("Telegram mesajı gönderildi")
+        print("📩 Telegram mesajı gönderildi")
 
     except Exception as e:
 
@@ -35,11 +35,11 @@ def start():
 
     print("📡 Scheduler çalışıyor")
 
-    # TEST için 1 dakika
-    schedule.every(1).minutes.do(radar_job)
+    # Her 30 dakikada radar çalışır
+    schedule.every(30).minutes.do(radar_job)
 
-    # normalde şöyle olur
-    # schedule.every(30).minutes.do(radar_job)
+    # Başlangıçta bir kez çalıştır
+    radar_job()
 
     while True:
 
