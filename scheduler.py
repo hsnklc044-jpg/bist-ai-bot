@@ -1,14 +1,11 @@
-from bot import send_telegram_message, listen_commands
-from engine.ultimate_scanner import run_ultimate_scan
-
 import schedule
 import time
-import threading
 
+from engine.ultimate_scanner import run_ultimate_scan
+from engine.pro_trading_signal_formatter import format_trading_signals
 
-# ---------------------------------------------------
-# RADAR JOB
-# ---------------------------------------------------
+from bot import send_telegram_message, listen_commands
+
 
 def radar_job():
 
@@ -16,45 +13,20 @@ def radar_job():
 
         print("🚀 Ultimate Radar başlatılıyor")
 
-        send_message("🚀 ULTIMATE BIST AI RADAR BAŞLADI")
-
         signals = run_ultimate_scan()
 
-        if not signals:
+        message = format_trading_signals(signals)
 
-            send_message("Sinyal bulunamadı.")
-            return
-
-        for signal in signals[:5]:
-
-            text = f"""
-📊 {signal['symbol']}
-
-Fiyat: {signal['price']}
-
-Skor: {signal['score']}
-
-🎯 Hedef: {signal['target']}
-🛑 Stop: {signal['stop']}
-"""
-
-            send_message(text)
+        send_telegram_message(message)
 
     except Exception as e:
 
         print("Radar job error:", e)
 
 
-# ---------------------------------------------------
-# SCHEDULE
-# ---------------------------------------------------
+# HER 1 SAATTE RADAR
+schedule.every(1).hours.do(radar_job)
 
-schedule.every(60).minutes.do(radar_job)
-
-
-# ---------------------------------------------------
-# SCHEDULER LOOP
-# ---------------------------------------------------
 
 def run_scheduler():
 
@@ -62,28 +34,15 @@ def run_scheduler():
 
     while True:
 
-        try:
+        schedule.run_pending()
 
-            schedule.run_pending()
+        time.sleep(5)
 
-        except Exception as e:
-
-            print("Scheduler error:", e)
-
-        time.sleep(1)
-
-
-# ---------------------------------------------------
-# MAIN
-# ---------------------------------------------------
 
 if __name__ == "__main__":
 
-    print("🤖 BIST AI BOT BAŞLADI")
+    import threading
 
-    # Telegram command listener
-    thread = threading.Thread(target=listen_commands)
-    thread.start()
+    threading.Thread(target=listen_commands).start()
 
-    # Radar scheduler
     run_scheduler()
