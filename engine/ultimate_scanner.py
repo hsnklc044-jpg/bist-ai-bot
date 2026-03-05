@@ -2,26 +2,44 @@ import yfinance as yf
 import time
 
 
-def get_data(ticker):
+def fetch_data(ticker):
 
+    # 1️⃣ Birinci yöntem
     try:
 
         data = yf.download(
             ticker,
-            period="1mo",
-            interval="1d",
-            progress=False
+            period="5d",
+            interval="1h",
+            progress=False,
+            threads=False
         )
 
-        if data is None or data.empty:
-            return None
-
-        return data
+        if data is not None and not data.empty:
+            return data
 
     except Exception as e:
 
-        print("Veri çekme hatası:", ticker, e)
-        return None
+        print("download hata:", ticker, e)
+
+    # 2️⃣ fallback yöntem
+    try:
+
+        stock = yf.Ticker(ticker)
+
+        data = stock.history(
+            period="5d",
+            interval="1h"
+        )
+
+        if data is not None and not data.empty:
+            return data
+
+    except Exception as e:
+
+        print("history hata:", ticker, e)
+
+    return None
 
 
 def ultimate_scanner():
@@ -38,13 +56,13 @@ def ultimate_scanner():
 
     for ticker in tickers:
 
-        print("Hisse taranıyor:", ticker)
+        print("📡 Hisse taranıyor:", ticker)
 
-        data = get_data(ticker)
+        data = fetch_data(ticker)
 
         if data is None:
 
-            print("Veri alınamadı:", ticker)
+            print("⚠️ Veri alınamadı:", ticker)
             continue
 
         try:
@@ -53,12 +71,12 @@ def ultimate_scanner():
             volume = data["Volume"]
 
             if len(close) < 5:
+                print("⚠️ Veri yetersiz:", ticker)
                 continue
 
             last_price = float(close.iloc[-1])
 
             avg_volume = volume.tail(10).mean()
-
             last_volume = volume.iloc[-1]
 
             score = 0
@@ -67,7 +85,7 @@ def ultimate_scanner():
             if close.iloc[-1] > close.iloc[-5]:
                 score += 1
 
-            # hacim artışı
+            # hacim patlaması
             if last_volume > avg_volume:
                 score += 1
 
@@ -79,16 +97,17 @@ def ultimate_scanner():
 
         except Exception as e:
 
-            print("Scanner error:", ticker, e)
+            print("scanner hata:", ticker, e)
 
         time.sleep(1)
 
-    print("Scanner tamamlandı")
+    print("✅ Scanner tamamlandı")
 
     if len(results) == 0:
-        print("Radar sinyal bulunmadı")
+        print("📭 Radar sinyal bulunamadı")
+
     else:
-        print("Radar sonucu:", results)
+        print("🎯 Radar sonucu:", results)
 
     return results
 
