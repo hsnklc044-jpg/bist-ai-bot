@@ -1,15 +1,16 @@
 import time
 import schedule
 
-from engine.ultimate_scanner import run_ultimate_scanner
+from engine.ultimate_scanner import ultimate_scanner
 from bot import send_telegram_message
 
 
 def radar_job():
     try:
+
         print("🚀 Ultimate Radar başlatılıyor")
 
-        results = run_ultimate_scanner()
+        results = ultimate_scanner()
 
         if not results:
             print("Sinyal bulunamadı")
