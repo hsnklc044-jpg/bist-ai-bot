@@ -1,33 +1,20 @@
-def format_signal(signal):
+def format_trading_signals(signals):
 
-    text = f"""
-🚀 <b>ULTIMATE TRADE SIGNAL</b>
+    if not signals:
+        return "⚠️ Güçlü sinyal bulunamadı."
 
-📈 <b>Hisse:</b> {signal["symbol"]}
-💰 <b>Fiyat:</b> {signal["price"]}
+    message = "🚨 BIST AI RADAR\n\n"
 
-🧠 <b>AI Score:</b> {signal["ai_score"]}/100
+    for s in signals:
 
-🎯 <b>Entry:</b> {signal["entry"]}
-🚀 <b>Target:</b> {signal["target"]}
-🛑 <b>Stop:</b> {signal["stop"]}
+        symbol = s.get("symbol", "")
+        price = s.get("price", "")
+        score = s.get("score", "")
+        signal = s.get("signal", "")
 
-⚖️ <b>Risk/Reward:</b> {round(signal["rr"],2)}
-"""
+        message += f"📊 {symbol}\n"
+        message += f"💰 Fiyat: {price}\n"
+        message += f"📈 AI Skor: {score}\n"
+        message += f"🎯 {signal}\n\n"
 
-    if signal["trend"]:
-        text += "\n📈 Trend Detected"
-
-    if signal["relative_strength"]:
-        text += "\n📊 Relative Strength"
-
-    if signal["volume_spike"]:
-        text += "\n⚡ Volume Spike"
-
-    if signal["volume_anomaly"]:
-        text += "\n🔥 Volume Anomaly"
-
-    if signal["institutional"]:
-        text += "\n💰 Institutional Activity"
-
-    return text
+    return message
