@@ -1,68 +1,34 @@
 import schedule
 import time
-import threading
-import os
-from flask import Flask
 
-from engine.ultimate_scanner import ultimate_scanner
-
-app = Flask(__name__)
+from engine.ultimate_scanner import run_ultimate_scanner
 
 
-@app.route("/")
-def home():
-    return "BIST AI BOT running"
+def radar():
+
+    print("📡 BIST radar çalışıyor...")
+
+    results = run_ultimate_scanner()
+
+    if results:
+
+        print("Sinyaller bulundu")
+
+    else:
+
+        print("Radar sinyal bulamadı")
 
 
-def radar_job():
+# BIST için en doğru saatler
 
-    print("🚨 BIST radar çalışıyor...")
-
-    try:
-
-        results = ultimate_scanner()
-
-        if results:
-
-            print("Sinyaller bulundu:")
-
-            for r in results:
-                print(r)
-
-        else:
-            print("Radar sinyal bulamadı")
-
-    except Exception as e:
-
-        print("Radar hata:", e)
+schedule.every().day.at("10:15").do(radar)
+schedule.every().day.at("12:30").do(radar)
+schedule.every().day.at("15:30").do(radar)
+schedule.every().day.at("17:45").do(radar)
 
 
-def run_scheduler():
+while True:
 
-    print("Scheduler başlatıldı")
+    schedule.run_pending()
 
-    # BOT BAŞLAR BAŞLAMAZ RADAR
-    radar_job()
-
-    # test için 1 dakika
-    schedule.every(1).minutes.do(radar_job)
-
-    while True:
-
-        schedule.run_pending()
-        time.sleep(1)
-
-
-# scheduler thread
-scheduler_thread = threading.Thread(target=run_scheduler)
-scheduler_thread.daemon = True
-scheduler_thread.start()
-
-
-if __name__ == "__main__":
-
-    port = int(os.environ.get("PORT", 10000))
-
-    print("Web server başlatılıyor... Port:", port)
-
-    app.run(host="0.0.0.0", port=port)
+    time.sleep(30)
