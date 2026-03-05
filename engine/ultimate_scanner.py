@@ -1,45 +1,45 @@
 import yfinance as yf
+import requests
+import pandas as pd
 import time
 
 
-def fetch_data(ticker):
+headers = {
+    "User-Agent": "Mozilla/5.0"
+}
 
-    # 1️⃣ Birinci yöntem
+
+def get_data(ticker):
+
     try:
 
-        data = yf.download(
-            ticker,
-            period="5d",
-            interval="1h",
-            progress=False,
-            threads=False
-        )
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1h"
 
-        if data is not None and not data.empty:
-            return data
+        r = requests.get(url, headers=headers)
+
+        data = r.json()
+
+        result = data["chart"]["result"][0]
+
+        close = result["indicators"]["quote"][0]["close"]
+        volume = result["indicators"]["quote"][0]["volume"]
+
+        df = pd.DataFrame({
+            "Close": close,
+            "Volume": volume
+        })
+
+        df.dropna(inplace=True)
+
+        if df.empty:
+            return None
+
+        return df
 
     except Exception as e:
 
-        print("download hata:", ticker, e)
-
-    # 2️⃣ fallback yöntem
-    try:
-
-        stock = yf.Ticker(ticker)
-
-        data = stock.history(
-            period="5d",
-            interval="1h"
-        )
-
-        if data is not None and not data.empty:
-            return data
-
-    except Exception as e:
-
-        print("history hata:", ticker, e)
-
-    return None
+        print("Veri çekme hatası:", ticker, e)
+        return None
 
 
 def ultimate_scanner():
@@ -58,7 +58,7 @@ def ultimate_scanner():
 
         print("📡 Hisse taranıyor:", ticker)
 
-        data = fetch_data(ticker)
+        data = get_data(ticker)
 
         if data is None:
 
@@ -71,7 +71,6 @@ def ultimate_scanner():
             volume = data["Volume"]
 
             if len(close) < 5:
-                print("⚠️ Veri yetersiz:", ticker)
                 continue
 
             last_price = float(close.iloc[-1])
@@ -81,11 +80,9 @@ def ultimate_scanner():
 
             score = 0
 
-            # momentum
             if close.iloc[-1] > close.iloc[-5]:
                 score += 1
 
-            # hacim patlaması
             if last_volume > avg_volume:
                 score += 1
 
@@ -97,15 +94,14 @@ def ultimate_scanner():
 
         except Exception as e:
 
-            print("scanner hata:", ticker, e)
+            print("Scanner error:", ticker, e)
 
         time.sleep(1)
 
     print("✅ Scanner tamamlandı")
 
     if len(results) == 0:
-        print("📭 Radar sinyal bulunamadı")
-
+        print("📭 Radar sinyal bulunmadı")
     else:
         print("🎯 Radar sonucu:", results)
 
@@ -113,5 +109,4 @@ def ultimate_scanner():
 
 
 def run_ultimate_scanner():
-
     return ultimate_scanner()
