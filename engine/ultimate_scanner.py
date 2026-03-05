@@ -1,31 +1,41 @@
-import yfinance as yf
+import requests
+import pandas as pd
 import time
 
 
 def get_data(ticker):
 
-    for attempt in range(5):
+    try:
 
-        try:
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1h"
 
-            data = yf.download(
-                ticker,
-                period="5d",
-                interval="1h",
-                progress=False,
-                threads=False
-            )
+        headers = {
+            "User-Agent": "Mozilla/5.0"
+        }
 
-            if not data.empty:
-                return data
+        r = requests.get(url, headers=headers)
 
-        except Exception as e:
+        data = r.json()
 
-            print("Retry:", ticker)
+        result = data["chart"]["result"][0]
 
-        time.sleep(3)
+        close = result["indicators"]["quote"][0]["close"]
+        volume = result["indicators"]["quote"][0]["volume"]
 
-    return None
+        df = pd.DataFrame({
+            "Close": close,
+            "Volume": volume
+        })
+
+        df.dropna(inplace=True)
+
+        return df
+
+    except Exception as e:
+
+        print("Veri alınamadı:", ticker)
+
+        return None
 
 
 def ultimate_scanner():
@@ -42,13 +52,11 @@ def ultimate_scanner():
 
     for ticker in tickers:
 
-        print("📡 Hisse taranıyor:", ticker)
+        print("Hisse taranıyor:", ticker)
 
         data = get_data(ticker)
 
         if data is None:
-
-            print("⚠️ Veri alınamadı:", ticker)
             continue
 
         close = data["Close"]
@@ -76,12 +84,12 @@ def ultimate_scanner():
                 f"🚀 {ticker}\nFiyat: {round(last_price,2)}"
             )
 
-        time.sleep(2)
+        time.sleep(1)
 
-    print("✅ Scanner tamamlandı")
+    print("Scanner tamamlandı")
 
     if len(results) == 0:
-        print("📭 Radar sinyal bulunamadı")
+        print("Radar sinyal bulunamadı")
 
     return results
 
