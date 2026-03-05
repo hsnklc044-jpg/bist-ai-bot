@@ -4,28 +4,27 @@ import time
 from engine.volume_anomaly_engine import volume_anomaly_score
 
 
-def get_data_with_retry(ticker):
+def get_data(ticker):
 
-    for i in range(3):
+    try:
 
-        try:
+        stock = yf.Ticker(ticker)
 
-            data = yf.download(
-                ticker,
-                period="5d",
-                interval="1h",
-                progress=False
-            )
+        data = stock.history(
+            period="5d",
+            interval="1h"
+        )
 
-            if data is not None and not data.empty:
-                return data
+        if data is None or data.empty:
+            return None
 
-        except Exception as e:
-            print("Retry error:", ticker, e)
+        return data
 
-        time.sleep(2)
+    except Exception as e:
 
-    return None
+        print("Data error:", ticker, e)
+
+        return None
 
 
 def ultimate_scanner():
@@ -46,10 +45,12 @@ def ultimate_scanner():
 
             print("Hisse taranıyor:", ticker)
 
-            data = get_data_with_retry(ticker)
+            data = get_data(ticker)
 
             if data is None:
+
                 print("⚠ Veri alınamadı:", ticker)
+
                 continue
 
             close = data["Close"]
@@ -61,28 +62,37 @@ def ultimate_scanner():
 
             # momentum
             if len(close) > 5:
+
                 if close.iloc[-1] > close.iloc[-5]:
+
                     score += 2
 
             # hacim patlaması
+
             score += volume_anomaly_score(volume)
 
             if score >= 3:
 
                 entry = round(last_price * 0.99, 2)
+
                 stop = round(last_price * 0.97, 2)
+
                 target = round(last_price * 1.05, 2)
 
                 signal = (
+
                     f"🚀 {ticker}\n"
                     f"Fiyat: {round(last_price,2)}\n"
                     f"Alım: {entry}\n"
                     f"Stop: {stop}\n"
                     f"Hedef: {target}\n"
                     f"Skor: {score}/10"
+
                 )
 
                 results.append(signal)
+
+            time.sleep(1)
 
         except Exception as e:
 
@@ -98,9 +108,11 @@ def run_ultimate_scanner():
     results = ultimate_scanner()
 
     if not results:
+
         print("Radar sinyal bulamadı")
 
     else:
+
         print("Sinyaller bulundu")
 
     return results
