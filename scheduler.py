@@ -1,47 +1,47 @@
-import time
+import threading
 import schedule
-
+import time
 from engine.ultimate_scanner import run_ultimate_scanner
-from bot import send_telegram_message
+from telegram_sender import send_message
+from flask import Flask
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "BIST AI BOT running"
 
 
 def radar_job():
 
-    try:
+    print("🚀 Ultimate Radar başlatılıyor")
 
-        print("🚀 Ultimate Radar başlatılıyor")
+    signals = run_ultimate_scanner()
 
-        results = run_ultimate_scanner()
-
-        if not results:
-            print("Sinyal bulunamadı")
-            return
+    if signals:
 
         message = "🚀 BIST AI RADAR\n\n"
 
-        for r in results:
-            message += f"{r}\n\n"
+        for s in signals:
+            message += s + "\n"
 
-        send_telegram_message(message)
+        send_message(message)
 
-        print("📩 Telegram mesajı gönderildi")
-
-    except Exception as e:
-
-        print("Radar job error:", e)
+    else:
+        print("Sinyal yok")
 
 
-def start():
+def run_scheduler():
 
-    print("📡 Scheduler çalışıyor")
-
-    # Her 30 dakikada radar çalışır
     schedule.every(30).minutes.do(radar_job)
 
-    # Başlangıçta bir kez çalıştır
-    radar_job()
-
     while True:
-
         schedule.run_pending()
         time.sleep(5)
+
+
+threading.Thread(target=run_scheduler).start()
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=10000)
