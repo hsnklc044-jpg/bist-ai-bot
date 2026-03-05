@@ -2,6 +2,7 @@ import yfinance as yf
 import time
 
 from engine.volume_anomaly_engine import volume_anomaly_score
+from engine.trend_engine import trend_score
 from engine.bist100 import get_bist100_tickers
 
 
@@ -32,7 +33,7 @@ def ultimate_scanner():
 
     tickers = get_bist100_tickers()
 
-    results = []
+    signals = []
 
     for ticker in tickers:
 
@@ -56,8 +57,10 @@ def ultimate_scanner():
 
             score = 0
 
-            # momentum
+            # trend filtresi
+            score += trend_score(close)
 
+            # momentum
             if len(close) > 5:
 
                 if close.iloc[-1] > close.iloc[-5]:
@@ -65,14 +68,12 @@ def ultimate_scanner():
                     score += 2
 
             # hacim patlaması
-
             score += volume_anomaly_score(volume)
 
             # destek seviyesi
-
             support = float(low.tail(20).min())
 
-            if score >= 3:
+            if score >= 4:
 
                 entry = round(support * 1.01, 2)
 
@@ -80,25 +81,45 @@ def ultimate_scanner():
 
                 target = round(last_price * 1.05, 2)
 
-                signal = (
+                signals.append({
 
-                    f"🚀 {ticker}\n"
-                    f"Fiyat: {round(last_price,2)}\n"
-                    f"Destek: {round(support,2)}\n"
-                    f"Alım: {entry}\n"
-                    f"Stop: {stop}\n"
-                    f"Hedef: {target}\n"
-                    f"Skor: {score}/10"
+                    "ticker": ticker,
+                    "price": round(last_price,2),
+                    "support": round(support,2),
+                    "entry": entry,
+                    "stop": stop,
+                    "target": target,
+                    "score": score
 
-                )
-
-                results.append(signal)
+                })
 
             time.sleep(1)
 
         except Exception as e:
 
             print("Scanner error:", ticker, e)
+
+    # en güçlü sinyalleri seç
+
+    signals = sorted(signals, key=lambda x: x["score"], reverse=True)
+
+    results = []
+
+    for s in signals[:3]:
+
+        message = (
+
+            f"🚀 {s['ticker']}\n"
+            f"Fiyat: {s['price']}\n"
+            f"Destek: {s['support']}\n"
+            f"Alım: {s['entry']}\n"
+            f"Stop: {s['stop']}\n"
+            f"Hedef: {s['target']}\n"
+            f"Skor: {s['score']}/10"
+
+        )
+
+        results.append(message)
 
     return results
 
@@ -116,5 +137,9 @@ def run_ultimate_scanner():
     else:
 
         print("Sinyaller bulundu")
+
+        for r in results:
+
+            print(r)
 
     return results
