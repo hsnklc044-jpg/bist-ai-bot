@@ -3,6 +3,8 @@ import yfinance as yf
 
 def ultimate_scanner():
 
+    print("📡 Scanner başlatıldı")
+
     tickers = [
         "ASELS.IS",
         "THYAO.IS",
@@ -17,6 +19,8 @@ def ultimate_scanner():
 
         try:
 
+            print("Hisse taranıyor:", ticker)
+
             data = yf.download(
                 ticker,
                 period="5d",
@@ -24,16 +28,15 @@ def ultimate_scanner():
                 progress=False
             )
 
-            if data.empty:
+            if data.empty or len(data) < 6:
+                print("Veri yetersiz:", ticker)
                 continue
 
             close = data["Close"]
             volume = data["Volume"]
 
             last_price = float(close.iloc[-1])
-
             avg_volume = volume.mean()
-
             last_volume = volume.iloc[-1]
 
             score = 0
@@ -48,17 +51,16 @@ def ultimate_scanner():
 
             if score >= 1:
 
-                results.append(
-                    f"🚀 {ticker}\nFiyat: {round(last_price,2)}"
-                )
+                signal = f"🚀 {ticker}\nFiyat: {round(last_price,2)}"
+
+                print("Sinyal bulundu:", signal)
+
+                results.append(signal)
 
         except Exception as e:
 
             print("Scanner error:", ticker, e)
 
+    print("Scanner tamamlandı")
+
     return results
-
-
-def run_ultimate_scanner():
-
-    return ultimate_scanner()
