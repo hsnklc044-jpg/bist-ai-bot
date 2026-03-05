@@ -19,7 +19,7 @@ def ultimate_scanner():
 
             data = yf.download(
                 ticker,
-                period="5d",
+                period="1d",
                 interval="1h",
                 progress=False
             )
@@ -27,13 +27,11 @@ def ultimate_scanner():
             if data.empty:
                 continue
 
-            close = data["Close"]
+            last_price = data["Close"].iloc[-1]
 
-            if close.iloc[-1] > close.iloc[-5]:
-
-                signals.append(
-                    f"📈 {ticker} momentum yükseliyor"
-                )
+            signals.append(
+                f"📈 TEST SIGNAL\n{ticker}\nFiyat: {round(float(last_price),2)}"
+            )
 
         except Exception as e:
 
