@@ -20,7 +20,7 @@ def radar_job():
         message = "🚀 BIST AI RADAR\n\n"
 
         for r in results:
-            message += f"{r}\n"
+            message += f"{r}\n\n"
 
         send_telegram_message(message)
 
@@ -35,7 +35,11 @@ def start():
 
     print("📡 Scheduler çalışıyor")
 
+    # TEST için 1 dakika
     schedule.every(1).minutes.do(radar_job)
+
+    # normalde şöyle olur
+    # schedule.every(30).minutes.do(radar_job)
 
     while True:
 
