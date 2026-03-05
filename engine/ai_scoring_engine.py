@@ -1,8 +1,7 @@
 import yfinance as yf
 import time
 
-from engine.volume_anomaly_engine import volume_anomaly_score
-from engine.trend_engine import trend_score
+from engine.ai_scoring_engine import ai_score
 from engine.bist100 import get_bist100_tickers
 
 
@@ -55,25 +54,13 @@ def ultimate_scanner():
 
             last_price = float(close.iloc[-1])
 
-            score = 0
-
-            # trend filtresi
-            score += trend_score(close)
-
-            # momentum
-            if len(close) > 5:
-
-                if close.iloc[-1] > close.iloc[-5]:
-
-                    score += 2
-
-            # hacim patlaması
-            score += volume_anomaly_score(volume)
+            # AI skor hesapla
+            score = ai_score(close, volume)
 
             # destek seviyesi
             support = float(low.tail(20).min())
 
-            if score >= 4:
+            if score >= 6:
 
                 entry = round(support * 1.01, 2)
 
@@ -99,7 +86,7 @@ def ultimate_scanner():
 
             print("Scanner error:", ticker, e)
 
-    # en güçlü sinyalleri seç
+    # en güçlü sinyaller
 
     signals = sorted(signals, key=lambda x: x["score"], reverse=True)
 
@@ -115,7 +102,7 @@ def ultimate_scanner():
             f"Alım: {s['entry']}\n"
             f"Stop: {s['stop']}\n"
             f"Hedef: {s['target']}\n"
-            f"Skor: {s['score']}/10"
+            f"AI Skor: {s['score']}/10"
 
         )
 
@@ -126,7 +113,7 @@ def ultimate_scanner():
 
 def run_ultimate_scanner():
 
-    print("📡 BIST radar çalışıyor...")
+    print("📡 BIST AI radar çalışıyor...")
 
     results = ultimate_scanner()
 
