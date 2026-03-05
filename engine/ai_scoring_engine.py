@@ -1,51 +1,145 @@
 import yfinance as yf
+import time
+
+from engine.volume_anomaly_engine import volume_anomaly_score
+from engine.trend_engine import trend_score
+from engine.bist100 import get_bist100_tickers
 
 
-def calculate_ai_score(symbol):
+def get_data(ticker):
 
     try:
 
-        ticker = f"{symbol}.IS"
+        stock = yf.Ticker(ticker)
 
-        data = yf.download(ticker, period="3mo", interval="1d")
+        data = stock.history(
+            period="5d",
+            interval="1h"
+        )
 
-        if data.empty:
+        if data is None or data.empty:
             return None
 
-        close = data["Close"]
-        volume = data["Volume"]
-
-        price = float(close.iloc[-1])
-
-        ma20 = float(close.rolling(20).mean().iloc[-1])
-        ma50 = float(close.rolling(50).mean().iloc[-1])
-
-        score = 50
-
-        # trend kontrolü
-        if price > ma20:
-            score += 10
-
-        if price > ma50:
-            score += 10
-
-        if ma20 > ma50:
-            score += 10
-
-        # momentum
-        momentum = close.pct_change(10).iloc[-1]
-
-        if momentum > 0.05:
-            score += 10
-
-        # hacim artışı
-        if volume.iloc[-1] > volume.mean():
-            score += 10
-
-        return score
+        return data
 
     except Exception as e:
 
-        print(symbol, "AI skor hatası:", e)
+        print("Data error:", ticker, e)
 
         return None
+
+
+def ultimate_scanner():
+
+    tickers = get_bist100_tickers()
+
+    signals = []
+
+    for ticker in tickers:
+
+        try:
+
+            print("Hisse taranıyor:", ticker)
+
+            data = get_data(ticker)
+
+            if data is None:
+
+                print("⚠ Veri alınamadı:", ticker)
+
+                continue
+
+            close = data["Close"]
+            volume = data["Volume"]
+            low = data["Low"]
+
+            last_price = float(close.iloc[-1])
+
+            score = 0
+
+            # trend filtresi
+            score += trend_score(close)
+
+            # momentum
+            if len(close) > 5:
+
+                if close.iloc[-1] > close.iloc[-5]:
+
+                    score += 2
+
+            # hacim patlaması
+            score += volume_anomaly_score(volume)
+
+            # destek seviyesi
+            support = float(low.tail(20).min())
+
+            if score >= 4:
+
+                entry = round(support * 1.01, 2)
+
+                stop = round(support * 0.98, 2)
+
+                target = round(last_price * 1.05, 2)
+
+                signals.append({
+
+                    "ticker": ticker,
+                    "price": round(last_price,2),
+                    "support": round(support,2),
+                    "entry": entry,
+                    "stop": stop,
+                    "target": target,
+                    "score": score
+
+                })
+
+            time.sleep(1)
+
+        except Exception as e:
+
+            print("Scanner error:", ticker, e)
+
+    # en güçlü sinyalleri seç
+
+    signals = sorted(signals, key=lambda x: x["score"], reverse=True)
+
+    results = []
+
+    for s in signals[:3]:
+
+        message = (
+
+            f"🚀 {s['ticker']}\n"
+            f"Fiyat: {s['price']}\n"
+            f"Destek: {s['support']}\n"
+            f"Alım: {s['entry']}\n"
+            f"Stop: {s['stop']}\n"
+            f"Hedef: {s['target']}\n"
+            f"Skor: {s['score']}/10"
+
+        )
+
+        results.append(message)
+
+    return results
+
+
+def run_ultimate_scanner():
+
+    print("📡 BIST radar çalışıyor...")
+
+    results = ultimate_scanner()
+
+    if not results:
+
+        print("Radar sinyal bulamadı")
+
+    else:
+
+        print("Sinyaller bulundu")
+
+        for r in results:
+
+            print(r)
+
+    return results
