@@ -2,29 +2,24 @@ import yfinance as yf
 import time
 
 
-def get_data_with_retry(ticker, retries=3):
+def get_data(ticker):
 
-    for i in range(retries):
+    try:
+        stock = yf.Ticker(ticker)
 
-        try:
+        data = stock.history(
+            period="5d",
+            interval="1h"
+        )
 
-            data = yf.download(
-                ticker,
-                period="5d",
-                interval="1h",
-                progress=False,
-                timeout=10
-            )
+        if data is None or data.empty:
+            return None
 
-            if not data.empty:
-                return data
+        return data
 
-        except Exception as e:
-            print(f"Retry {i+1} hata:", ticker, e)
-
-        time.sleep(2)
-
-    return None
+    except Exception as e:
+        print("Veri çekme hatası:", ticker, e)
+        return None
 
 
 def ultimate_scanner():
@@ -43,16 +38,20 @@ def ultimate_scanner():
 
         print("Hisse taranıyor:", ticker)
 
-        data = get_data_with_retry(ticker)
+        data = get_data(ticker)
 
-        if data is None or data.empty:
-            print("Veri alınamadı:", ticker)
+        if data is None:
+            print("Veri yetersiz:", ticker)
             continue
 
         try:
 
             close = data["Close"]
             volume = data["Volume"]
+
+            if len(close) < 5:
+                print("Veri yetersiz:", ticker)
+                continue
 
             last_price = float(close.iloc[-1])
 
@@ -62,11 +61,11 @@ def ultimate_scanner():
 
             score = 0
 
-            # momentum
+            # Momentum kontrolü
             if close.iloc[-1] > close.iloc[-5]:
                 score += 1
 
-            # hacim artışı
+            # Hacim artışı
             if last_volume > avg_volume:
                 score += 1
 
@@ -77,12 +76,17 @@ def ultimate_scanner():
                 )
 
         except Exception as e:
-
             print("Scanner error:", ticker, e)
 
         time.sleep(1)
 
     print("Scanner tamamlandı")
+
+    if len(results) == 0:
+        print("Radar sinyal bulunmadı")
+
+    else:
+        print("Radar sonucu:", results)
 
     return results
 
