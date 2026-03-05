@@ -1,34 +1,39 @@
-import schedule
 import time
+import schedule
 
-from engine.ultimate_scanner import run_ultimate_scan
+from engine.ultimate_scanner import run_ultimate_scanner
 from bot import send_telegram_message
 
 
 def radar_job():
-
     try:
-
         print("🚀 Ultimate Radar başlatılıyor")
 
-        signals = run_ultimate_scan()
+        results = run_ultimate_scanner()
 
-        if not signals:
-            send_telegram_message("Bugün güçlü sinyal bulunamadı.")
+        if not results:
+            print("Sinyal bulunamadı")
             return
 
-        for s in signals:
-            send_telegram_message(s)
+        message = "🚀 BIST AI RADAR\n\n"
+
+        for r in results:
+            message += f"{r}\n"
+
+        send_telegram_message(message)
+
+        print("Telegram mesajı gönderildi")
 
     except Exception as e:
-
         print("Radar job error:", e)
 
 
-schedule.every(30).minutes.do(radar_job)
+def start():
 
-print("📅 Scheduler çalışıyor")
+    print("📡 Scheduler çalışıyor")
 
-while True:
-    schedule.run_pending()
-    time.sleep(5)
+    schedule.every(30).minutes.do(radar_job)
+
+    while True:
+        schedule.run_pending()
+        time.sleep(5)
