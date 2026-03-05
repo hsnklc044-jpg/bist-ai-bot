@@ -31,7 +31,7 @@ def get_data(ticker):
 
         return df
 
-    except Exception as e:
+    except:
 
         print("Veri alınamadı:", ticker)
 
@@ -48,7 +48,9 @@ def ultimate_scanner():
         "KCHOL.IS"
     ]
 
-    results = []
+    signals = []
+
+    print("🚨 BIST radar çalışıyor...")
 
     for ticker in tickers:
 
@@ -62,7 +64,7 @@ def ultimate_scanner():
         close = data["Close"]
         volume = data["Volume"]
 
-        if len(close) < 5:
+        if len(close) < 10:
             continue
 
         last_price = float(close.iloc[-1])
@@ -72,24 +74,65 @@ def ultimate_scanner():
 
         score = 0
 
+        # momentum
         if close.iloc[-1] > close.iloc[-5]:
-            score += 1
+            score += 3
 
+        # hacim artışı
         if last_volume > avg_volume:
-            score += 1
+            score += 3
 
-        if score >= 1:
+        # trend
+        if close.iloc[-1] > close.mean():
+            score += 2
 
-            results.append(
-                f"🚀 {ticker}\nFiyat: {round(last_price,2)}"
-            )
+        # pullback
+        if close.iloc[-1] < close.max():
+            score += 2
+
+        if score >= 6:
+
+            entry = round(last_price * 0.99, 2)
+            stop = round(last_price * 0.97, 2)
+            target = round(last_price * 1.05, 2)
+
+            signals.append({
+                "ticker": ticker,
+                "price": round(last_price,2),
+                "entry": entry,
+                "stop": stop,
+                "target": target,
+                "score": score
+            })
 
         time.sleep(1)
 
-    print("Scanner tamamlandı")
+    signals = sorted(signals, key=lambda x: x["score"], reverse=True)
 
-    if len(results) == 0:
+    results = []
+
+    if len(signals) == 0:
+
         print("Radar sinyal bulunamadı")
+
+        return []
+
+    print("Sinyaller bulundu:")
+
+    for s in signals[:3]:
+
+        msg = (
+            f"🚀 {s['ticker']}\n"
+            f"Fiyat: {s['price']}\n"
+            f"Alım: {s['entry']}\n"
+            f"Stop: {s['stop']}\n"
+            f"Hedef: {s['target']}\n"
+            f"Skor: {s['score']}/10"
+        )
+
+        print(msg)
+
+        results.append(msg)
 
     return results
 
