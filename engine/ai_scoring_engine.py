@@ -1,132 +1,53 @@
-import yfinance as yf
-import time
-
-from engine.ai_scoring_engine import ai_score
-from engine.bist100 import get_bist100_tickers
+import pandas as pd
 
 
-def get_data(ticker):
+def rsi(series, period=14):
 
-    try:
+    delta = series.diff()
 
-        stock = yf.Ticker(ticker)
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
 
-        data = stock.history(
-            period="5d",
-            interval="1h"
-        )
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
 
-        if data is None or data.empty:
-            return None
+    rs = avg_gain / avg_loss
 
-        return data
+    rsi = 100 - (100 / (1 + rs))
 
-    except Exception as e:
-
-        print("Data error:", ticker, e)
-
-        return None
+    return rsi
 
 
-def ultimate_scanner():
+def ai_score(close, volume):
 
-    tickers = get_bist100_tickers()
+    score = 0
 
-    signals = []
+    # TREND
+    ma20 = close.tail(20).mean()
+    ma50 = close.tail(50).mean()
 
-    for ticker in tickers:
+    if ma20 > ma50:
+        score += 3
 
-        try:
+    # MOMENTUM
+    if close.iloc[-1] > close.iloc[-5]:
+        score += 2
 
-            print("Hisse taranıyor:", ticker)
+    # HACİM PATLAMASI
+    avg_volume = volume.tail(20).mean()
+    last_volume = volume.iloc[-1]
 
-            data = get_data(ticker)
+    if last_volume > avg_volume * 1.5:
+        score += 2
 
-            if data is None:
+    # RSI
+    rsi_val = rsi(close).iloc[-1]
 
-                print("⚠ Veri alınamadı:", ticker)
+    if rsi_val > 55:
+        score += 2
 
-                continue
+    # PULLBACK
+    if close.iloc[-1] < close.max():
+        score += 1
 
-            close = data["Close"]
-            volume = data["Volume"]
-            low = data["Low"]
-
-            last_price = float(close.iloc[-1])
-
-            # AI skor hesapla
-            score = ai_score(close, volume)
-
-            # destek seviyesi
-            support = float(low.tail(20).min())
-
-            if score >= 6:
-
-                entry = round(support * 1.01, 2)
-
-                stop = round(support * 0.98, 2)
-
-                target = round(last_price * 1.05, 2)
-
-                signals.append({
-
-                    "ticker": ticker,
-                    "price": round(last_price,2),
-                    "support": round(support,2),
-                    "entry": entry,
-                    "stop": stop,
-                    "target": target,
-                    "score": score
-
-                })
-
-            time.sleep(1)
-
-        except Exception as e:
-
-            print("Scanner error:", ticker, e)
-
-    # en güçlü sinyaller
-
-    signals = sorted(signals, key=lambda x: x["score"], reverse=True)
-
-    results = []
-
-    for s in signals[:3]:
-
-        message = (
-
-            f"🚀 {s['ticker']}\n"
-            f"Fiyat: {s['price']}\n"
-            f"Destek: {s['support']}\n"
-            f"Alım: {s['entry']}\n"
-            f"Stop: {s['stop']}\n"
-            f"Hedef: {s['target']}\n"
-            f"AI Skor: {s['score']}/10"
-
-        )
-
-        results.append(message)
-
-    return results
-
-
-def run_ultimate_scanner():
-
-    print("📡 BIST AI radar çalışıyor...")
-
-    results = ultimate_scanner()
-
-    if not results:
-
-        print("Radar sinyal bulamadı")
-
-    else:
-
-        print("Sinyaller bulundu")
-
-        for r in results:
-
-            print(r)
-
-    return results
+    return score
