@@ -1,45 +1,30 @@
 import yfinance as yf
-import requests
-import pandas as pd
 import time
-
-
-headers = {
-    "User-Agent": "Mozilla/5.0"
-}
 
 
 def get_data(ticker):
 
-    try:
+    for attempt in range(3):
 
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?range=5d&interval=1h"
+        try:
 
-        r = requests.get(url, headers=headers)
+            data = yf.download(
+                ticker,
+                period="5d",
+                interval="1h",
+                progress=False
+            )
 
-        data = r.json()
+            if not data.empty:
+                return data
 
-        result = data["chart"]["result"][0]
+        except Exception as e:
 
-        close = result["indicators"]["quote"][0]["close"]
-        volume = result["indicators"]["quote"][0]["volume"]
+            print("Retry:", ticker)
 
-        df = pd.DataFrame({
-            "Close": close,
-            "Volume": volume
-        })
+        time.sleep(2)
 
-        df.dropna(inplace=True)
-
-        if df.empty:
-            return None
-
-        return df
-
-    except Exception as e:
-
-        print("Veri çekme hatası:", ticker, e)
-        return None
+    return None
 
 
 def ultimate_scanner():
@@ -65,43 +50,37 @@ def ultimate_scanner():
             print("⚠️ Veri alınamadı:", ticker)
             continue
 
-        try:
+        close = data["Close"]
+        volume = data["Volume"]
 
-            close = data["Close"]
-            volume = data["Volume"]
+        if len(close) < 5:
+            continue
 
-            if len(close) < 5:
-                continue
+        last_price = float(close.iloc[-1])
 
-            last_price = float(close.iloc[-1])
+        avg_volume = volume.tail(10).mean()
+        last_volume = volume.iloc[-1]
 
-            avg_volume = volume.tail(10).mean()
-            last_volume = volume.iloc[-1]
+        score = 0
 
-            score = 0
+        if close.iloc[-1] > close.iloc[-5]:
+            score += 1
 
-            if close.iloc[-1] > close.iloc[-5]:
-                score += 1
+        if last_volume > avg_volume:
+            score += 1
 
-            if last_volume > avg_volume:
-                score += 1
+        if score >= 1:
 
-            if score >= 1:
-
-                results.append(
-                    f"🚀 {ticker}\nFiyat: {round(last_price,2)}"
-                )
-
-        except Exception as e:
-
-            print("Scanner error:", ticker, e)
+            results.append(
+                f"🚀 {ticker}\nFiyat: {round(last_price,2)}"
+            )
 
         time.sleep(1)
 
     print("✅ Scanner tamamlandı")
 
     if len(results) == 0:
-        print("📭 Radar sinyal bulunmadı")
+        print("📭 Radar sinyal bulunamadı")
     else:
         print("🎯 Radar sonucu:", results)
 
