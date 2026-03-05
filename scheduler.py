@@ -35,7 +35,7 @@ def start():
 
     print("📡 Scheduler çalışıyor")
 
-    schedule.every(30).minutes.do(radar_job)
+    schedule.every(1).minutes.do(radar_job)
 
     while True:
 
