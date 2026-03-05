@@ -1,21 +1,29 @@
-def detect_volume_anomaly(df):
+def volume_anomaly_score(volume_series):
 
-    try:
+    """
+    Hacim patlaması tespit eder.
+    Son hacmi son 20 mum ortalaması ile karşılaştırır.
+    """
 
-        volume = df["Volume"]
+    if len(volume_series) < 20:
+        return 0
 
-        avg_volume = volume.rolling(20).mean()
+    avg_volume = volume_series.tail(20).mean()
 
-        anomaly = volume.iloc[-1] > avg_volume.iloc[-1] * 2
+    last_volume = volume_series.iloc[-1]
 
-        return {
-            "volume_anomaly": anomaly
-        }
+    ratio = last_volume / avg_volume
 
-    except Exception as e:
+    # hacim 1.5 kat artmışsa
+    if ratio > 1.5:
+        return 3
 
-        print("Volume anomaly error:", e)
+    # hacim 1.2 kat artmışsa
+    if ratio > 1.2:
+        return 2
 
-        return {
-            "volume_anomaly": False
-        }
+    # hafif artış
+    if ratio > 1.0:
+        return 1
+
+    return 0
