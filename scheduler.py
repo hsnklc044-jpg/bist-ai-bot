@@ -3,7 +3,7 @@ import time
 import threading
 from flask import Flask
 
-from engine.ultimate_scanner import run_ultimate_scanner
+from engine.ultimate_scanner import ultimate_scanner
 
 app = Flask(__name__)
 
@@ -14,7 +14,7 @@ def home():
 
 def radar_job():
     print("BIST radar çalışıyor...")
-    run_ultimate_scanner()
+    ultimate_scanner()
 
 
 def run_scheduler():
