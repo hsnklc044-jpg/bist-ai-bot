@@ -1,11 +1,13 @@
 import schedule
 import time
 import threading
+import os
 from flask import Flask
 
 from engine.ultimate_scanner import ultimate_scanner
 
 app = Flask(__name__)
+
 
 @app.route("/")
 def home():
@@ -14,10 +16,16 @@ def home():
 
 def radar_job():
     print("BIST radar çalışıyor...")
-    ultimate_scanner()
+    try:
+        results = ultimate_scanner()
+        print("Radar sonucu:", results)
+    except Exception as e:
+        print("Radar hata:", e)
 
 
 def run_scheduler():
+    print("Scheduler başlatıldı")
+
     schedule.every(30).minutes.do(radar_job)
 
     while True:
@@ -26,7 +34,14 @@ def run_scheduler():
 
 
 if __name__ == "__main__":
-    thread = threading.Thread(target=run_scheduler)
-    thread.start()
+    # Scheduler thread
+    scheduler_thread = threading.Thread(target=run_scheduler)
+    scheduler_thread.daemon = True
+    scheduler_thread.start()
 
-    app.run(host="0.0.0.0", port=10000)
+    # Render PORT
+    port = int(os.environ.get("PORT", 10000))
+
+    print("Web server başlatılıyor... Port:", port)
+
+    app.run(host="0.0.0.0", port=port)
