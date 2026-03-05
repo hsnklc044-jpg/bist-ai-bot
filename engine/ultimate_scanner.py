@@ -2,6 +2,7 @@ import yfinance as yf
 import time
 
 from engine.volume_anomaly_engine import volume_anomaly_score
+from engine.bist100 import get_bist100_tickers
 
 
 def get_data(ticker):
@@ -29,13 +30,7 @@ def get_data(ticker):
 
 def ultimate_scanner():
 
-    tickers = [
-        "ASELS.IS",
-        "THYAO.IS",
-        "EREGL.IS",
-        "SISE.IS",
-        "KCHOL.IS"
-    ]
+    tickers = get_bist100_tickers()
 
     results = []
 
@@ -55,12 +50,14 @@ def ultimate_scanner():
 
             close = data["Close"]
             volume = data["Volume"]
+            low = data["Low"]
 
             last_price = float(close.iloc[-1])
 
             score = 0
 
             # momentum
+
             if len(close) > 5:
 
                 if close.iloc[-1] > close.iloc[-5]:
@@ -71,11 +68,15 @@ def ultimate_scanner():
 
             score += volume_anomaly_score(volume)
 
+            # destek seviyesi
+
+            support = float(low.tail(20).min())
+
             if score >= 3:
 
-                entry = round(last_price * 0.99, 2)
+                entry = round(support * 1.01, 2)
 
-                stop = round(last_price * 0.97, 2)
+                stop = round(support * 0.98, 2)
 
                 target = round(last_price * 1.05, 2)
 
@@ -83,6 +84,7 @@ def ultimate_scanner():
 
                     f"🚀 {ticker}\n"
                     f"Fiyat: {round(last_price,2)}\n"
+                    f"Destek: {round(support,2)}\n"
                     f"Alım: {entry}\n"
                     f"Stop: {stop}\n"
                     f"Hedef: {target}\n"
