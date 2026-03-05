@@ -1,8 +1,7 @@
-python-telegram-bot==20.7
-psycopg2-binary==2.9.9
-pandas
-numpy
+flask
+schedule
 yfinance
 requests
-schedule
-flask
+pandas
+numpy
+python-telegram-bot
