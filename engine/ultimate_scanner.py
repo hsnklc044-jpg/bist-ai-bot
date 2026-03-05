@@ -1,13 +1,14 @@
 import yfinance as yf
 
-def run_ultimate_scanner():
+
+def ultimate_scanner():
 
     tickers = [
         "ASELS.IS",
         "THYAO.IS",
         "EREGL.IS",
-        "KCHOL.IS",
-        "SISE.IS"
+        "SISE.IS",
+        "KCHOL.IS"
     ]
 
     signals = []
@@ -16,7 +17,12 @@ def run_ultimate_scanner():
 
         try:
 
-            data = yf.download(ticker, period="5d", interval="1h")
+            data = yf.download(
+                ticker,
+                period="5d",
+                interval="1h",
+                progress=False
+            )
 
             if data.empty:
                 continue
@@ -34,3 +40,10 @@ def run_ultimate_scanner():
             print("Scanner error:", ticker, e)
 
     return signals
+
+
+# scheduler için köprü fonksiyon
+
+def run_ultimate_scanner():
+
+    return ultimate_scanner()
