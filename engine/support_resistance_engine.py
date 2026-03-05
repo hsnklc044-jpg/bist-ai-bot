@@ -1,24 +1,23 @@
 import yfinance as yf
 
+def calculate_support_resistance(symbol):
 
-def get_support_resistance(symbol):
+    try:
 
-    ticker = f"{symbol}.IS"
+        ticker = f"{symbol}.IS"
 
-    data = yf.download(ticker, period="6mo", interval="1d")
+        data = yf.download(ticker, period="3mo")
 
-    if data.empty:
-        return None
+        if data.empty:
+            return None, None
 
-    fiyat = float(data["Close"].iloc[-1])
+        support = data["Low"].rolling(window=20).min().iloc[-1]
+        resistance = data["High"].rolling(window=20).max().iloc[-1]
 
-    destek = float(data["Low"].rolling(20).min().iloc[-1])
+        return round(float(support),2), round(float(resistance),2)
 
-    direnc = float(data["High"].rolling(20).max().iloc[-1])
+    except Exception as e:
 
-    return {
-        "hisse": symbol,
-        "fiyat": round(fiyat, 2),
-        "destek": round(destek, 2),
-        "direnc": round(direnc, 2)
-    }
+        print("Support Resistance error:", e)
+
+        return None, None
