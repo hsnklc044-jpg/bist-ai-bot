@@ -1,8 +1,7 @@
 def volume_anomaly_score(volume_series):
 
     """
-    Hacim patlaması tespit eder.
-    Son hacmi son 20 mum ortalaması ile karşılaştırır.
+    Hacim patlaması tespit eder
     """
 
     if len(volume_series) < 20:
@@ -14,15 +13,12 @@ def volume_anomaly_score(volume_series):
 
     ratio = last_volume / avg_volume
 
-    # hacim 1.5 kat artmışsa
     if ratio > 1.5:
         return 3
 
-    # hacim 1.2 kat artmışsa
     if ratio > 1.2:
         return 2
 
-    # hafif artış
     if ratio > 1.0:
         return 1
 
