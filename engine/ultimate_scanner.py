@@ -1,22 +1,4 @@
 import yfinance as yf
-import pandas as pd
-
-
-def calculate_rsi(series, period=14):
-
-    delta = series.diff()
-
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-
-    rs = avg_gain / avg_loss
-
-    rsi = 100 - (100 / (1 + rs))
-
-    return rsi
 
 
 def ultimate_scanner():
@@ -26,10 +8,7 @@ def ultimate_scanner():
         "THYAO.IS",
         "EREGL.IS",
         "SISE.IS",
-        "KCHOL.IS",
-        "TUPRS.IS",
-        "BIMAS.IS",
-        "AKBNK.IS"
+        "KCHOL.IS"
     ]
 
     results = []
@@ -51,30 +30,26 @@ def ultimate_scanner():
             close = data["Close"]
             volume = data["Volume"]
 
-            ema20 = close.ewm(span=20).mean()
-            rsi = calculate_rsi(close)
+            last_price = float(close.iloc[-1])
+
+            avg_volume = volume.mean()
+
+            last_volume = volume.iloc[-1]
 
             score = 0
 
             # momentum
-            if close.iloc[-1] > ema20.iloc[-1]:
+            if close.iloc[-1] > close.iloc[-5]:
                 score += 1
 
-            # hacim patlaması
-            if volume.iloc[-1] > volume.mean() * 1.5:
+            # hacim artışı
+            if last_volume > avg_volume:
                 score += 1
 
-            # RSI güçlü
-            if rsi.iloc[-1] > 55:
-                score += 1
-
-            if score >= 2:
+            if score >= 1:
 
                 results.append(
-                    f"🚀 {ticker}\n"
-                    f"Fiyat: {round(close.iloc[-1],2)}\n"
-                    f"RSI: {round(rsi.iloc[-1],1)}\n"
-                    f"AI Skor: {score}/3"
+                    f"🚀 {ticker}\nFiyat: {round(last_price,2)}"
                 )
 
         except Exception as e:
