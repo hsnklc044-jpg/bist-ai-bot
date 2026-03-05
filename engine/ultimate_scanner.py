@@ -1,7 +1,31 @@
 import yfinance as yf
-import pandas as pd
+import time
 
 from engine.volume_anomaly_engine import volume_anomaly_score
+
+
+def get_data_with_retry(ticker):
+
+    for i in range(3):
+
+        try:
+
+            data = yf.download(
+                ticker,
+                period="5d",
+                interval="1h",
+                progress=False
+            )
+
+            if data is not None and not data.empty:
+                return data
+
+        except Exception as e:
+            print("Retry error:", ticker, e)
+
+        time.sleep(2)
+
+    return None
 
 
 def ultimate_scanner():
@@ -20,17 +44,12 @@ def ultimate_scanner():
 
         try:
 
-            print(f"Hisse taranıyor: {ticker}")
+            print("Hisse taranıyor:", ticker)
 
-            data = yf.download(
-                ticker,
-                period="5d",
-                interval="1h",
-                progress=False
-            )
+            data = get_data_with_retry(ticker)
 
-            if data is None or data.empty:
-                print(f"⚠ Veri alınamadı: {ticker}")
+            if data is None:
+                print("⚠ Veri alınamadı:", ticker)
                 continue
 
             close = data["Close"]
@@ -40,7 +59,7 @@ def ultimate_scanner():
 
             score = 0
 
-            # momentum kontrolü
+            # momentum
             if len(close) > 5:
                 if close.iloc[-1] > close.iloc[-5]:
                     score += 2
@@ -48,13 +67,10 @@ def ultimate_scanner():
             # hacim patlaması
             score += volume_anomaly_score(volume)
 
-            # sinyal filtresi
             if score >= 3:
 
                 entry = round(last_price * 0.99, 2)
-
                 stop = round(last_price * 0.97, 2)
-
                 target = round(last_price * 1.05, 2)
 
                 signal = (
