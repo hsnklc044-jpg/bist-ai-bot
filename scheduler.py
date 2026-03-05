@@ -1,42 +1,34 @@
 import schedule
 import time
-import threading
 
 from engine.ultimate_scanner import run_ultimate_scan
-from engine.pro_trading_signal_formatter import format_trading_signals
-
-from bot import send_telegram_message, listen_commands
+from bot import send_telegram_message
 
 
 def radar_job():
+
     try:
+
         print("🚀 Ultimate Radar başlatılıyor")
 
         signals = run_ultimate_scan()
 
-        message = format_trading_signals(signals)
+        if not signals:
+            send_telegram_message("Bugün güçlü sinyal bulunamadı.")
+            return
 
-        send_telegram_message(message)
+        for s in signals:
+            send_telegram_message(s)
 
     except Exception as e:
+
         print("Radar job error:", e)
 
 
-# her 1 saatte radar
-schedule.every(1).hours.do(radar_job)
+schedule.every(30).minutes.do(radar_job)
 
+print("📅 Scheduler çalışıyor")
 
-def run_scheduler():
-
-    print("📅 Scheduler çalışıyor")
-
-    while True:
-        schedule.run_pending()
-        time.sleep(5)
-
-
-if __name__ == "__main__":
-
-    threading.Thread(target=listen_commands).start()
-
-    run_scheduler()
+while True:
+    schedule.run_pending()
+    time.sleep(5)
