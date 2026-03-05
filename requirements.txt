@@ -1,7 +1,5 @@
-flask
-schedule
-yfinance
-requests
-pandas
-numpy
 python-telegram-bot
+pandas
+yfinance
+schedule
+flask
