@@ -22,15 +22,14 @@ def ultimate_scanner():
 
             print("Hisse taranıyor:", ticker)
 
-            data = yf.download(
-                ticker,
+            stock = yf.Ticker(ticker)
+
+            data = stock.history(
                 period="5d",
-                interval="1h",
-                progress=False,
-                threads=False
+                interval="1h"
             )
 
-            time.sleep(2)   # Yahoo block yememek için
+            time.sleep(2)
 
             if data.empty or len(data) < 6:
 
