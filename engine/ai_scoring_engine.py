@@ -24,14 +24,13 @@ def score_stock(df):
         if len(close) < 50:
             return None
 
-        price = float(close.iloc[-1])
+        price = close.iloc[-1]
 
-        ma20 = float(close.rolling(20).mean().iloc[-1])
-        ma50 = float(close.rolling(50).mean().iloc[-1])
+        ma20 = close.rolling(20).mean().iloc[-1]
+        ma50 = close.rolling(50).mean().iloc[-1]
 
         score = 50
 
-        # trend
         if price > ma20:
             score += 10
 
@@ -41,13 +40,11 @@ def score_stock(df):
         if ma20 > ma50:
             score += 10
 
-        # momentum
         momentum = close.pct_change(10).iloc[-1]
 
         if pd.notna(momentum) and momentum > 0.05:
             score += 10
 
-        # volume spike
         if volume.iloc[-1] > volume.mean():
             score += 10
 
