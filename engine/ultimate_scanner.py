@@ -5,6 +5,7 @@ from engine.market_regime_engine import market_regime
 from engine.ai_scoring_engine import score_stock
 from engine.entry_engine import calculate_entry
 from engine.telegram_engine import send_telegram_message
+from engine.bist_universe import get_bist_universe
 
 
 def run_ultimate_scanner():
@@ -19,11 +20,7 @@ def run_ultimate_scanner():
 
     print("Market rejimi:", regime)
 
-    bist_stocks = [
-        "AEFES.IS","ASELS.IS","BIMAS.IS","EREGL.IS","FROTO.IS",
-        "GARAN.IS","KCHOL.IS","KOZAL.IS","PETKM.IS","SAHOL.IS",
-        "SISE.IS","TCELL.IS","THYAO.IS","TOASO.IS","TUPRS.IS"
-    ]
+    bist_stocks = get_bist_universe()
 
     results = []
 
@@ -69,13 +66,15 @@ def run_ultimate_scanner():
         print("Radar sonucu bulunamadı.")
         return
 
-    print("Radar sonuçları:")
+    results = sorted(results, key=lambda x: x["score"], reverse=True)
 
-    message = "🚀 BIST AI SIGNAL\n\n"
+    results = results[:5]
+
+    message = "🚀 BIST AI RADAR\n\n🔥 TOP SIGNALS\n\n"
 
     for r in results:
 
-        symbol = r["symbol"].replace(".IS","")
+        symbol = r["symbol"].replace(".IS", "")
 
         line = f"""📈 {symbol}
 Score: {r['score']}
