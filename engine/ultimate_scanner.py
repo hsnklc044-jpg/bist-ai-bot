@@ -74,7 +74,7 @@ def run_ultimate_scanner():
 
     for r in results:
 
-        symbol = r["symbol"].replace(".IS", "")
+        symbol = r["symbol"].replace(".IS","")
 
         line = f"""📈 {symbol}
 Score: {r['score']}
