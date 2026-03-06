@@ -51,7 +51,6 @@ def score_stock(df):
 
         score = 50
 
-        # Trend
         if price > ma20:
             score += 10
 
@@ -61,18 +60,15 @@ def score_stock(df):
         if ma20 > ma50:
             score += 10
 
-        # Momentum
         if pd.notna(momentum) and momentum > 0.05:
             score += 10
 
-        # RSI momentum
         if pd.notna(rsi) and rsi > 55:
             score += 5
 
         if pd.notna(rsi) and rsi > 65:
             score += 5
 
-        # Volume spike
         if volume.iloc[-1] > avg_volume * 1.5:
             score += 10
 
