@@ -12,6 +12,7 @@ from engine.orderflow_engine import orderflow_score
 from engine.volatility_engine import volatility_score
 from engine.smart_money_engine import smart_money_score
 from engine.confidence_engine import confidence_score
+from engine.mega_score_engine import mega_score
 from engine.risk_engine import risk_levels
 
 
@@ -19,11 +20,11 @@ def get_data(ticker):
 
     try:
 
-        stock = yf.Ticker(ticker)
-
-        data = stock.history(
+        data = yf.download(
+            ticker,
             period="5d",
-            interval="1h"
+            interval="1h",
+            progress=False
         )
 
         if data is None or data.empty:
@@ -58,16 +59,14 @@ def ultimate_scanner():
 
             print("Hisse taranıyor:", ticker)
 
-            # Multi timeframe trend
+            # Trend filtresi
             if not multi_tf_trend(ticker):
                 continue
 
             data = get_data(ticker)
 
             if data is None:
-
                 print("⚠ Veri alınamadı:", ticker)
-
                 continue
 
             close = data["Close"]
@@ -77,11 +76,11 @@ def ultimate_scanner():
 
             last_price = float(close.iloc[-1])
 
-            # Noise filter
+            # Noise Filter
             if not noise_filter(close, volume):
                 continue
 
-            # AI score
+            # Skor hesaplama
             score = ai_score(close, volume)
 
             score += liquidity_score(volume)
@@ -95,13 +94,13 @@ def ultimate_scanner():
             if score < 8:
                 continue
 
-            # Entry setup
+            # Setup kontrol
             entry_type = detect_entry(close, high, low)
 
             if entry_type is None:
                 continue
 
-            # Support
+            # Destek
             support = float(low.tail(20).min())
 
             entry = round(support * 1.01, 2)
@@ -116,6 +115,8 @@ def ultimate_scanner():
 
             confidence = confidence_score(score)
 
+            mega = mega_score(score)
+
             signals.append({
 
                 "ticker": ticker,
@@ -125,12 +126,13 @@ def ultimate_scanner():
                 "stop": stop,
                 "target": target,
                 "score": score,
+                "mega_score": mega,
                 "confidence": confidence,
                 "setup": entry_type
 
             })
 
-            time.sleep(1)
+            time.sleep(0.5)
 
         except Exception as e:
 
@@ -152,6 +154,7 @@ def ultimate_scanner():
             f"Stop: {s['stop']}\n"
             f"Hedef: {s['target']}\n"
             f"AI Skor: {s['score']}/10\n"
+            f"Mega Skor: {s['mega_score']}/100\n"
             f"Güven: %{s['confidence']}"
 
         )
