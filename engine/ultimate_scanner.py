@@ -10,6 +10,7 @@ from engine.multi_timeframe_engine import multi_tf_trend
 from engine.liquidity_engine import liquidity_score
 from engine.orderflow_engine import orderflow_score
 from engine.volatility_engine import volatility_score
+from engine.confidence_engine import confidence_score
 
 
 def get_data(ticker):
@@ -100,6 +101,8 @@ def ultimate_scanner():
             stop = round(support * 0.98, 2)
             target = round(last_price * 1.05, 2)
 
+            confidence = confidence_score(score)
+
             signals.append({
 
                 "ticker": ticker,
@@ -109,6 +112,7 @@ def ultimate_scanner():
                 "stop": stop,
                 "target": target,
                 "score": score,
+                "confidence": confidence,
                 "setup": entry_type
 
             })
@@ -135,7 +139,8 @@ def ultimate_scanner():
             f"Alım: {s['entry']}\n"
             f"Stop: {s['stop']}\n"
             f"Hedef: {s['target']}\n"
-            f"AI Skor: {s['score']}/10"
+            f"AI Skor: {s['score']}/10\n"
+            f"Güven: %{s['confidence']}"
 
         )
 
