@@ -15,16 +15,12 @@ def calculate_entry(df):
 
     price = float(close.iloc[-1])
 
-    # destek
     support = float(close.tail(20).min())
 
-    # entry
     entry = round(support * 1.01, 2)
 
-    # stop
     stop = round(support * 0.97, 2)
 
-    # target RR=3
     target = round(entry + (entry - stop) * 3, 2)
 
     return {
