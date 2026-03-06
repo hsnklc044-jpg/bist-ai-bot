@@ -29,10 +29,14 @@ def get_data(ticker):
             ticker,
             period="5d",
             interval="1h",
-            progress=False
+            progress=False,
+            threads=False
         )
 
         if data is None or data.empty:
+
+            print("⚠ Veri alınamadı:", ticker)
+
             return None
 
         return data
@@ -64,13 +68,14 @@ def ultimate_scanner():
 
             print("Hisse taranıyor:", ticker)
 
-            if not multi_tf_trend(ticker):
-                continue
-
             data = get_data(ticker)
 
+            time.sleep(1)
+
             if data is None:
-                print("⚠ Veri alınamadı:", ticker)
+                continue
+
+            if not multi_tf_trend(ticker):
                 continue
 
             close = data["Close"]
@@ -97,7 +102,6 @@ def ultimate_scanner():
             if score < 8:
                 continue
 
-            # breakout kontrolü
             if not breakout_signal(close, high):
                 continue
 
@@ -138,8 +142,6 @@ def ultimate_scanner():
                 "setup": entry_type
 
             })
-
-            time.sleep(0.5)
 
         except Exception as e:
 
