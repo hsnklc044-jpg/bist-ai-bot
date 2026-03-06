@@ -1,43 +1,39 @@
 import yfinance as yf
 
 
-def get_market_regime():
+def market_regime():
 
     try:
 
-        data = yf.download(
-            "^XU100",
-            period="3mo",
+        df = yf.download(
+            "XU100.IS",
+            period="6mo",
             interval="1d",
             progress=False
         )
 
-        if data is None or data.empty:
-            print("⚠ XU100 verisi alınamadı, piyasa BULL varsayıldı")
-            return "BULL"
+        if df is None or df.empty:
+            return "unknown"
 
-        close = data["Close"]
+        close = df["Close"]
 
-        if len(close) < 50:
-            return "BULL"
+        ma50 = close.rolling(50).mean()
+        ma200 = close.rolling(200).mean()
 
-        ma50 = close.rolling(50).mean().iloc[-1]
-        last = close.iloc[-1]
+        last_close = close.iloc[-1]
+        last_ma50 = ma50.iloc[-1]
+        last_ma200 = ma200.iloc[-1]
 
-        if last > ma50:
+        if last_close > last_ma50 and last_ma50 > last_ma200:
+            return "bull"
 
-            print("📈 Piyasa yükseliş trendinde")
+        if last_close < last_ma50 and last_ma50 < last_ma200:
+            return "bear"
 
-            return "BULL"
-
-        else:
-
-            print("📉 Piyasa düşüş trendinde")
-
-            return "BEAR"
+        return "sideways"
 
     except Exception as e:
 
         print("Market regime error:", e)
 
-        return "BULL"
+        return "unknown"
