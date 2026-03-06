@@ -9,7 +9,7 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 def send_signal(signal):
 
     if BOT_TOKEN is None or CHAT_ID is None:
-        print("Telegram ayarları eksik")
+        print("⚠ Telegram environment variables bulunamadı")
         return
 
     message = f"""
@@ -35,10 +35,16 @@ Stop: {signal['stop']}
 
     try:
 
-        requests.post(url, json=payload)
+        response = requests.post(url, json=payload, timeout=10)
 
-        print("📩 Telegram sinyal gönderildi:", signal["ticker"])
+        if response.status_code == 200:
+
+            print("📩 Telegram sinyal gönderildi:", signal["ticker"])
+
+        else:
+
+            print("⚠ Telegram API hatası:", response.text)
 
     except Exception as e:
 
-        print("Telegram hata:", e)
+        print("❌ Telegram gönderim hatası:", e)
