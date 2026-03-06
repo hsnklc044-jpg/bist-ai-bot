@@ -7,6 +7,8 @@ from engine.bist100 import get_bist100_tickers
 from engine.smart_entry_engine import detect_entry
 from engine.noise_filter_engine import noise_filter
 from engine.multi_timeframe_engine import multi_tf_trend
+from engine.liquidity_engine import liquidity_score
+from engine.orderflow_engine import orderflow_score
 
 
 def get_data(ticker):
@@ -25,7 +27,6 @@ def get_data(ticker):
         return data
 
     except Exception as e:
-
         print("Data error:", ticker, e)
         return None
 
@@ -36,7 +37,6 @@ def ultimate_scanner():
     regime = get_market_regime()
 
     if regime == "BEAR":
-
         print("📉 Piyasa düşüş trendinde. Radar durduruldu.")
         return []
 
@@ -74,7 +74,13 @@ def ultimate_scanner():
             # AI SCORE
             score = ai_score(close, volume)
 
-            if score < 6:
+            # LIQUIDITY
+            score += liquidity_score(volume)
+
+            # ORDER FLOW
+            score += orderflow_score(close, volume)
+
+            if score < 7:
                 continue
 
             # SMART ENTRY
@@ -106,7 +112,6 @@ def ultimate_scanner():
             time.sleep(1)
 
         except Exception as e:
-
             print("Scanner error:", ticker, e)
 
     # EN GÜÇLÜ SİNYALLER
@@ -142,11 +147,9 @@ def run_ultimate_scanner():
     results = ultimate_scanner()
 
     if not results:
-
         print("Radar sinyal bulamadı")
 
     else:
-
         print("Sinyaller bulundu")
 
         for r in results:
