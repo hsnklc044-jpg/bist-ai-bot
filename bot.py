@@ -1,18 +1,91 @@
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+
 import os
-import requests
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+from engine.ultimate_scanner import run_ultimate_scanner
+from engine.support_resistance_engine import get_support_resistance
 
-def send_telegram_message(message):
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+TOKEN = os.getenv("TELEGRAM_TOKEN")
 
-    payload = {
-        "chat_id": CHAT_ID,
-        "text": message
-    }
 
-    response = requests.post(url, data=payload)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
-    print("Telegram response:", response.text)
+    message = (
+
+        "🤖 BIST AI Radar Bot\n\n"
+        "Komutlar:\n"
+        "/radar → Günün radar sinyalleri\n"
+        "/support ASELS → Destek / Direnç"
+
+    )
+
+    await update.message.reply_text(message)
+
+
+async def radar(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    await update.message.reply_text("📡 Radar çalışıyor...")
+
+    results = run_ultimate_scanner()
+
+    if not results:
+
+        await update.message.reply_text("Sinyal bulunamadı")
+
+        return
+
+    for r in results:
+
+        await update.message.reply_text(r)
+
+
+async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    try:
+
+        symbol = context.args[0].upper()
+
+        data = get_support_resistance(symbol)
+
+        if data is None:
+
+            await update.message.reply_text("Hisse bulunamadı")
+
+            return
+
+        message = (
+
+            f"📊 {symbol}\n\n"
+            f"Fiyat: {data['price']}\n"
+            f"Destek: {data['support']}\n"
+            f"Direnç: {data['resistance']}"
+
+        )
+
+        await update.message.reply_text(message)
+
+    except:
+
+        await update.message.reply_text("Kullanım: /support ASELS")
+
+
+def main():
+
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+
+    app.add_handler(CommandHandler("radar", radar))
+
+    app.add_handler(CommandHandler("support", support))
+
+    print("🤖 Telegram bot çalışıyor...")
+
+    app.run_polling()
+
+
+if __name__ == "__main__":
+
+    main()
