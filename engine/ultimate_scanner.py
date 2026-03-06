@@ -14,7 +14,7 @@ from engine.portfolio_engine import is_symbol_active, add_trade
 
 def run_ultimate_scanner():
 
-    print("🚀 BIST AI radar çalışıyor...")
+    print("🚀 BIST QUANT RADAR başlatıldı")
 
     try:
         regime = market_regime()
@@ -24,11 +24,11 @@ def run_ultimate_scanner():
 
     print("Market rejimi:", regime)
 
-    bist_stocks = get_bist_universe()
+    symbols = get_bist_universe()
 
     results = []
 
-    for symbol in bist_stocks:
+    for symbol in symbols:
 
         try:
 
@@ -37,23 +37,23 @@ def run_ultimate_scanner():
 
             print("Hisse taranıyor:", symbol)
 
-            data = yf.download(symbol, period="6mo", progress=False)
+            df = yf.download(symbol, period="6mo", progress=False)
 
-            if data is None or data.empty:
+            if df is None or df.empty:
                 continue
 
-            if not smart_money_signal(data):
+            if not smart_money_signal(df):
                 continue
 
-            if not breakout_signal(data):
+            if not breakout_signal(df):
                 continue
 
-            score = score_stock(data)
+            score = score_stock(df)
 
             if score is None:
                 continue
 
-            entry_data = calculate_entry(data)
+            entry_data = calculate_entry(df)
 
             if entry_data is None:
                 continue
@@ -89,18 +89,18 @@ def run_ultimate_scanner():
 
         except Exception as e:
 
-            print("Scanner hata verdi:", e)
+            print("Scanner hata verdi:", symbol, e)
 
     if len(results) == 0:
 
-        print("Radar sonucu bulunamadı.")
+        print("Sinyal bulunamadı")
         return
 
     results = sorted(results, key=lambda x: x["score"], reverse=True)
 
     results = results[:5]
 
-    message = "🚀 BIST AI TRADE SIGNAL\n\n🔥 TOP SIGNALS\n\n"
+    message = "🚀 BIST QUANT RADAR\n\n🔥 TOP AI SIGNALS\n\n"
 
     for r in results:
 
@@ -126,4 +126,4 @@ Risk Amount: {r['risk_amount']}
 
     send_telegram_message(message)
 
-    print("Radar tamamlandı.")
+    print("Radar tamamlandı")
