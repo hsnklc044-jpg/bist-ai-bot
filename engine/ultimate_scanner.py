@@ -10,7 +10,7 @@ def run_ultimate_scanner():
 
     print("🚀 BIST AI radar çalışıyor...")
 
-    # Market regime
+    # Market rejimi
     try:
         regime = market_regime()
     except Exception as e:
@@ -19,11 +19,23 @@ def run_ultimate_scanner():
 
     print("Market rejimi:", regime)
 
-    # BIST hisseleri (istediğin gibi artırabilirsin)
+    # Taradığımız hisseler
     bist_stocks = [
-        "AEFES.IS","ASELS.IS","BIMAS.IS","EREGL.IS","FROTO.IS",
-        "GARAN.IS","KCHOL.IS","KOZAL.IS","PETKM.IS","SAHOL.IS",
-        "SISE.IS","TCELL.IS","THYAO.IS","TOASO.IS","TUPRS.IS"
+        "AEFES.IS",
+        "ASELS.IS",
+        "BIMAS.IS",
+        "EREGL.IS",
+        "FROTO.IS",
+        "GARAN.IS",
+        "KCHOL.IS",
+        "KOZAL.IS",
+        "PETKM.IS",
+        "SAHOL.IS",
+        "SISE.IS",
+        "TCELL.IS",
+        "THYAO.IS",
+        "TOASO.IS",
+        "TUPRS.IS"
     ]
 
     results = []
@@ -42,7 +54,7 @@ def run_ultimate_scanner():
             close = data["Close"]
             volume = data["Volume"]
 
-            # DataFrame -> Series dönüşümü
+            # DataFrame → Series düzeltmesi
             if isinstance(close, pd.DataFrame):
                 close = close.iloc[:, 0]
 
@@ -62,7 +74,6 @@ def run_ultimate_scanner():
             if score is None:
                 continue
 
-            # AI filtre
             if score >= 70:
 
                 results.append({
@@ -75,7 +86,7 @@ def run_ultimate_scanner():
 
             print("Scanner hata verdi:", e)
 
-    # Sonuçlar
+    # Sonuç yoksa
     if len(results) == 0:
 
         print("Radar sonucu bulunamadı.")
@@ -87,7 +98,9 @@ def run_ultimate_scanner():
 
     for r in results:
 
-        line = f"{r['symbol']}\nAI Score: {r['score']}\nPrice: {round(r['price'],2)}\n\n"
+        symbol = r["symbol"].replace(".IS", "")
+
+        line = f"📈 {symbol}\nScore: {r['score']}\nPrice: {round(r['price'],2)}\n\n"
 
         print(line)
 
@@ -96,6 +109,7 @@ def run_ultimate_scanner():
     # Telegram gönder
     try:
         send_telegram_message(message)
+        print("Telegram mesaj gönderildi")
     except Exception as e:
         print("Telegram gönderim hatası:", e)
 
