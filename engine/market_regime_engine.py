@@ -1,7 +1,7 @@
 import yfinance as yf
 
 
-def get_market_regime():
+def market_regime():
 
     try:
 
@@ -12,6 +12,7 @@ def get_market_regime():
 
         close = data["Close"]
 
+        # MultiIndex düzelt
         if hasattr(close, "columns"):
             close = close.iloc[:, 0]
 
