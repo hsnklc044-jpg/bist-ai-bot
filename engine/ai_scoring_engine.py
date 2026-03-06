@@ -8,12 +8,12 @@ def score_stock(df):
         close = df["Close"]
         volume = df["Volume"]
 
-        # MultiIndex düzelt
+        # Eğer dataframe gelirse seriye çevir
         if isinstance(close, pd.DataFrame):
-            close = close.iloc[:, 0]
+            close = close.squeeze()
 
         if isinstance(volume, pd.DataFrame):
-            volume = volume.iloc[:, 0]
+            volume = volume.squeeze()
 
         close = pd.to_numeric(close, errors="coerce").dropna()
         volume = pd.to_numeric(volume, errors="coerce").dropna()
