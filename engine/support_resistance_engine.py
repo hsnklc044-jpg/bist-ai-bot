@@ -1,23 +1,26 @@
 import yfinance as yf
 
-def calculate_support_resistance(symbol):
 
-    try:
+def get_support_resistance(symbol):
 
-        ticker = f"{symbol}.IS"
+    ticker = yf.download(symbol + ".IS", period="3mo", interval="1d")
 
-        data = yf.download(ticker, period="3mo")
+    if ticker.empty:
+        return None
 
-        if data.empty:
-            return None, None
+    low = ticker["Low"]
+    high = ticker["High"]
+    close = ticker["Close"]
 
-        support = data["Low"].rolling(window=20).min().iloc[-1]
-        resistance = data["High"].rolling(window=20).max().iloc[-1]
+    support = round(low.tail(20).min(), 2)
+    resistance = round(high.tail(20).max(), 2)
 
-        return round(float(support),2), round(float(resistance),2)
+    price = round(close.iloc[-1], 2)
 
-    except Exception as e:
+    return {
 
-        print("Support Resistance error:", e)
+        "price": price,
+        "support": support,
+        "resistance": resistance
 
-        return None, None
+    }
