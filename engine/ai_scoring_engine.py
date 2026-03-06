@@ -1,27 +1,24 @@
 import pandas as pd
 
 
+def _to_series(x):
+    # DataFrame gelirse ilk sütunu al
+    if isinstance(x, pd.DataFrame):
+        x = x.iloc[:, 0]
+    # numpy array vb. gelirse Series'e çevir
+    if not isinstance(x, pd.Series):
+        x = pd.Series(x)
+    return pd.to_numeric(x, errors="coerce").dropna()
+
+
 def score_stock(df):
 
     try:
 
-        close = df["Close"]
-        volume = df["Volume"]
+        close = _to_series(df["Close"])
+        volume = _to_series(df["Volume"])
 
-        # MultiIndex gelirse düzelt
-        if isinstance(close, pd.DataFrame):
-            close = close.iloc[:, 0]
-
-        if isinstance(volume, pd.DataFrame):
-            volume = volume.iloc[:, 0]
-
-        close = pd.to_numeric(close, errors="coerce")
-        volume = pd.to_numeric(volume, errors="coerce")
-
-        close = close.dropna()
-        volume = volume.dropna()
-
-        if len(close) < 50:
+        if len(close) < 60:
             return None
 
         price = close.iloc[-1]
@@ -31,6 +28,7 @@ def score_stock(df):
 
         score = 50
 
+        # trend
         if price > ma20:
             score += 10
 
@@ -40,18 +38,17 @@ def score_stock(df):
         if ma20 > ma50:
             score += 10
 
+        # momentum
         momentum = close.pct_change(10).iloc[-1]
-
         if pd.notna(momentum) and momentum > 0.05:
             score += 10
 
+        # volume spike
         if volume.iloc[-1] > volume.mean():
             score += 10
 
         return int(score)
 
     except Exception as e:
-
         print("AI scoring hata:", e)
-
         return None
