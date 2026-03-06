@@ -5,7 +5,7 @@ def market_regime():
 
     try:
 
-        data = yf.download("^XU100", period="6mo", interval="1d")
+        data = yf.download("^XU100", period="6mo")
 
         if data.empty:
             return "UNKNOWN"
@@ -20,8 +20,8 @@ def market_regime():
 
         if price > ma50:
             return "BULL"
-        else:
-            return "BEAR"
+
+        return "BEAR"
 
     except Exception as e:
 
