@@ -6,6 +6,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 from engine.ultimate_scanner import run_ultimate_scanner
 from engine.support_resistance_engine import get_support_resistance
 from engine.heatmap_engine import get_heatmap
+from engine.market_sentiment_engine import get_market_sentiment
 
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -19,7 +20,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Komutlar:\n"
         "/radar → Günün radar sinyalleri\n"
         "/support ASELS → Destek / Direnç\n"
-        "/heatmap → Günün en güçlü hisseleri"
+        "/heatmap → Günün en güçlü hisseleri\n"
+        "/sentiment → BIST piyasa yönü"
 
     )
 
@@ -94,6 +96,15 @@ async def heatmap(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(message)
 
 
+async def sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    sentiment = get_market_sentiment()
+
+    message = f"📊 BIST Sentiment: {sentiment}"
+
+    await update.message.reply_text(message)
+
+
 def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
@@ -102,6 +113,7 @@ def main():
     app.add_handler(CommandHandler("radar", radar))
     app.add_handler(CommandHandler("support", support))
     app.add_handler(CommandHandler("heatmap", heatmap))
+    app.add_handler(CommandHandler("sentiment", sentiment))
 
     print("🤖 Telegram bot çalışıyor...")
 
