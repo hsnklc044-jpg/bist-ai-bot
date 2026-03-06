@@ -6,12 +6,12 @@ from engine.market_regime_engine import get_market_regime
 from engine.bist100 import get_bist100_tickers
 from engine.smart_entry_engine import detect_entry
 from engine.noise_filter_engine import noise_filter
+from engine.multi_timeframe_engine import multi_tf_trend
 
 
 def get_data(ticker):
 
     try:
-
         stock = yf.Ticker(ticker)
 
         data = stock.history(
@@ -27,19 +27,17 @@ def get_data(ticker):
     except Exception as e:
 
         print("Data error:", ticker, e)
-
         return None
 
 
 def ultimate_scanner():
 
-    # MARKET REGIME KONTROLÜ
+    # MARKET REGIME
     regime = get_market_regime()
 
     if regime == "BEAR":
 
         print("📉 Piyasa düşüş trendinde. Radar durduruldu.")
-
         return []
 
     tickers = get_bist100_tickers()
@@ -52,12 +50,14 @@ def ultimate_scanner():
 
             print("Hisse taranıyor:", ticker)
 
+            # MULTI TIMEFRAME TREND
+            if not multi_tf_trend(ticker):
+                continue
+
             data = get_data(ticker)
 
             if data is None:
-
                 print("⚠ Veri alınamadı:", ticker)
-
                 continue
 
             close = data["Close"]
@@ -83,7 +83,7 @@ def ultimate_scanner():
             if entry_type is None:
                 continue
 
-            # DESTEK
+            # SUPPORT
             support = float(low.tail(20).min())
 
             entry = round(support * 1.01, 2)
@@ -93,8 +93,8 @@ def ultimate_scanner():
             signals.append({
 
                 "ticker": ticker,
-                "price": round(last_price,2),
-                "support": round(support,2),
+                "price": round(last_price, 2),
+                "support": round(support, 2),
                 "entry": entry,
                 "stop": stop,
                 "target": target,
@@ -109,7 +109,7 @@ def ultimate_scanner():
 
             print("Scanner error:", ticker, e)
 
-    # EN GÜÇLÜ SİNYALLERİ SEÇ
+    # EN GÜÇLÜ SİNYALLER
 
     signals = sorted(signals, key=lambda x: x["score"], reverse=True)
 
