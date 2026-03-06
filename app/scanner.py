@@ -4,6 +4,7 @@ from app.bist30 import BIST30
 from engine.ai_scoring_engine import score_stock
 from engine.market_regime_engine import get_market_regime
 
+
 LOOKBACK_PERIOD = "3mo"
 
 
@@ -22,6 +23,10 @@ def download_data(symbol):
             return None
 
         df.dropna(inplace=True)
+
+        # 🔧 yfinance MultiIndex fix
+        if hasattr(df.columns, "levels"):
+            df.columns = df.columns.get_level_values(0)
 
         if len(df) < 60:
             return None
@@ -73,9 +78,9 @@ def run_scanner():
             if score is None:
                 continue
 
-            price = float(df["Close"].iloc[-1])
+            # 🔧 Series -> float fix
+            price = float(df["Close"].iloc[-1].item())
 
-            # güçlü hisseleri filtrele
             if score >= 60:
 
                 results.append({
