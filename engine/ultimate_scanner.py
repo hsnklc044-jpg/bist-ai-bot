@@ -8,6 +8,7 @@ from engine.telegram_engine import send_telegram_message
 from engine.bist_universe import get_bist_universe
 from engine.smart_money_engine import smart_money_signal
 from engine.breakout_engine import breakout_signal
+from engine.risk_engine import calculate_position
 
 
 def run_ultimate_scanner():
@@ -37,24 +38,28 @@ def run_ultimate_scanner():
             if data is None or data.empty:
                 continue
 
-            # SMART MONEY FILTER
             if not smart_money_signal(data):
                 continue
 
-            # BREAKOUT FILTER
             if not breakout_signal(data):
                 continue
 
-            # AI SCORE
             score = score_stock(data)
 
             if score is None:
                 continue
 
-            # ENTRY ENGINE
             entry_data = calculate_entry(data)
 
             if entry_data is None:
+                continue
+
+            risk_data = calculate_position(
+                entry_data["entry"],
+                entry_data["stop"]
+            )
+
+            if risk_data is None:
                 continue
 
             if score >= 70:
@@ -66,7 +71,9 @@ def run_ultimate_scanner():
                     "support": entry_data["support"],
                     "entry": entry_data["entry"],
                     "stop": entry_data["stop"],
-                    "target": entry_data["target"]
+                    "target": entry_data["target"],
+                    "position_size": risk_data["position_size"],
+                    "risk_amount": risk_data["risk_amount"]
                 })
 
         except Exception as e:
@@ -78,17 +85,15 @@ def run_ultimate_scanner():
         print("Radar sonucu bulunamadı.")
         return
 
-    # SCORE SIRALAMA
     results = sorted(results, key=lambda x: x["score"], reverse=True)
 
-    # TOP 5 SIGNAL
     results = results[:5]
 
-    message = "🚀 BIST AI RADAR\n\n🔥 TOP SIGNALS\n\n"
+    message = "🚀 BIST AI TRADE SIGNAL\n\n🔥 TOP SIGNALS\n\n"
 
     for r in results:
 
-        symbol = r["symbol"].replace(".IS", "")
+        symbol = r["symbol"].replace(".IS","")
 
         line = f"""📈 {symbol}
 Score: {r['score']}
@@ -98,6 +103,9 @@ Support: {r['support']}
 Entry: {r['entry']}
 Stop: {r['stop']}
 Target: {r['target']}
+
+Position Size: {r['position_size']}
+Risk Amount: {r['risk_amount']}
 
 """
 
