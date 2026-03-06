@@ -9,6 +9,7 @@ from engine.noise_filter_engine import noise_filter
 from engine.multi_timeframe_engine import multi_tf_trend
 from engine.liquidity_engine import liquidity_score
 from engine.orderflow_engine import orderflow_score
+from engine.volatility_engine import volatility_score
 
 
 def get_data(ticker):
@@ -80,7 +81,10 @@ def ultimate_scanner():
             # ORDER FLOW
             score += orderflow_score(close, volume)
 
-            if score < 7:
+            # VOLATILITY
+            score += volatility_score(close, high, low)
+
+            if score < 8:
                 continue
 
             # SMART ENTRY
