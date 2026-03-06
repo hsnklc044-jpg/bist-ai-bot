@@ -7,6 +7,7 @@ from engine.entry_engine import calculate_entry
 from engine.telegram_engine import send_telegram_message
 from engine.bist_universe import get_bist_universe
 from engine.smart_money_engine import smart_money_signal
+from engine.breakout_engine import breakout_signal
 
 
 def run_ultimate_scanner():
@@ -38,6 +39,10 @@ def run_ultimate_scanner():
 
             # SMART MONEY FILTER
             if not smart_money_signal(data):
+                continue
+
+            # BREAKOUT FILTER
+            if not breakout_signal(data):
                 continue
 
             # AI SCORE
@@ -76,7 +81,7 @@ def run_ultimate_scanner():
     # SCORE SIRALAMA
     results = sorted(results, key=lambda x: x["score"], reverse=True)
 
-    # TOP 5
+    # TOP 5 SIGNAL
     results = results[:5]
 
     message = "🚀 BIST AI RADAR\n\n🔥 TOP SIGNALS\n\n"
