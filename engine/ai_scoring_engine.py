@@ -8,18 +8,14 @@ def score_stock(df):
         close = df["Close"]
         volume = df["Volume"]
 
-        # Eğer DataFrame ise Series'e çevir
         if isinstance(close, pd.DataFrame):
             close = close.iloc[:, 0]
 
         if isinstance(volume, pd.DataFrame):
             volume = volume.iloc[:, 0]
 
-        close = pd.to_numeric(close, errors="coerce")
-        volume = pd.to_numeric(volume, errors="coerce")
-
-        close = close.dropna()
-        volume = volume.dropna()
+        close = pd.to_numeric(close, errors="coerce").dropna()
+        volume = pd.to_numeric(volume, errors="coerce").dropna()
 
         if len(close) < 60:
             return None
