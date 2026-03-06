@@ -1,59 +1,47 @@
-MAX_POSITIONS = 5
-MAX_WEIGHT = 0.35
-MIN_WEIGHT = 0.10
+import json
+import os
+
+PORTFOLIO_FILE = "portfolio.json"
 
 
-def build_portfolio(signals):
+def load_portfolio():
 
-    """
-    signals örneği:
-    [
-        {"symbol": "EREGL", "score": 92},
-        {"symbol": "TUPRS", "score": 88},
-        {"symbol": "ASELS", "score": 84}
-    ]
-    """
-
-    if not signals:
+    if not os.path.exists(PORTFOLIO_FILE):
         return []
 
-    # en yüksek skorlu hisseleri seç
-    signals = sorted(signals, key=lambda x: x["score"], reverse=True)
-    signals = signals[:MAX_POSITIONS]
-
-    total_score = sum(s["score"] for s in signals)
-
-    portfolio = []
-
-    for s in signals:
-
-        weight = s["score"] / total_score
-
-        # risk sınırları
-        if weight > MAX_WEIGHT:
-            weight = MAX_WEIGHT
-
-        if weight < MIN_WEIGHT:
-            weight = MIN_WEIGHT
-
-        portfolio.append({
-            "symbol": s["symbol"],
-            "score": s["score"],
-            "weight": round(weight * 100, 2)
-        })
-
-    return portfolio
+    try:
+        with open(PORTFOLIO_FILE, "r") as f:
+            return json.load(f)
+    except:
+        return []
 
 
-def format_portfolio_message(portfolio):
+def save_portfolio(data):
 
-    if not portfolio:
-        return "Portföy oluşturulamadı."
+    with open(PORTFOLIO_FILE, "w") as f:
+        json.dump(data, f, indent=4)
 
-    message = "📊 AI PORTFÖY ÖNERİSİ\n\n"
 
-    for p in portfolio:
+def is_symbol_active(symbol):
 
-        message += f"{p['symbol']} | %{p['weight']} | score {p['score']}\n"
+    portfolio = load_portfolio()
 
-    return message
+    for trade in portfolio:
+        if trade["symbol"] == symbol:
+            return True
+
+    return False
+
+
+def add_trade(symbol, entry, stop, target):
+
+    portfolio = load_portfolio()
+
+    portfolio.append({
+        "symbol": symbol,
+        "entry": entry,
+        "stop": stop,
+        "target": target
+    })
+
+    save_portfolio(portfolio)
