@@ -1,4 +1,22 @@
 import pandas as pd
+import numpy as np
+
+
+def calculate_rsi(series, period=14):
+
+    delta = series.diff()
+
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+
+    rs = avg_gain / avg_loss
+
+    rsi = 100 - (100 / (1 + rs))
+
+    return rsi
 
 
 def score_stock(df):
@@ -25,8 +43,15 @@ def score_stock(df):
         ma20 = close.rolling(20).mean().iloc[-1]
         ma50 = close.rolling(50).mean().iloc[-1]
 
+        rsi = calculate_rsi(close).iloc[-1]
+
+        momentum = close.pct_change(10).iloc[-1]
+
+        avg_volume = volume.mean()
+
         score = 50
 
+        # Trend
         if price > ma20:
             score += 10
 
@@ -36,13 +61,22 @@ def score_stock(df):
         if ma20 > ma50:
             score += 10
 
-        momentum = close.pct_change(10).iloc[-1]
-
+        # Momentum
         if pd.notna(momentum) and momentum > 0.05:
             score += 10
 
-        if volume.iloc[-1] > volume.mean():
+        # RSI momentum
+        if pd.notna(rsi) and rsi > 55:
+            score += 5
+
+        if pd.notna(rsi) and rsi > 65:
+            score += 5
+
+        # Volume spike
+        if volume.iloc[-1] > avg_volume * 1.5:
             score += 10
+
+        score = min(score, 100)
 
         return int(score)
 
