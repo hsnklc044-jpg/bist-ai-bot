@@ -3,12 +3,14 @@ import pandas as pd
 
 from engine.market_regime_engine import market_regime
 from engine.ai_scoring_engine import score_stock
+from engine.telegram_engine import send_telegram_message
 
 
 def run_ultimate_scanner():
 
     print("🚀 BIST AI radar çalışıyor...")
 
+    # Market regime
     try:
         regime = market_regime()
     except Exception as e:
@@ -17,22 +19,11 @@ def run_ultimate_scanner():
 
     print("Market rejimi:", regime)
 
+    # BIST hisseleri (istediğin gibi artırabilirsin)
     bist_stocks = [
-        "AEFES.IS",
-        "ASELS.IS",
-        "BIMAS.IS",
-        "EREGL.IS",
-        "FROTO.IS",
-        "GARAN.IS",
-        "KCHOL.IS",
-        "KOZAL.IS",
-        "PETKM.IS",
-        "SAHOL.IS",
-        "SISE.IS",
-        "TCELL.IS",
-        "THYAO.IS",
-        "TOASO.IS",
-        "TUPRS.IS"
+        "AEFES.IS","ASELS.IS","BIMAS.IS","EREGL.IS","FROTO.IS",
+        "GARAN.IS","KCHOL.IS","KOZAL.IS","PETKM.IS","SAHOL.IS",
+        "SISE.IS","TCELL.IS","THYAO.IS","TOASO.IS","TUPRS.IS"
     ]
 
     results = []
@@ -71,6 +62,7 @@ def run_ultimate_scanner():
             if score is None:
                 continue
 
+            # AI filtre
             if score >= 70:
 
                 results.append({
@@ -83,22 +75,28 @@ def run_ultimate_scanner():
 
             print("Scanner hata verdi:", e)
 
+    # Sonuçlar
     if len(results) == 0:
 
         print("Radar sonucu bulunamadı.")
+        return
 
-    else:
+    print("Radar sonuçları:")
 
-        print("Radar sonuçları:")
+    message = "🚀 BIST AI RADAR\n\n"
 
-        for r in results:
+    for r in results:
 
-            print(
-                r["symbol"],
-                "score:",
-                r["score"],
-                "price:",
-                r["price"]
-            )
+        line = f"{r['symbol']}\nAI Score: {r['score']}\nPrice: {round(r['price'],2)}\n\n"
+
+        print(line)
+
+        message += line
+
+    # Telegram gönder
+    try:
+        send_telegram_message(message)
+    except Exception as e:
+        print("Telegram gönderim hatası:", e)
 
     print("Radar tamamlandı.")
