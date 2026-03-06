@@ -14,6 +14,7 @@ from engine.smart_money_engine import smart_money_score
 from engine.confidence_engine import confidence_score
 from engine.mega_score_engine import mega_score
 from engine.risk_engine import risk_levels
+from engine.probability_engine import trade_probability
 
 
 def get_data(ticker):
@@ -59,7 +60,6 @@ def ultimate_scanner():
 
             print("Hisse taranıyor:", ticker)
 
-            # Trend filtresi
             if not multi_tf_trend(ticker):
                 continue
 
@@ -76,36 +76,28 @@ def ultimate_scanner():
 
             last_price = float(close.iloc[-1])
 
-            # Noise Filter
             if not noise_filter(close, volume):
                 continue
 
-            # Skor hesaplama
             score = ai_score(close, volume)
 
             score += liquidity_score(volume)
-
             score += orderflow_score(close, volume)
-
             score += volatility_score(close, high, low)
-
             score += smart_money_score(close, volume)
 
             if score < 8:
                 continue
 
-            # Setup kontrol
             entry_type = detect_entry(close, high, low)
 
             if entry_type is None:
                 continue
 
-            # Destek
             support = float(low.tail(20).min())
 
             entry = round(support * 1.01, 2)
 
-            # ATR Risk Engine
             risk = risk_levels(entry, high, low, close)
 
             if risk is None:
@@ -116,6 +108,8 @@ def ultimate_scanner():
             confidence = confidence_score(score)
 
             mega = mega_score(score)
+
+            probability = trade_probability(score, confidence)
 
             signals.append({
 
@@ -128,6 +122,7 @@ def ultimate_scanner():
                 "score": score,
                 "mega_score": mega,
                 "confidence": confidence,
+                "probability": probability,
                 "setup": entry_type
 
             })
@@ -155,8 +150,8 @@ def ultimate_scanner():
             f"Hedef: {s['target']}\n"
             f"AI Skor: {s['score']}/10\n"
             f"Mega Skor: {s['mega_score']}/100\n"
-            f"Güven: %{s['confidence']}"
-
+            f"Güven: %{s['confidence']}\n"
+            f"Trade Probability: %{s['probability']}"
         )
 
         results.append(message)
@@ -179,7 +174,6 @@ def run_ultimate_scanner():
         print("Sinyaller bulundu")
 
         for r in results:
-
             print(r)
 
     return results
