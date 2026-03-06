@@ -7,32 +7,25 @@ def get_market_regime():
 
         symbol = "XU100.IS"
 
-        df = yf.download(
-            symbol,
-            period="6mo",
-            interval="1d",
-            progress=False
-        )
+        df = yf.download(symbol, period="6mo", interval="1d", progress=False)
 
         if df is None or df.empty:
             return "UNKNOWN"
 
-        close = df["Close"]
+        close = df["Close"].astype(float)
 
         if len(close) < 50:
             return "UNKNOWN"
 
-        ma20 = close.rolling(20).mean()
-        ma50 = close.rolling(50).mean()
+        ma20 = close.rolling(20).mean().iloc[-1]
+        ma50 = close.rolling(50).mean().iloc[-1]
 
-        price = float(close.iloc[-1])
-        ma20_last = float(ma20.iloc[-1])
-        ma50_last = float(ma50.iloc[-1])
+        price = close.iloc[-1]
 
-        if price > ma20_last and ma20_last > ma50_last:
+        if price > ma20 and ma20 > ma50:
             return "BULL"
 
-        if price < ma20_last and ma20_last < ma50_last:
+        if price < ma20 and ma20 < ma50:
             return "BEAR"
 
         return "SIDEWAYS"
