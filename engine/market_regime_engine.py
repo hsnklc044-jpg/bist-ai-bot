@@ -1,24 +1,25 @@
 import yfinance as yf
 
-
 def get_market_regime():
 
     try:
 
-        data = yf.Ticker("XU100.IS").history(period="6mo")
+        data = yf.download("^XU100", period="3mo", interval="1d")
+
+        if data is None or data.empty:
+            return "BULL"
 
         close = data["Close"]
 
-        ma50 = close.tail(50).mean()
-        ma200 = close.tail(200).mean()
+        ma50 = close.rolling(50).mean().iloc[-1]
 
-        if ma50 > ma200:
+        last = close.iloc[-1]
+
+        if last > ma50:
             return "BULL"
+        else:
+            return "BEAR"
 
-        return "BEAR"
+    except:
 
-    except Exception as e:
-
-        print("Market regime error:", e)
-
-        return "UNKNOWN"
+        return "BULL"
