@@ -1,35 +1,33 @@
-import pandas as pd
-
-def calculate_atr(high, low, close, period=14):
-
-    df = pd.DataFrame({
-        "high": high,
-        "low": low,
-        "close": close
-    })
-
-    df["prev_close"] = df["close"].shift(1)
-
-    tr1 = df["high"] - df["low"]
-    tr2 = abs(df["high"] - df["prev_close"])
-    tr3 = abs(df["low"] - df["prev_close"])
-
-    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-
-    atr = tr.rolling(period).mean()
-
-    return atr.iloc[-1]
+import os
 
 
-def risk_levels(price, high, low, close):
+def calculate_position(entry, stop):
 
-    atr = calculate_atr(high, low, close)
+    try:
 
-    if atr is None:
+        capital = float(os.getenv("CAPITAL", 100000))
+        risk_percent = float(os.getenv("RISK_PERCENT", 1))
+
+        risk_amount = capital * (risk_percent / 100)
+
+        risk_per_share = abs(entry - stop)
+
+        if risk_per_share == 0:
+            return None
+
+        position_size = risk_amount / risk_per_share
+
+        position_size = round(position_size, 0)
+
+        return {
+            "capital": capital,
+            "risk_percent": risk_percent,
+            "risk_amount": round(risk_amount, 2),
+            "position_size": int(position_size)
+        }
+
+    except Exception as e:
+
+        print("Risk engine error:", e)
+
         return None
-
-    stop = price - (atr * 1.5)
-
-    target = price + (atr * 3)
-
-    return round(stop,2), round(target,2)
