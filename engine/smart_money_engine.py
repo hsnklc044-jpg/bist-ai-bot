@@ -1,24 +1,42 @@
-def smart_money_score(close, volume):
+import pandas as pd
 
-    if len(volume) < 30:
-        return 0
 
-    score = 0
+def smart_money_signal(df):
 
-    # son 5 gün ortalama hacim
-    recent_vol = volume.tail(5).mean()
+    try:
 
-    # önceki 20 gün ortalama hacim
-    old_vol = volume.tail(25).head(20).mean()
+        close = df["Close"]
+        volume = df["Volume"]
 
-    # hacim patlaması
-    if recent_vol > old_vol * 1.7:
-        score += 2
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:,0]
 
-    # fiyat yukarı yönlü mü
-    momentum = close.iloc[-1] / close.iloc[-10]
+        if isinstance(volume, pd.DataFrame):
+            volume = volume.iloc[:,0]
 
-    if momentum > 1.04:
-        score += 2
+        close = pd.to_numeric(close, errors="coerce").dropna()
+        volume = pd.to_numeric(volume, errors="coerce").dropna()
 
-    return score
+        if len(close) < 30:
+            return False
+
+        price = close.iloc[-1]
+
+        ma20 = close.rolling(20).mean().iloc[-1]
+
+        momentum = close.pct_change(5).iloc[-1]
+
+        avg_volume = volume.mean()
+
+        volume_spike = volume.iloc[-1] > avg_volume * 1.5
+
+        if price > ma20 and momentum > 0.03 and volume_spike:
+            return True
+
+        return False
+
+    except Exception as e:
+
+        print("Smart money error:", e)
+
+        return False
