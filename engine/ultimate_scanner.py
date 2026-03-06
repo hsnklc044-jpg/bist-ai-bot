@@ -2,8 +2,9 @@ import yfinance as yf
 import time
 
 from engine.ai_scoring_engine import ai_score
-from engine.bist100 import get_bist100_tickers
 from engine.market_regime_engine import get_market_regime
+from engine.bist100 import get_bist100_tickers
+from engine.smart_entry_engine import detect_entry
 
 
 def get_data(ticker):
@@ -31,7 +32,7 @@ def get_data(ticker):
 
 def ultimate_scanner():
 
-    # MARKET REGIME KONTROLÜ
+    # MARKET REGIME
     regime = get_market_regime()
 
     if regime == "BEAR":
@@ -61,34 +62,41 @@ def ultimate_scanner():
             close = data["Close"]
             volume = data["Volume"]
             low = data["Low"]
+            high = data["High"]
 
             last_price = float(close.iloc[-1])
 
-            # AI skor hesapla
+            # AI SKOR
             score = ai_score(close, volume)
 
-            # destek seviyesi
+            if score < 6:
+                continue
+
+            # SMART ENTRY
+            entry_type = detect_entry(close, high, low)
+
+            if entry_type is None:
+                continue
+
+            # DESTEK
             support = float(low.tail(20).min())
 
-            if score >= 6:
+            entry = round(support * 1.01, 2)
+            stop = round(support * 0.98, 2)
+            target = round(last_price * 1.05, 2)
 
-                entry = round(support * 1.01, 2)
+            signals.append({
 
-                stop = round(support * 0.98, 2)
+                "ticker": ticker,
+                "price": round(last_price,2),
+                "support": round(support,2),
+                "entry": entry,
+                "stop": stop,
+                "target": target,
+                "score": score,
+                "setup": entry_type
 
-                target = round(last_price * 1.05, 2)
-
-                signals.append({
-
-                    "ticker": ticker,
-                    "price": round(last_price,2),
-                    "support": round(support,2),
-                    "entry": entry,
-                    "stop": stop,
-                    "target": target,
-                    "score": score
-
-                })
+            })
 
             time.sleep(1)
 
@@ -107,6 +115,7 @@ def ultimate_scanner():
         message = (
 
             f"🚀 {s['ticker']}\n"
+            f"Setup: {s['setup']}\n"
             f"Fiyat: {s['price']}\n"
             f"Destek: {s['support']}\n"
             f"Alım: {s['entry']}\n"
