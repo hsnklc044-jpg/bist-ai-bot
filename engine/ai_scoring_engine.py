@@ -8,7 +8,7 @@ def score_stock(df):
         close = df["Close"]
         volume = df["Volume"]
 
-        # Eğer dataframe dönerse series'e çevir
+        # MultiIndex gelirse düzelt
         if isinstance(close, pd.DataFrame):
             close = close.iloc[:, 0]
 
