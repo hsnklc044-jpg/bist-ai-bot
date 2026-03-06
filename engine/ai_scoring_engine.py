@@ -7,7 +7,10 @@ def score_stock(df):
         close = df["Close"]
         volume = df["Volume"]
 
+        # son fiyat
         price = float(close.iloc[-1])
+
+        # moving averages
         ma20 = float(close.rolling(20).mean().iloc[-1])
         ma50 = float(close.rolling(50).mean().iloc[-1])
 
