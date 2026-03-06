@@ -6,6 +6,7 @@ from engine.ai_scoring_engine import score_stock
 from engine.entry_engine import calculate_entry
 from engine.telegram_engine import send_telegram_message
 from engine.bist_universe import get_bist_universe
+from engine.smart_money_engine import smart_money_signal
 
 
 def run_ultimate_scanner():
@@ -35,11 +36,17 @@ def run_ultimate_scanner():
             if data is None or data.empty:
                 continue
 
+            # SMART MONEY FILTER
+            if not smart_money_signal(data):
+                continue
+
+            # AI SCORE
             score = score_stock(data)
 
             if score is None:
                 continue
 
+            # ENTRY ENGINE
             entry_data = calculate_entry(data)
 
             if entry_data is None:
@@ -66,15 +73,17 @@ def run_ultimate_scanner():
         print("Radar sonucu bulunamadı.")
         return
 
+    # SCORE SIRALAMA
     results = sorted(results, key=lambda x: x["score"], reverse=True)
 
+    # TOP 5
     results = results[:5]
 
     message = "🚀 BIST AI RADAR\n\n🔥 TOP SIGNALS\n\n"
 
     for r in results:
 
-        symbol = r["symbol"].replace(".IS","")
+        symbol = r["symbol"].replace(".IS", "")
 
         line = f"""📈 {symbol}
 Score: {r['score']}
