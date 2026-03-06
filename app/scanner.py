@@ -4,7 +4,6 @@ from app.bist30 import BIST30
 from engine.ai_scoring_engine import score_stock
 from engine.market_regime_engine import get_market_regime
 
-
 LOOKBACK_PERIOD = "3mo"
 
 
@@ -24,6 +23,9 @@ def download_data(symbol):
 
         df.dropna(inplace=True)
 
+        if len(df) < 60:
+            return None
+
         return df
 
     except Exception as e:
@@ -34,7 +36,7 @@ def download_data(symbol):
 
 def run_scanner():
 
-    print("📡 BIST AI Radar başlıyor...")
+    print("🚀 BIST AI radar çalışıyor...")
 
     results = []
 
@@ -57,17 +59,21 @@ def run_scanner():
 
         ticker = f"{symbol}.IS"
 
+        print("Hisse taranıyor:", ticker)
+
         df = download_data(ticker)
 
         if df is None:
             continue
 
-        if len(df) < 60:
-            continue
-
         try:
 
             score = score_stock(df)
+
+            if score is None:
+                continue
+
+            price = float(df["Close"].iloc[-1])
 
             # güçlü hisseleri filtrele
             if score >= 60:
@@ -75,12 +81,12 @@ def run_scanner():
                 results.append({
                     "symbol": symbol,
                     "score": score,
-                    "price": float(df["Close"].iloc[-1])
+                    "price": price
                 })
 
         except Exception as e:
 
-            print("Skor hesaplanamadı:", symbol, e)
+            print("❌ Scanner hata verdi:", symbol, e)
 
     # SKOR SIRALAMA
     results = sorted(results, key=lambda x: x["score"], reverse=True)
