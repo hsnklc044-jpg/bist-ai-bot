@@ -5,6 +5,7 @@ from engine.ai_scoring_engine import ai_score
 from engine.market_regime_engine import get_market_regime
 from engine.bist100 import get_bist100_tickers
 from engine.smart_entry_engine import detect_entry
+from engine.noise_filter_engine import noise_filter
 
 
 def get_data(ticker):
@@ -32,7 +33,7 @@ def get_data(ticker):
 
 def ultimate_scanner():
 
-    # MARKET REGIME
+    # MARKET REGIME KONTROLÜ
     regime = get_market_regime()
 
     if regime == "BEAR":
@@ -66,7 +67,11 @@ def ultimate_scanner():
 
             last_price = float(close.iloc[-1])
 
-            # AI SKOR
+            # NOISE FILTER
+            if not noise_filter(close, volume):
+                continue
+
+            # AI SCORE
             score = ai_score(close, volume)
 
             if score < 6:
@@ -104,7 +109,7 @@ def ultimate_scanner():
 
             print("Scanner error:", ticker, e)
 
-    # EN GÜÇLÜ SİNYALLER
+    # EN GÜÇLÜ SİNYALLERİ SEÇ
 
     signals = sorted(signals, key=lambda x: x["score"], reverse=True)
 
@@ -145,7 +150,6 @@ def run_ultimate_scanner():
         print("Sinyaller bulundu")
 
         for r in results:
-
             print(r)
 
     return results
