@@ -1,49 +1,35 @@
 import pandas as pd
 
+def calculate_atr(high, low, close, period=14):
 
-def calculate_atr(df, period=14):
+    df = pd.DataFrame({
+        "high": high,
+        "low": low,
+        "close": close
+    })
 
-    high_low = df["High"] - df["Low"]
-    high_close = (df["High"] - df["Close"].shift()).abs()
-    low_close = (df["Low"] - df["Close"].shift()).abs()
+    df["prev_close"] = df["close"].shift(1)
 
-    ranges = pd.concat([high_low, high_close, low_close], axis=1)
+    tr1 = df["high"] - df["low"]
+    tr2 = abs(df["high"] - df["prev_close"])
+    tr3 = abs(df["low"] - df["prev_close"])
 
-    true_range = ranges.max(axis=1)
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-    atr = true_range.rolling(period).mean()
+    atr = tr.rolling(period).mean()
 
-    return atr
+    return atr.iloc[-1]
 
 
-def calculate_trade_levels(df):
+def risk_levels(price, high, low, close):
 
-    try:
+    atr = calculate_atr(high, low, close)
 
-        price = float(df["Close"].iloc[-1])
-
-        atr = calculate_atr(df).iloc[-1]
-
-        if atr is None:
-            return None
-
-        entry = price
-
-        stop = price - (atr * 1.5)
-
-        target = price + (atr * 3)
-
-        rr = (target - entry) / (entry - stop)
-
-        return {
-            "entry": round(entry, 2),
-            "stop": round(stop, 2),
-            "target": round(target, 2),
-            "risk_reward": round(rr, 2)
-        }
-
-    except Exception as e:
-
-        print("Risk hesaplama hatası:", e)
-
+    if atr is None:
         return None
+
+    stop = price - (atr * 1.5)
+
+    target = price + (atr * 3)
+
+    return round(stop,2), round(target,2)
