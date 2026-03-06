@@ -2,6 +2,7 @@ import yfinance as yf
 import pandas as pd
 
 from engine.market_regime_engine import market_regime
+from engine.market_sentiment_engine import get_market_sentiment
 from engine.ai_scoring_engine import score_stock
 from engine.entry_engine import calculate_entry
 from engine.telegram_engine import send_telegram_message
@@ -22,7 +23,14 @@ def run_ultimate_scanner():
         print("Market regime error:", e)
         regime = "UNKNOWN"
 
-    print("Market rejimi:", regime)
+    sentiment = get_market_sentiment()
+
+    print("Market regime:", regime)
+    print("Market sentiment:", sentiment)
+
+    if sentiment == "BEAR":
+        print("Piyasa riskli, tarama durduruldu")
+        return
 
     symbols = get_bist_universe()
 
