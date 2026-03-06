@@ -11,6 +11,7 @@ from engine.liquidity_engine import liquidity_score
 from engine.orderflow_engine import orderflow_score
 from engine.volatility_engine import volatility_score
 from engine.confidence_engine import confidence_score
+from engine.smart_money_engine import smart_money_score
 
 
 def get_data(ticker):
@@ -51,6 +52,7 @@ def ultimate_scanner():
 
             print("Hisse taranıyor:", ticker)
 
+            # Multi timeframe trend
             if not multi_tf_trend(ticker):
                 continue
 
@@ -67,31 +69,39 @@ def ultimate_scanner():
 
             last_price = float(close.iloc[-1])
 
+            # Noise filter
             if not noise_filter(close, volume):
                 continue
 
+            # AI score
             score = ai_score(close, volume)
 
+            # Liquidity
             score += liquidity_score(volume)
 
+            # Order flow
             score += orderflow_score(close, volume)
 
+            # Volatility
             score += volatility_score(close, high, low)
+
+            # Smart money
+            score += smart_money_score(close, volume)
 
             if score < 8:
                 continue
 
+            # Entry setup
             entry_type = detect_entry(close, high, low)
 
             if entry_type is None:
                 continue
 
+            # Support
             support = float(low.tail(20).min())
 
             entry = round(support * 1.01, 2)
-
             stop = round(support * 0.98, 2)
-
             target = round(last_price * 1.05, 2)
 
             confidence = confidence_score(score)
