@@ -1,34 +1,27 @@
 import yfinance as yf
 
 
-def market_regime():
+def get_market_regime():
 
     try:
 
-        symbol = "XU100.IS"
+        data = yf.download("^XU100", period="6mo", interval="1d")
 
-        df = yf.download(symbol, period="6mo", interval="1d", progress=False)
-
-        if df is None or df.empty:
+        if data.empty:
             return "UNKNOWN"
 
-        close = df["Close"].astype(float)
+        close = data["Close"]
 
-        if len(close) < 50:
-            return "UNKNOWN"
+        if hasattr(close, "columns"):
+            close = close.iloc[:, 0]
 
-        ma20 = close.rolling(20).mean().iloc[-1]
         ma50 = close.rolling(50).mean().iloc[-1]
-
         price = close.iloc[-1]
 
-        if price > ma20 and ma20 > ma50:
+        if price > ma50:
             return "BULL"
-
-        if price < ma20 and ma20 < ma50:
+        else:
             return "BEAR"
-
-        return "SIDEWAYS"
 
     except Exception as e:
 
