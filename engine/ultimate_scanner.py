@@ -9,6 +9,7 @@ from engine.bist_universe import get_bist_universe
 from engine.smart_money_engine import smart_money_signal
 from engine.breakout_engine import breakout_signal
 from engine.risk_engine import calculate_position
+from engine.portfolio_engine import is_symbol_active, add_trade
 
 
 def run_ultimate_scanner():
@@ -30,6 +31,9 @@ def run_ultimate_scanner():
     for symbol in bist_stocks:
 
         try:
+
+            if is_symbol_active(symbol):
+                continue
 
             print("Hisse taranıyor:", symbol)
 
@@ -63,6 +67,13 @@ def run_ultimate_scanner():
                 continue
 
             if score >= 70:
+
+                add_trade(
+                    symbol,
+                    entry_data["entry"],
+                    entry_data["stop"],
+                    entry_data["target"]
+                )
 
                 results.append({
                     "symbol": symbol,
