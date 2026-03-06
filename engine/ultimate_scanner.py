@@ -35,11 +35,10 @@ def get_data(ticker):
 
 def ultimate_scanner():
 
-    # MARKET REGIME
     regime = get_market_regime()
 
     if regime == "BEAR":
-        print("📉 Piyasa düşüş trendinde. Radar durduruldu.")
+        print("📉 Piyasa düşüş trendinde radar durduruldu")
         return []
 
     tickers = get_bist100_tickers()
@@ -52,7 +51,6 @@ def ultimate_scanner():
 
             print("Hisse taranıyor:", ticker)
 
-            # MULTI TIMEFRAME TREND
             if not multi_tf_trend(ticker):
                 continue
 
@@ -69,36 +67,31 @@ def ultimate_scanner():
 
             last_price = float(close.iloc[-1])
 
-            # NOISE FILTER
             if not noise_filter(close, volume):
                 continue
 
-            # AI SCORE
             score = ai_score(close, volume)
 
-            # LIQUIDITY
             score += liquidity_score(volume)
 
-            # ORDER FLOW
             score += orderflow_score(close, volume)
 
-            # VOLATILITY
             score += volatility_score(close, high, low)
 
             if score < 8:
                 continue
 
-            # SMART ENTRY
             entry_type = detect_entry(close, high, low)
 
             if entry_type is None:
                 continue
 
-            # SUPPORT
             support = float(low.tail(20).min())
 
             entry = round(support * 1.01, 2)
+
             stop = round(support * 0.98, 2)
+
             target = round(last_price * 1.05, 2)
 
             confidence = confidence_score(score)
@@ -120,9 +113,8 @@ def ultimate_scanner():
             time.sleep(1)
 
         except Exception as e:
-            print("Scanner error:", ticker, e)
 
-    # EN GÜÇLÜ SİNYALLER
+            print("Scanner error:", ticker, e)
 
     signals = sorted(signals, key=lambda x: x["score"], reverse=True)
 
@@ -156,9 +148,11 @@ def run_ultimate_scanner():
     results = ultimate_scanner()
 
     if not results:
+
         print("Radar sinyal bulamadı")
 
     else:
+
         print("Sinyaller bulundu")
 
         for r in results:
