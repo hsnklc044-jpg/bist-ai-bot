@@ -1,10 +1,11 @@
+import os
+
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-import os
-
 from engine.ultimate_scanner import run_ultimate_scanner
 from engine.support_resistance_engine import get_support_resistance
+from engine.heatmap_engine import get_heatmap
 
 
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -17,7 +18,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🤖 BIST AI Radar Bot\n\n"
         "Komutlar:\n"
         "/radar → Günün radar sinyalleri\n"
-        "/support ASELS → Destek / Direnç"
+        "/support ASELS → Destek / Direnç\n"
+        "/heatmap → Günün en güçlü hisseleri"
 
     )
 
@@ -71,15 +73,35 @@ async def support(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Kullanım: /support ASELS")
 
 
+async def heatmap(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
+    await update.message.reply_text("🔥 Heatmap hazırlanıyor...")
+
+    signals = get_heatmap()
+
+    if not signals:
+
+        await update.message.reply_text("Heatmap oluşturulamadı")
+
+        return
+
+    message = "🔥 Günün En Güçlü Hisseleri\n\n"
+
+    for i, s in enumerate(signals, 1):
+
+        message += f"{i}️⃣ {s}\n\n"
+
+    await update.message.reply_text(message)
+
+
 def main():
 
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-
     app.add_handler(CommandHandler("radar", radar))
-
     app.add_handler(CommandHandler("support", support))
+    app.add_handler(CommandHandler("heatmap", heatmap))
 
     print("🤖 Telegram bot çalışıyor...")
 
