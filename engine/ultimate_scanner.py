@@ -2,6 +2,7 @@ import yfinance as yf
 import time
 
 from engine.ai_scoring_engine import ai_score
+from engine.adaptive_score_engine import adaptive_score
 from engine.market_regime_engine import get_market_regime
 from engine.bist100 import get_bist100_tickers
 from engine.smart_entry_engine import detect_entry
@@ -84,6 +85,8 @@ def ultimate_scanner():
 
             score = ai_score(close, volume)
 
+            score += adaptive_score(close, volume)
+
             score += liquidity_score(volume)
             score += orderflow_score(close, volume)
             score += volatility_score(close, high, low)
@@ -94,7 +97,7 @@ def ultimate_scanner():
             if score < 8:
                 continue
 
-            # Breakout kontrolü
+            # breakout kontrolü
             if not breakout_signal(close, high):
                 continue
 
