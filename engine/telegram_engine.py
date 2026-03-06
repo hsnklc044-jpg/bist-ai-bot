@@ -19,7 +19,11 @@ def send_telegram_message(message):
     }
 
     try:
+
         requests.post(url, json=payload)
+
         print("Telegram mesaj gönderildi")
+
     except Exception as e:
+
         print("Telegram hata:", e)
