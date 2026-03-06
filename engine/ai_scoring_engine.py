@@ -1,23 +1,25 @@
 import pandas as pd
 
 
-def _to_series(col):
-    """
-    yfinance bazen MultiIndex/DataFrame döndürür.
-    Bu fonksiyon Close/Volume'u tek Series'e indirger.
-    """
-    if isinstance(col, pd.DataFrame):
-        # ilk kolonu al
-        col = col.iloc[:, 0]
-    return pd.to_numeric(col, errors="coerce")
-
-
 def score_stock(df):
 
     try:
 
-        close = _to_series(df["Close"]).dropna()
-        volume = _to_series(df["Volume"]).dropna()
+        close = df["Close"]
+        volume = df["Volume"]
+
+        # Eğer dataframe dönerse series'e çevir
+        if isinstance(close, pd.DataFrame):
+            close = close.iloc[:, 0]
+
+        if isinstance(volume, pd.DataFrame):
+            volume = volume.iloc[:, 0]
+
+        close = pd.to_numeric(close, errors="coerce")
+        volume = pd.to_numeric(volume, errors="coerce")
+
+        close = close.dropna()
+        volume = volume.dropna()
 
         if len(close) < 50:
             return None
@@ -29,7 +31,6 @@ def score_stock(df):
 
         score = 50
 
-        # trend
         if price > ma20:
             score += 10
 
@@ -39,17 +40,18 @@ def score_stock(df):
         if ma20 > ma50:
             score += 10
 
-        # momentum
         momentum = close.pct_change(10).iloc[-1]
+
         if pd.notna(momentum) and momentum > 0.05:
             score += 10
 
-        # volume spike
         if volume.iloc[-1] > volume.mean():
             score += 10
 
         return int(score)
 
     except Exception as e:
+
         print("AI scoring hata:", e)
+
         return None
