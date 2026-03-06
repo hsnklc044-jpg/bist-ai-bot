@@ -1,18 +1,19 @@
 import pandas as pd
 
+
 def score_stock(df):
 
     try:
 
-        close = df["Close"]
-        volume = df["Volume"]
+        close = df["Close"].astype(float)
+        volume = df["Volume"].astype(float)
 
         # son fiyat
-        price = float(close.iloc[-1])
+        price = close.iloc[-1]
 
         # moving averages
-        ma20 = float(close.rolling(20).mean().iloc[-1])
-        ma50 = float(close.rolling(50).mean().iloc[-1])
+        ma20 = close.rolling(20).mean().iloc[-1]
+        ma50 = close.rolling(50).mean().iloc[-1]
 
         score = 50
 
@@ -36,7 +37,7 @@ def score_stock(df):
         if volume.iloc[-1] > volume.mean():
             score += 10
 
-        return score
+        return int(score)
 
     except Exception as e:
 
