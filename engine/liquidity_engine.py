@@ -12,7 +12,7 @@ def liquidity_score(volume):
     if recent_volume > avg_volume * 1.5:
         score += 2
 
-    # minimum likidite
+    # minimum likidite kontrolü
     if avg_volume > 500000:
         score += 1
 
