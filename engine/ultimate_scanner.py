@@ -1,143 +1,104 @@
 import yfinance as yf
 import pandas as pd
-import time
 
-from engine.bist100 import get_bist100
 from engine.market_regime_engine import market_regime
-from engine.telegram_signal_engine import send_signal
-
-
-def get_data(ticker):
-
-    try:
-
-        df = yf.download(
-            ticker,
-            period="6mo",
-            interval="1d",
-            progress=False,
-            threads=False
-        )
-
-        if df is None or df.empty:
-            print("⚠ Veri alınamadı:", ticker)
-            return None
-
-        time.sleep(1)
-
-        return df
-
-    except Exception as e:
-
-        print("❌ Veri hatası:", ticker, e)
-
-        return None
-
-
-def calculate_support(df):
-
-    recent = df.tail(20)
-
-    support = recent["Low"].min()
-
-    return round(float(support), 2)
-
-
-def calculate_entry(price, support):
-
-    entry = support * 1.02
-
-    return round(entry, 2)
-
-
-def calculate_stop(support):
-
-    stop = support * 0.97
-
-    return round(stop, 2)
-
-
-def calculate_score(df):
-
-    score = 0
-
-    close = df["Close"]
-    volume = df["Volume"]
-
-    ma20 = close.rolling(20).mean()
-    ma50 = close.rolling(50).mean()
-
-    if close.iloc[-1] > ma20.iloc[-1]:
-        score += 2
-
-    if close.iloc[-1] > ma50.iloc[-1]:
-        score += 2
-
-    if volume.iloc[-1] > volume.rolling(20).mean().iloc[-1]:
-        score += 2
-
-    if close.iloc[-1] > close.iloc[-5]:
-        score += 2
-
-    if close.iloc[-1] > close.iloc[-10]:
-        score += 2
-
-    return score
+from engine.ai_scoring_engine import score_stock
 
 
 def run_ultimate_scanner():
 
     print("🚀 BIST AI radar çalışıyor...")
 
-    regime = market_regime()
+    try:
+        regime = market_regime()
+    except Exception as e:
+        print("Market regime error:", e)
+        regime = "UNKNOWN"
 
     print("Market rejimi:", regime)
 
-    tickers = get_bist100()
+    bist_stocks = [
+        "AEFES.IS",
+        "ASELS.IS",
+        "BIMAS.IS",
+        "EREGL.IS",
+        "FROTO.IS",
+        "GARAN.IS",
+        "KCHOL.IS",
+        "KOZAL.IS",
+        "PETKM.IS",
+        "SAHOL.IS",
+        "SISE.IS",
+        "TCELL.IS",
+        "THYAO.IS",
+        "TOASO.IS",
+        "TUPRS.IS"
+    ]
 
-    signals = []
+    results = []
 
-    for ticker in tickers:
+    for symbol in bist_stocks:
 
-        print("Hisse taranıyor:", ticker)
+        try:
 
-        df = get_data(ticker)
+            print("Hisse taranıyor:", symbol)
 
-        if df is None:
-            continue
+            data = yf.download(symbol, period="6mo", progress=False)
 
-        price = round(float(df["Close"].iloc[-1]), 2)
+            if data is None or data.empty:
+                continue
 
-        support = calculate_support(df)
+            close = data["Close"]
+            volume = data["Volume"]
 
-        entry = calculate_entry(price, support)
+            # DataFrame -> Series dönüşümü
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
 
-        stop = calculate_stop(support)
+            if isinstance(volume, pd.DataFrame):
+                volume = volume.iloc[:, 0]
 
-        score = calculate_score(df)
+            close = pd.to_numeric(close, errors="coerce").dropna()
+            volume = pd.to_numeric(volume, errors="coerce").dropna()
 
-        if score >= 6:
+            if len(close) < 60:
+                continue
 
-            signal = {
-                "ticker": ticker.replace(".IS", ""),
-                "price": price,
-                "trend": regime,
-                "score": score,
-                "support": support,
-                "entry": entry,
-                "stop": stop
-            }
+            price = float(close.iloc[-1])
 
-            signals.append(signal)
+            score = score_stock(data)
 
-            send_signal(signal)
+            if score is None:
+                continue
 
-    if len(signals) == 0:
+            if score >= 70:
 
-        print("Radar sinyal bulamadı")
+                results.append({
+                    "symbol": symbol,
+                    "price": price,
+                    "score": score
+                })
+
+        except Exception as e:
+
+            print("Scanner hata verdi:", e)
+
+    if len(results) == 0:
+
+        print("Radar sonucu bulunamadı.")
 
     else:
 
-        print("Bulunan sinyaller:", len(signals))
+        print("Radar sonuçları:")
 
-    print("✅ Tarama tamamlandı")
+        for r in results:
+
+            print(
+                r["symbol"],
+                "score:",
+                r["score"],
+                "price:",
+                r["price"]
+            )
+
+    print("Radar tamamlandı.")
