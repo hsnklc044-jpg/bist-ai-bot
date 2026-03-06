@@ -12,7 +12,6 @@ def market_regime():
 
         close = data["Close"]
 
-        # MultiIndex düzelt
         if hasattr(close, "columns"):
             close = close.iloc[:, 0]
 
