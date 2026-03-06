@@ -5,28 +5,32 @@ def get_market_sentiment():
 
     try:
 
-        data = yf.download(
-            "XU100.IS",
-            period="3mo",
-            interval="1d",
-            progress=False
-        )
+        bist = yf.download("^XU100", period="3mo", progress=False)
+        sp500 = yf.download("^GSPC", period="3mo", progress=False)
 
-        if data.empty:
-            return "UNKNOWN"
+        if bist.empty or sp500.empty:
+            return "NEUTRAL"
 
-        close = data["Close"]
+        bist_close = bist["Close"]
+        sp_close = sp500["Close"]
 
-        ma20 = close.rolling(20).mean().iloc[-1]
-        ma50 = close.rolling(50).mean().iloc[-1]
+        if hasattr(bist_close, "columns"):
+            bist_close = bist_close.iloc[:,0]
 
-        last_price = close.iloc[-1]
+        if hasattr(sp_close, "columns"):
+            sp_close = sp_close.iloc[:,0]
 
-        if last_price > ma20 and ma20 > ma50:
-            return "BULLISH"
+        bist_ma = bist_close.rolling(50).mean().iloc[-1]
+        sp_ma = sp_close.rolling(50).mean().iloc[-1]
 
-        if last_price < ma20 and ma20 < ma50:
-            return "BEARISH"
+        bist_price = bist_close.iloc[-1]
+        sp_price = sp_close.iloc[-1]
+
+        if bist_price > bist_ma and sp_price > sp_ma:
+            return "BULL"
+
+        if bist_price < bist_ma and sp_price < sp_ma:
+            return "BEAR"
 
         return "NEUTRAL"
 
@@ -34,4 +38,4 @@ def get_market_sentiment():
 
         print("Sentiment error:", e)
 
-        return "UNKNOWN"
+        return "NEUTRAL"
