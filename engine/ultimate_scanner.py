@@ -11,6 +11,7 @@ from engine.liquidity_engine import liquidity_score
 from engine.orderflow_engine import orderflow_score
 from engine.volatility_engine import volatility_score
 from engine.smart_money_engine import smart_money_score
+from engine.institutional_flow_engine import institutional_flow
 from engine.confidence_engine import confidence_score
 from engine.mega_score_engine import mega_score
 from engine.risk_engine import risk_levels
@@ -85,6 +86,7 @@ def ultimate_scanner():
             score += orderflow_score(close, volume)
             score += volatility_score(close, high, low)
             score += smart_money_score(close, volume)
+            score += institutional_flow(volume, close)
 
             if score < 8:
                 continue
