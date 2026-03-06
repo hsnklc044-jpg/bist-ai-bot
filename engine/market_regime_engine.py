@@ -1,39 +1,49 @@
 import yfinance as yf
 
 
-def market_regime():
+def get_market_regime():
 
     try:
 
+        # BIST100 index
+        symbol = "XU100.IS"
+
         df = yf.download(
-            "XU100.IS",
+            symbol,
             period="6mo",
             interval="1d",
             progress=False
         )
 
         if df is None or df.empty:
-            return "unknown"
+            return "UNKNOWN"
 
         close = df["Close"]
 
+        if len(close) < 50:
+            return "UNKNOWN"
+
+        # moving averages
+        ma20 = close.rolling(20).mean()
         ma50 = close.rolling(50).mean()
-        ma200 = close.rolling(200).mean()
 
-        last_close = close.iloc[-1]
-        last_ma50 = ma50.iloc[-1]
-        last_ma200 = ma200.iloc[-1]
+        price = float(close.iloc[-1])
+        ma20_last = float(ma20.iloc[-1])
+        ma50_last = float(ma50.iloc[-1])
 
-        if last_close > last_ma50 and last_ma50 > last_ma200:
-            return "bull"
+        # BULL market
+        if price > ma20_last and ma20_last > ma50_last:
+            return "BULL"
 
-        if last_close < last_ma50 and last_ma50 < last_ma200:
-            return "bear"
+        # BEAR market
+        if price < ma20_last and ma20_last < ma50_last:
+            return "BEAR"
 
-        return "sideways"
+        # otherwise sideways
+        return "SIDEWAYS"
 
     except Exception as e:
 
         print("Market regime error:", e)
 
-        return "unknown"
+        return "UNKNOWN"
