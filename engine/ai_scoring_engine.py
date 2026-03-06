@@ -1,49 +1,42 @@
 import pandas as pd
 
-
-def ai_score(df):
-
-    score = 0
+def score_stock(df):
 
     try:
 
         close = df["Close"]
+        volume = df["Volume"]
 
-        ma20 = close.rolling(20).mean()
-        ma50 = close.rolling(50).mean()
+        price = float(close.iloc[-1])
+        ma20 = float(close.rolling(20).mean().iloc[-1])
+        ma50 = float(close.rolling(50).mean().iloc[-1])
 
-        last_close = close.iloc[-1]
-        last_ma20 = ma20.iloc[-1]
-        last_ma50 = ma50.iloc[-1]
+        score = 50
 
-        # Trend kontrolü
-        if last_close > last_ma20:
-            score += 1
+        # trend
+        if price > ma20:
+            score += 10
 
-        if last_close > last_ma50:
-            score += 1
+        if price > ma50:
+            score += 10
 
-        # Momentum
-        if ma20.iloc[-1] > ma20.iloc[-2]:
-            score += 1
+        if ma20 > ma50:
+            score += 10
 
-        if ma50.iloc[-1] > ma50.iloc[-2]:
-            score += 1
+        # momentum
+        momentum = close.pct_change(10).iloc[-1]
 
-        # Higher high kontrolü
-        recent_high = close.tail(20).max()
+        if momentum > 0.05:
+            score += 10
 
-        if last_close >= recent_high * 0.97:
-            score += 2
+        # volume spike
+        if volume.iloc[-1] > volume.mean():
+            score += 10
 
-        # Dipten dönüş
-        recent_low = close.tail(20).min()
-
-        if last_close > recent_low * 1.05:
-            score += 1
+        return score
 
     except Exception as e:
 
-        print("AI scoring error:", e)
+        print("AI scoring hata:", e)
 
-    return score
+        return None
