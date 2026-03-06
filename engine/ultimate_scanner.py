@@ -3,6 +3,7 @@ import pandas as pd
 
 from engine.market_regime_engine import market_regime
 from engine.ai_scoring_engine import score_stock
+from engine.entry_engine import calculate_entry
 from engine.telegram_engine import send_telegram_message
 
 
@@ -10,7 +11,6 @@ def run_ultimate_scanner():
 
     print("🚀 BIST AI radar çalışıyor...")
 
-    # Market rejimi
     try:
         regime = market_regime()
     except Exception as e:
@@ -19,23 +19,10 @@ def run_ultimate_scanner():
 
     print("Market rejimi:", regime)
 
-    # Taradığımız hisseler
     bist_stocks = [
-        "AEFES.IS",
-        "ASELS.IS",
-        "BIMAS.IS",
-        "EREGL.IS",
-        "FROTO.IS",
-        "GARAN.IS",
-        "KCHOL.IS",
-        "KOZAL.IS",
-        "PETKM.IS",
-        "SAHOL.IS",
-        "SISE.IS",
-        "TCELL.IS",
-        "THYAO.IS",
-        "TOASO.IS",
-        "TUPRS.IS"
+        "AEFES.IS","ASELS.IS","BIMAS.IS","EREGL.IS","FROTO.IS",
+        "GARAN.IS","KCHOL.IS","KOZAL.IS","PETKM.IS","SAHOL.IS",
+        "SISE.IS","TCELL.IS","THYAO.IS","TOASO.IS","TUPRS.IS"
     ]
 
     results = []
@@ -51,42 +38,32 @@ def run_ultimate_scanner():
             if data is None or data.empty:
                 continue
 
-            close = data["Close"]
-            volume = data["Volume"]
-
-            # DataFrame → Series düzeltmesi
-            if isinstance(close, pd.DataFrame):
-                close = close.iloc[:, 0]
-
-            if isinstance(volume, pd.DataFrame):
-                volume = volume.iloc[:, 0]
-
-            close = pd.to_numeric(close, errors="coerce").dropna()
-            volume = pd.to_numeric(volume, errors="coerce").dropna()
-
-            if len(close) < 60:
-                continue
-
-            price = float(close.iloc[-1])
-
             score = score_stock(data)
 
             if score is None:
+                continue
+
+            entry_data = calculate_entry(data)
+
+            if entry_data is None:
                 continue
 
             if score >= 70:
 
                 results.append({
                     "symbol": symbol,
-                    "price": price,
-                    "score": score
+                    "score": score,
+                    "price": entry_data["price"],
+                    "support": entry_data["support"],
+                    "entry": entry_data["entry"],
+                    "stop": entry_data["stop"],
+                    "target": entry_data["target"]
                 })
 
         except Exception as e:
 
             print("Scanner hata verdi:", e)
 
-    # Sonuç yoksa
     if len(results) == 0:
 
         print("Radar sonucu bulunamadı.")
@@ -94,23 +71,27 @@ def run_ultimate_scanner():
 
     print("Radar sonuçları:")
 
-    message = "🚀 BIST AI RADAR\n\n"
+    message = "🚀 BIST AI SIGNAL\n\n"
 
     for r in results:
 
-        symbol = r["symbol"].replace(".IS", "")
+        symbol = r["symbol"].replace(".IS","")
 
-        line = f"📈 {symbol}\nScore: {r['score']}\nPrice: {round(r['price'],2)}\n\n"
+        line = f"""📈 {symbol}
+Score: {r['score']}
+Price: {r['price']}
+
+Support: {r['support']}
+Entry: {r['entry']}
+Stop: {r['stop']}
+Target: {r['target']}
+
+"""
 
         print(line)
 
         message += line
 
-    # Telegram gönder
-    try:
-        send_telegram_message(message)
-        print("Telegram mesaj gönderildi")
-    except Exception as e:
-        print("Telegram gönderim hatası:", e)
+    send_telegram_message(message)
 
     print("Radar tamamlandı.")
