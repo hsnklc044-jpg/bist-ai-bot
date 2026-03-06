@@ -1,53 +1,49 @@
 import pandas as pd
 
 
-def rsi(series, period=14):
-
-    delta = series.diff()
-
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-
-    rs = avg_gain / avg_loss
-
-    rsi = 100 - (100 / (1 + rs))
-
-    return rsi
-
-
-def ai_score(close, volume):
+def ai_score(df):
 
     score = 0
 
-    # TREND
-    ma20 = close.tail(20).mean()
-    ma50 = close.tail(50).mean()
+    try:
 
-    if ma20 > ma50:
-        score += 3
+        close = df["Close"]
 
-    # MOMENTUM
-    if close.iloc[-1] > close.iloc[-5]:
-        score += 2
+        ma20 = close.rolling(20).mean()
+        ma50 = close.rolling(50).mean()
 
-    # HACİM PATLAMASI
-    avg_volume = volume.tail(20).mean()
-    last_volume = volume.iloc[-1]
+        last_close = close.iloc[-1]
+        last_ma20 = ma20.iloc[-1]
+        last_ma50 = ma50.iloc[-1]
 
-    if last_volume > avg_volume * 1.5:
-        score += 2
+        # Trend kontrolü
+        if last_close > last_ma20:
+            score += 1
 
-    # RSI
-    rsi_val = rsi(close).iloc[-1]
+        if last_close > last_ma50:
+            score += 1
 
-    if rsi_val > 55:
-        score += 2
+        # Momentum
+        if ma20.iloc[-1] > ma20.iloc[-2]:
+            score += 1
 
-    # PULLBACK
-    if close.iloc[-1] < close.max():
-        score += 1
+        if ma50.iloc[-1] > ma50.iloc[-2]:
+            score += 1
+
+        # Higher high kontrolü
+        recent_high = close.tail(20).max()
+
+        if last_close >= recent_high * 0.97:
+            score += 2
+
+        # Dipten dönüş
+        recent_low = close.tail(20).min()
+
+        if last_close > recent_low * 1.05:
+            score += 1
+
+    except Exception as e:
+
+        print("AI scoring error:", e)
 
     return score
