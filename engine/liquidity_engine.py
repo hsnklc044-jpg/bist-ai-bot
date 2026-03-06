@@ -1,26 +1,22 @@
-def check_liquidity(df):
+def liquidity_score(volume):
 
-    try:
+    if len(volume) < 30:
+        return 0
 
-        avg_volume = df["Volume"].rolling(30).mean().iloc[-1]
+    avg_volume = volume.tail(20).mean()
 
-        current_volume = df["Volume"].iloc[-1]
+    last_volume = volume.iloc[-1]
 
-        price = df["Close"].iloc[-1]
+    score = 0
 
-        # yaklaşık günlük TL hacim
-        daily_value = current_volume * price
+    # hacim spike
+    if last_volume > avg_volume * 2:
+        score += 3
 
-        if avg_volume < 300000:
-            return False
+    elif last_volume > avg_volume * 1.5:
+        score += 2
 
-        if daily_value < 50_000_000:
-            return False
+    elif last_volume > avg_volume * 1.2:
+        score += 1
 
-        return True
-
-    except Exception as e:
-
-        print("Liquidity error:", e)
-
-        return False
+    return score
