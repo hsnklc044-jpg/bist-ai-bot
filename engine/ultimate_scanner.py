@@ -10,13 +10,15 @@ from engine.multi_timeframe_engine import multi_tf_trend
 from engine.liquidity_engine import liquidity_score
 from engine.orderflow_engine import orderflow_score
 from engine.volatility_engine import volatility_score
-from engine.confidence_engine import confidence_score
 from engine.smart_money_engine import smart_money_score
+from engine.confidence_engine import confidence_score
+from engine.risk_engine import risk_levels
 
 
 def get_data(ticker):
 
     try:
+
         stock = yf.Ticker(ticker)
 
         data = stock.history(
@@ -30,7 +32,9 @@ def get_data(ticker):
         return data
 
     except Exception as e:
+
         print("Data error:", ticker, e)
+
         return None
 
 
@@ -39,7 +43,9 @@ def ultimate_scanner():
     regime = get_market_regime()
 
     if regime == "BEAR":
+
         print("📉 Piyasa düşüş trendinde radar durduruldu")
+
         return []
 
     tickers = get_bist100_tickers()
@@ -59,7 +65,9 @@ def ultimate_scanner():
             data = get_data(ticker)
 
             if data is None:
+
                 print("⚠ Veri alınamadı:", ticker)
+
                 continue
 
             close = data["Close"]
@@ -76,16 +84,12 @@ def ultimate_scanner():
             # AI score
             score = ai_score(close, volume)
 
-            # Liquidity
             score += liquidity_score(volume)
 
-            # Order flow
             score += orderflow_score(close, volume)
 
-            # Volatility
             score += volatility_score(close, high, low)
 
-            # Smart money
             score += smart_money_score(close, volume)
 
             if score < 8:
@@ -101,8 +105,14 @@ def ultimate_scanner():
             support = float(low.tail(20).min())
 
             entry = round(support * 1.01, 2)
-            stop = round(support * 0.98, 2)
-            target = round(last_price * 1.05, 2)
+
+            # ATR Risk Engine
+            risk = risk_levels(entry, high, low, close)
+
+            if risk is None:
+                continue
+
+            stop, target = risk
 
             confidence = confidence_score(score)
 
@@ -166,6 +176,7 @@ def run_ultimate_scanner():
         print("Sinyaller bulundu")
 
         for r in results:
+
             print(r)
 
     return results
