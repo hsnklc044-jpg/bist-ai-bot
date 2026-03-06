@@ -1,7 +1,7 @@
 import yfinance as yf
 
 
-def get_market_regime():
+def market_regime():
 
     try:
 
