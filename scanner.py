@@ -6,6 +6,8 @@ from quant_engine import ai_score
 from smart_money import smart_money_flow
 from bist_symbols import BIST_SYMBOLS
 from momentum_engine import momentum_score
+from pattern_engine import detect_pattern
+from timeframe_engine import timeframe_trend
 
 
 def scan_market():
@@ -33,6 +35,10 @@ def scan_market():
 
             momentum = momentum_score(data)
 
+            pattern = detect_pattern(data)
+
+            tf_trend = timeframe_trend(ticker)
+
             support, resistance = support_resistance(data)
 
             entry = support * 1.01
@@ -48,6 +54,8 @@ def scan_market():
                 "ticker": ticker.replace(".IS",""),
                 "score": score,
                 "momentum": momentum,
+                "pattern": pattern,
+                "timeframe": tf_trend,
                 "rsi": round(rsi,2),
                 "volume_spike": round(vol,2),
                 "breakout": bo,
