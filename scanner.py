@@ -1,8 +1,7 @@
 import yfinance as yf
-import pandas as pd
 from ta.momentum import RSIIndicator
 
-# BIST hisseleri (ilk versiyon - en büyükler)
+# Büyük BIST hisseleri
 BIST_LIST = [
     "AKBNK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS","EREGL.IS",
     "FROTO.IS","GARAN.IS","HEKTS.IS","ISCTR.IS","KCHOL.IS",
@@ -29,6 +28,28 @@ def calculate_trend(data):
     price = data["Close"].iloc[-1]
 
     return price > ma20
+
+
+def calculate_trade_levels(data):
+
+    support = data["Low"].rolling(20).min().iloc[-1]
+    resistance = data["High"].rolling(20).max().iloc[-1]
+
+    entry = support * 1.01
+    stop = support * 0.97
+    target = resistance
+
+    risk = ((entry - stop) / entry) * 100
+    reward = ((target - entry) / entry) * 100
+
+    return {
+        "support": round(support,2),
+        "entry": round(entry,2),
+        "stop": round(stop,2),
+        "target": round(target,2),
+        "risk": round(risk,2),
+        "reward": round(reward,2)
+    }
 
 
 def calculate_score(rsi, volume_spike, trend):
@@ -68,11 +89,20 @@ def scan_market():
 
             score = calculate_score(rsi, volume_spike, trend)
 
+            levels = calculate_trade_levels(data)
+
             signals.append({
                 "ticker": ticker.replace(".IS",""),
                 "score": int(score),
                 "rsi": round(rsi,2),
-                "volume_spike": round(volume_spike,2)
+                "volume_spike": round(volume_spike,2),
+
+                "support": levels["support"],
+                "entry": levels["entry"],
+                "stop": levels["stop"],
+                "target": levels["target"],
+                "risk": levels["risk"],
+                "reward": levels["reward"]
             })
 
         except Exception as e:
