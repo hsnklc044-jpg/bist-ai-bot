@@ -1,6 +1,7 @@
 import yfinance as yf
 import pandas as pd
 from ta.momentum import RSIIndicator
+from ai_engine import ai_score
 
 BIST_LIST = [
     "EREGL.IS",
@@ -10,20 +11,18 @@ BIST_LIST = [
     "KCHOL.IS",
     "ASELS.IS",
     "SISE.IS",
-    "BIMAS.IS",
+    "BIMAS.IS"
 ]
 
 def scan_market():
 
-    results = []
+    signals = []
 
     for ticker in BIST_LIST:
 
         try:
-            data = yf.download(ticker, period="3mo", interval="1d")
 
-            if len(data) < 20:
-                continue
+            data = yf.download(ticker, period="3mo")
 
             rsi = RSIIndicator(data["Close"]).rsi().iloc[-1]
 
@@ -32,27 +31,20 @@ def scan_market():
 
             volume_spike = volume_today / volume_avg
 
-            score = 0
+            trend = data["Close"].iloc[-1] > data["Close"].rolling(20).mean().iloc[-1]
 
-            if rsi < 35:
-                score += 40
+            score = ai_score(rsi, volume_spike, trend)
 
-            if volume_spike > 1.5:
-                score += 40
-
-            if data["Close"].iloc[-1] > data["Close"].rolling(20).mean().iloc[-1]:
-                score += 20
-
-            results.append({
+            signals.append({
                 "ticker": ticker.replace(".IS",""),
+                "score": score,
                 "rsi": round(rsi,2),
-                "volume_spike": round(volume_spike,2),
-                "score": score
+                "volume_spike": round(volume_spike,2)
             })
 
         except:
             pass
 
-    results = sorted(results, key=lambda x: x["score"], reverse=True)
+    signals = sorted(signals, key=lambda x: x["score"], reverse=True)
 
-    return results[:3]
+    return signals[:5]
