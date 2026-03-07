@@ -2,10 +2,14 @@ import requests
 import time
 import os
 
-# Render environment variables
+# Environment variables
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
+print("==== DEBUG BILGILERI ====")
+print("TOKEN:", TOKEN)
+print("CHAT_ID:", CHAT_ID)
+print("=========================")
 
 def send_telegram(msg):
     try:
@@ -15,6 +19,8 @@ def send_telegram(msg):
             "chat_id": CHAT_ID,
             "text": msg
         }
+
+        print("API URL:", url)
 
         r = requests.post(url, data=data)
 
@@ -26,12 +32,10 @@ def send_telegram(msg):
 
 def run_bot():
     print("BIST AI Bot çalışıyor...")
-    send_telegram("🤖 BIST AI Bot aktif ve çalışıyor!")
+    send_telegram("🤖 BIST AI Bot test mesajı")
 
 
 if __name__ == "__main__":
     print("Bot başlatıldı")
 
-    while True:
-        run_bot()
-        time.sleep(3600)  # 1 saat
+    run_bot()
