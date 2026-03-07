@@ -1,7 +1,6 @@
 import yfinance as yf
 from ta.momentum import RSIIndicator
 
-# Büyük BIST hisseleri
 BIST_LIST = [
     "AKBNK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS","EREGL.IS",
     "FROTO.IS","GARAN.IS","HEKTS.IS","ISCTR.IS","KCHOL.IS",
@@ -30,6 +29,14 @@ def calculate_trend(data):
     return price > ma20
 
 
+def breakout_signal(data):
+
+    high_20 = data["High"].rolling(20).max().iloc[-2]
+    price = data["Close"].iloc[-1]
+
+    return price > high_20
+
+
 def calculate_trade_levels(data):
 
     support = data["Low"].rolling(20).min().iloc[-1]
@@ -52,18 +59,21 @@ def calculate_trade_levels(data):
     }
 
 
-def calculate_score(rsi, volume_spike, trend):
+def calculate_score(rsi, volume_spike, trend, breakout):
 
     score = 0
 
     if rsi < 35:
-        score += 40
+        score += 30
 
     if volume_spike > 1.5:
-        score += 30
+        score += 25
 
     if trend:
-        score += 30
+        score += 20
+
+    if breakout:
+        score += 25
 
     return score
 
@@ -87,7 +97,9 @@ def scan_market():
 
             trend = calculate_trend(data)
 
-            score = calculate_score(rsi, volume_spike, trend)
+            breakout = breakout_signal(data)
+
+            score = calculate_score(rsi, volume_spike, trend, breakout)
 
             levels = calculate_trade_levels(data)
 
@@ -96,6 +108,7 @@ def scan_market():
                 "score": int(score),
                 "rsi": round(rsi,2),
                 "volume_spike": round(volume_spike,2),
+                "breakout": breakout,
 
                 "support": levels["support"],
                 "entry": levels["entry"],
