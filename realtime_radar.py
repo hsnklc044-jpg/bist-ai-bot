@@ -1,24 +1,16 @@
 import time
+from radar_handler import run_radar_cycle
 
-from system_launcher import run_system
-
-
-SCAN_INTERVAL = 300  # saniye (5 dakika)
+SCAN_INTERVAL = 300
 
 
 def start_radar():
 
-    print("📡 REAL-TIME TRADING RADAR STARTED")
+    print("🚀 AI TRADING RADAR STARTED")
 
     while True:
 
-        try:
-
-            run_system()
-
-        except Exception as e:
-
-            print("Radar error:", e)
+        run_radar_cycle()
 
         print("Next scan in", SCAN_INTERVAL, "seconds")
 
