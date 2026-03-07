@@ -54,6 +54,8 @@ def build_message(signals, regime, sector, risk, portfolio):
 📈 {s['ticker']}
 
 AI Score: {s['score']}
+AI Rank: {s['rank']}
+
 Momentum: {s['momentum']}
 
 Pattern: {s['pattern']}
