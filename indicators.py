@@ -1,24 +1,36 @@
-# indicators.py
-
 import pandas as pd
 
-def add_indicators(df):
 
-    df["EMA20"] = df["Close"].ewm(span=20).mean()
-    df["EMA50"] = df["Close"].ewm(span=50).mean()
-    df["EMA200"] = df["Close"].ewm(span=200).mean()
+def volume_spike(data):
 
-    delta = df["Close"].diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
+    vol_today = data["Volume"].iloc[-1]
+    vol_avg = data["Volume"].rolling(20).mean().iloc[-1]
 
-    avg_gain = gain.rolling(14).mean()
-    avg_loss = loss.rolling(14).mean()
+    if vol_avg == 0:
+        return 0
 
-    rs = avg_gain / avg_loss
-    df["RSI"] = 100 - (100 / (1 + rs))
+    return vol_today / vol_avg
 
-    df["Volume_MA20"] = df["Volume"].rolling(20).mean()
-    df["RelVolume"] = df["Volume"] / df["Volume_MA20"]
 
-    return df
+def trend_filter(data):
+
+    ma20 = data["Close"].rolling(20).mean().iloc[-1]
+    price = data["Close"].iloc[-1]
+
+    return price > ma20
+
+
+def breakout(data):
+
+    high20 = data["High"].rolling(20).max().iloc[-2]
+    price = data["Close"].iloc[-1]
+
+    return price > high20
+
+
+def support_resistance(data):
+
+    support = data["Low"].rolling(20).min().iloc[-1]
+    resistance = data["High"].rolling(20).max().iloc[-1]
+
+    return support, resistance
