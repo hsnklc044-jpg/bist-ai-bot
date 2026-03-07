@@ -34,7 +34,9 @@ def record_signal(ticker, score):
 
     entry["count"] += 1
 
-    entry["avg_score"] = ((entry["avg_score"] * (entry["count"] - 1)) + score) / entry["count"]
+    entry["avg_score"] = (
+        (entry["avg_score"] * (entry["count"] - 1)) + score
+    ) / entry["count"]
 
     data[ticker] = entry
 
