@@ -6,6 +6,7 @@ from market_regime import get_market_regime
 from sector_rotation import get_strong_sector
 from crash_detector import market_risk
 from risk_manager import position_size
+from portfolio_builder import build_portfolio
 
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
@@ -32,7 +33,7 @@ def send_telegram(message):
         print("Telegram gönderim hatası:", e)
 
 
-def build_message(signals, regime, sector, risk):
+def build_message(signals, regime, sector, risk, portfolio):
 
     message = f"""
 🚀 BIST QUANT RADAR
@@ -53,6 +54,7 @@ def build_message(signals, regime, sector, risk):
 📈 {s['ticker']}
 
 AI Score: {s['score']}
+Momentum: {s['momentum']}
 
 Breakout: {s['breakout']}
 Smart Money: {s['smart_money']}
@@ -68,6 +70,12 @@ Lot Size: {lot}
 
 -----------------------
 """
+
+    message += "\n📊 PORTFOLIO SUGGESTION\n"
+
+    for p in portfolio:
+
+        message += f"{p['ticker']} : %{p['weight']}\n"
 
     return message
 
@@ -99,7 +107,9 @@ def run_bot():
 
             return
 
-        message = build_message(signals, regime, sector, risk)
+        portfolio = build_portfolio(signals)
+
+        message = build_message(signals, regime, sector, risk, portfolio)
 
         send_telegram(message)
 
