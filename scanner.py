@@ -8,6 +8,7 @@ from bist_symbols import BIST_SYMBOLS
 from momentum_engine import momentum_score
 from pattern_engine import detect_pattern
 from timeframe_engine import timeframe_trend
+from signal_ranker import get_rank_score
 
 
 def scan_market():
@@ -48,11 +49,14 @@ def scan_market():
             risk = ((entry - stop) / entry) * 100
             reward = ((target - entry) / entry) * 100
 
+            rank = get_rank_score(ticker.replace(".IS",""))
+
             score = ai_score(rsi, vol, trend, bo, smart_money, momentum)
 
             signals.append({
                 "ticker": ticker.replace(".IS",""),
                 "score": score,
+                "rank": rank,
                 "momentum": momentum,
                 "pattern": pattern,
                 "timeframe": tf_trend,
