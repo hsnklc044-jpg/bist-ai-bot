@@ -1,19 +1,16 @@
-from performance_engine import get_stats
-
-
-def generate_report():
-
-    stats = get_stats()
+def generate_dashboard(metrics):
 
     report = f"""
-📊 BOT PERFORMANCE
+📊 AI TRADING DASHBOARD
 
-Total Signals: {stats['signals']}
+Total Trades: {metrics['trades']}
 
-Wins: {stats['wins']}
-Losses: {stats['loss']}
+Wins: {metrics['wins']}
+Losses: {metrics['losses']}
 
-Win Rate: %{stats['win_rate']}
+Win Rate: {metrics['win_rate']}%
+
+Average Return: {metrics['avg_return']}%
 """
 
     return report
