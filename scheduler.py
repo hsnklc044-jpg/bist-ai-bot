@@ -56,6 +56,9 @@ def build_message(signals, regime, sector, risk, portfolio):
 AI Score: {s['score']}
 Momentum: {s['momentum']}
 
+Pattern: {s['pattern']}
+Trend TF: {s['timeframe']}
+
 Breakout: {s['breakout']}
 Smart Money: {s['smart_money']}
 
