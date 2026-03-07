@@ -1,19 +1,13 @@
 import yfinance as yf
-import pandas as pd
 import numpy as np
 
-# BIST hisseleri (örnek liste)
 BIST_SYMBOLS = [
-    "THYAO.IS",
-    "ASELS.IS",
-    "EREGL.IS",
-    "KRDMD.IS",
-    "SISE.IS",
-    "SASA.IS",
-    "TUPRS.IS",
-    "PGSUS.IS",
-    "BIMAS.IS",
-    "AKBNK.IS"
+    "THYAO.IS","ASELS.IS","EREGL.IS","KRDMD.IS","SISE.IS",
+    "SASA.IS","TUPRS.IS","PGSUS.IS","BIMAS.IS","AKBNK.IS",
+    "DOHOL.IS","ENJSA.IS","ENKAI.IS","GLYHO.IS","GUBRF.IS",
+    "HALKB.IS","KORDS.IS","MGROS.IS","NTHOL.IS","ODAS.IS",
+    "OYAKC.IS","SELEC.IS","SMRTG.IS","SOKM.IS","TATGD.IS",
+    "TKFEN.IS","TRGYO.IS","TSKB.IS","ULKER.IS","VAKBN.IS","VESBE.IS"
 ]
 
 
@@ -26,24 +20,25 @@ def scan_symbol(symbol):
         if data.empty:
             return None
 
-        # 🔧 1 boyutlu veri düzeltmesi
-        close_prices = data["Close"].values.flatten()
+        # 🔧 Kritik düzeltme
+        close_prices = data["Close"].to_numpy().flatten()
 
         if len(close_prices) < 20:
             return None
 
-        # Basit momentum kontrolü
         last_price = close_prices[-1]
-        avg_price = np.mean(close_prices[-20:])
+        avg20 = np.mean(close_prices[-20:])
 
-        if last_price > avg_price:
+        if last_price > avg20:
+
             return {
                 "symbol": symbol,
                 "price": round(float(last_price), 2),
-                "signal": "Momentum Up"
+                "signal": "Momentum Break"
             }
 
     except Exception as e:
+
         print(f"Hata: {symbol} {e}")
 
     return None
