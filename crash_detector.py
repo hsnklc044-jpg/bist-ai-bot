@@ -1,5 +1,6 @@
 import yfinance as yf
 
+
 def market_risk():
 
     try:
@@ -7,6 +8,7 @@ def market_risk():
         data = yf.download("XU100.IS", period="3mo", progress=False)
 
         ma50 = data["Close"].rolling(50).mean().iloc[-1]
+
         price = data["Close"].iloc[-1]
 
         if price < ma50 * 0.95:
