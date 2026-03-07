@@ -1,8 +1,6 @@
+requests
 pandas
 numpy
 yfinance
 schedule
-requests
 python-telegram-bot
-flask
-gunicorn
