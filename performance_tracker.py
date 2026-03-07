@@ -1,36 +1,38 @@
-# performance_tracker.py
+import json
+import os
 
-from trade_engine import (
-    get_winrate,
-    get_avg_r,
-    get_drawdown,
-    get_kelly_multiplier,
-)
+FILE = "performance.json"
 
 
-def get_bayesian_winrate():
-    return get_winrate()
+def load_performance():
+
+    if not os.path.exists(FILE):
+        return {}
+
+    with open(FILE, "r") as f:
+        return json.load(f)
 
 
-def calculate_drawdown():
-    return get_drawdown()
+def save_performance(data):
+
+    with open(FILE, "w") as f:
+        json.dump(data, f)
 
 
-def get_loss_streak():
-    return 0
+def update_performance(ticker, win_rate):
+
+    data = load_performance()
+
+    data[ticker] = win_rate
+
+    save_performance(data)
 
 
-def get_volatility_regime():
-    return "normal"
+def get_performance(ticker):
 
+    data = load_performance()
 
-def monte_carlo_tail_risk():
-    return 0.0
+    if ticker not in data:
+        return 0
 
-
-def detect_regime_change():
-    return "stable"
-
-
-def get_position_multiplier():
-    return get_kelly_multiplier()
+    return data[ticker]
