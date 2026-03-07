@@ -1,13 +1,12 @@
 import requests
 import os
+from scanner import scan_market
 
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-print("TOKEN:", TOKEN)
-print("CHAT_ID:", CHAT_ID)
+def send(msg):
 
-def send_telegram(msg):
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
 
     payload = {
@@ -15,17 +14,27 @@ def send_telegram(msg):
         "text": msg
     }
 
-    r = requests.post(url, data=payload)
-
-    print("Telegram response:", r.text)
+    requests.post(url, data=payload)
 
 
-def run_bot():
-    print("Bot başlatıldı")
-    print("BIST AI Bot çalışıyor...")
+def run():
 
-    send_telegram("🤖 BIST AI Bot aktif!")
+    signals = scan_market()
+
+    message = "🚀 BIST AI RADAR\n\n"
+
+    for s in signals:
+
+        message += f"""
+{s['ticker']}
+RSI: {s['rsi']}
+Volume Spike: {s['volume_spike']}
+AI Score: {s['score']}
+-------------------
+"""
+
+    send(message)
 
 
 if __name__ == "__main__":
-    run_bot()
+    run()
