@@ -1,17 +1,17 @@
-from system_launcher import run_system
-from logger_engine import log_info, log_error
+from scanner import scan_market
 
 
 def run_radar_cycle():
 
-    log_info("Radar cycle started")
+    print("📡 Market taranıyor...")
 
-    try:
+    signals = scan_market()
 
-        run_system()
+    if signals:
+        print("🚨 Sinyaller:")
+        for s in signals:
+            print(s["ticker"], s["signal"], s["entry"])
+    else:
+        print("Sinyal bulunamadı")
 
-    except Exception as e:
-
-        log_error(f"Radar cycle error: {str(e)}")
-
-    log_info("Radar cycle finished")
+    return signals
