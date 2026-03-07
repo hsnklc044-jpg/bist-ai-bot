@@ -9,7 +9,6 @@ jobs:
 run-bot:
 runs-on: ubuntu-latest
 
-```
 steps:
   - name: Checkout repository
     uses: actions/checkout@v3
@@ -27,4 +26,3 @@ steps:
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
     run: python scheduler.py
-```
