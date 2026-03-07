@@ -7,6 +7,7 @@ SECTOR_SYMBOLS = {
     "TECH": "XUTEK.IS"
 }
 
+
 def get_strong_sector():
 
     scores = {}
@@ -26,6 +27,7 @@ def get_strong_sector():
                 scores[sector] = 0
 
         except:
+
             scores[sector] = 0
 
     strongest = max(scores, key=scores.get)
