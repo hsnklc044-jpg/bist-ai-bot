@@ -5,6 +5,7 @@ from indicators import volume_spike, trend_filter, breakout, support_resistance
 from quant_engine import ai_score
 from smart_money import smart_money_flow
 from bist_symbols import BIST_SYMBOLS
+from momentum_engine import momentum_score
 
 
 def scan_market():
@@ -30,6 +31,8 @@ def scan_market():
 
             smart_money = smart_money_flow(data)
 
+            momentum = momentum_score(data)
+
             support, resistance = support_resistance(data)
 
             entry = support * 1.01
@@ -39,11 +42,12 @@ def scan_market():
             risk = ((entry - stop) / entry) * 100
             reward = ((target - entry) / entry) * 100
 
-            score = ai_score(rsi, vol, trend, bo, smart_money)
+            score = ai_score(rsi, vol, trend, bo, smart_money, momentum)
 
             signals.append({
                 "ticker": ticker.replace(".IS",""),
                 "score": score,
+                "momentum": momentum,
                 "rsi": round(rsi,2),
                 "volume_spike": round(vol,2),
                 "breakout": bo,
