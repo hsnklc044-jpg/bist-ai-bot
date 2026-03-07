@@ -1,37 +1,17 @@
-from app.scanner import run_scanner
-from app.telegram_sender import send_telegram_message
-
-from engine.portfolio_engine import build_portfolio, format_portfolio_message
+from system_launcher import run_system
+from logger_engine import log_info, log_error
 
 
-def run_radar():
+def run_radar_cycle():
 
-    print("📡 Radar taraması başlıyor...")
+    log_info("Radar cycle started")
 
     try:
 
-        # hisseleri tara
-        results = run_scanner()
-
-        if not results:
-            send_telegram_message("Radar sonuç bulamadı.")
-            return
-
-        # portföy oluştur
-        portfolio = build_portfolio(results)
-
-        # mesaj formatla
-        message = format_portfolio_message(portfolio)
-
-        # telegram gönder
-        send_telegram_message(message)
-
-        print("✅ Radar tamamlandı")
+        run_system()
 
     except Exception as e:
 
-        error_msg = f"Radar hata verdi: {str(e)}"
+        log_error(f"Radar cycle error: {str(e)}")
 
-        print(error_msg)
-
-        send_telegram_message(error_msg)
+    log_info("Radar cycle finished")
