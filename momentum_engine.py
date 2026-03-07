@@ -1,6 +1,3 @@
-import pandas as pd
-
-
 def momentum_score(data):
 
     try:
@@ -17,4 +14,5 @@ def momentum_score(data):
         return round(momentum * 100, 2)
 
     except:
+
         return 0
