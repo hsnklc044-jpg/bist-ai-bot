@@ -1,6 +1,8 @@
 import yfinance as yf
 import pandas as pd
 from ta.momentum import RSIIndicator
+from engine.market_regime import get_market_regime
+
 
 # BIST hisseleri
 BIST_SYMBOLS = [
@@ -15,11 +17,7 @@ BIST_SYMBOLS = [
 ]
 
 
-def get_close_series(data: pd.DataFrame) -> pd.Series | None:
-    """
-    yfinance farklı formatlar döndürebilir.
-    Bu fonksiyon Close fiyatlarını her durumda 1D pandas Series haline getirir.
-    """
+def get_close_series(data):
 
     if data is None or data.empty:
         return None
@@ -29,11 +27,9 @@ def get_close_series(data: pd.DataFrame) -> pd.Series | None:
 
     close = data["Close"]
 
-    # Eğer DataFrame dönerse ilk kolonu al
     if isinstance(close, pd.DataFrame):
         close = close.iloc[:, 0]
 
-    # 1 boyuta indir
     close = pd.Series(close).dropna().astype(float)
 
     if len(close) < 20:
@@ -83,6 +79,10 @@ def analyze_stock(symbol):
 
 def scan_market():
 
+    regime = get_market_regime()
+
+    print(f"\n📊 Market Regime: {regime}\n")
+
     signals = []
 
     for symbol in BIST_SYMBOLS:
@@ -90,6 +90,10 @@ def scan_market():
         result = analyze_stock(symbol)
 
         if result and result["score"] >= 50:
+
+            if regime == "BEAR":
+                continue
+
             signals.append(result)
 
     signals = sorted(signals, key=lambda x: x["score"], reverse=True)
