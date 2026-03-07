@@ -17,16 +17,19 @@ def send_telegram(message):
     }
 
     try:
+
         r = requests.post(url, data=payload)
+
         print("Telegram response:", r.text)
 
     except Exception as e:
+
         print("Telegram gönderim hatası:", e)
 
 
 def build_message(signals):
 
-    message = "🚀 BIST AI RADAR\n\n🔥 TOP AI SIGNALS\n"
+    message = "🚀 BIST QUANT RADAR\n\n🔥 TOP AI SIGNALS\n"
 
     for s in signals:
 
@@ -36,8 +39,8 @@ def build_message(signals):
 AI Score: {s['score']}
 
 Breakout: {s['breakout']}
+Smart Money: {s['smart_money']}
 
-Support: {s['support']}
 Entry: {s['entry']}
 Stop: {s['stop']}
 Target: {s['target']}
@@ -63,6 +66,7 @@ def run_bot():
         if not signals:
 
             print("Sinyal bulunamadı")
+
             return
 
         message = build_message(signals)
