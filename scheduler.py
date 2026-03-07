@@ -3,6 +3,8 @@ import requests
 
 from scanner import scan_market
 from market_regime import get_market_regime
+from sector_rotation import get_strong_sector
+from crash_detector import market_risk
 from risk_manager import position_size
 
 
@@ -30,9 +32,18 @@ def send_telegram(message):
         print("Telegram gönderim hatası:", e)
 
 
-def build_message(signals, regime):
+def build_message(signals, regime, sector, risk):
 
-    message = f"🚀 BIST QUANT RADAR\n\n📊 MARKET: {regime}\n\n🔥 TOP AI SIGNALS\n"
+    message = f"""
+🚀 BIST QUANT RADAR
+
+📊 MARKET: {regime}
+🏭 STRONG SECTOR: {sector}
+
+⚠️ MARKET RISK: {risk}
+
+🔥 TOP AI SIGNALS
+"""
 
     for s in signals:
 
@@ -76,6 +87,10 @@ def run_bot():
 
         regime = get_market_regime()
 
+        sector = get_strong_sector()
+
+        risk = market_risk()
+
         signals = scan_market()
 
         if not signals:
@@ -84,7 +99,7 @@ def run_bot():
 
             return
 
-        message = build_message(signals, regime)
+        message = build_message(signals, regime, sector, risk)
 
         send_telegram(message)
 
