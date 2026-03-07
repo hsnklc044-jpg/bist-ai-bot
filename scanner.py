@@ -3,11 +3,7 @@ import numpy as np
 
 BIST_SYMBOLS = [
     "THYAO.IS","ASELS.IS","EREGL.IS","KRDMD.IS","SISE.IS",
-    "SASA.IS","TUPRS.IS","PGSUS.IS","BIMAS.IS","AKBNK.IS",
-    "DOHOL.IS","ENJSA.IS","ENKAI.IS","GLYHO.IS","GUBRF.IS",
-    "HALKB.IS","KORDS.IS","MGROS.IS","NTHOL.IS","ODAS.IS",
-    "OYAKC.IS","SELEC.IS","SMRTG.IS","SOKM.IS","TATGD.IS",
-    "TKFEN.IS","TRGYO.IS","TSKB.IS","ULKER.IS","VAKBN.IS","VESBE.IS"
+    "SASA.IS","TUPRS.IS","PGSUS.IS","BIMAS.IS","AKBNK.IS"
 ]
 
 
@@ -20,7 +16,6 @@ def scan_symbol(symbol):
         if data.empty:
             return None
 
-        # 🔧 Kritik düzeltme
         close_prices = data["Close"].to_numpy().flatten()
 
         if len(close_prices) < 20:
@@ -44,7 +39,7 @@ def scan_symbol(symbol):
     return None
 
 
-def run_scan():
+def scan_market():
 
     signals = []
 
