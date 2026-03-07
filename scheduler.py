@@ -59,6 +59,12 @@ def run_bot():
     print("Bot başlatıldı")
     print("BIST AI Bot çalışıyor...")
 
+    if not TOKEN or not CHAT_ID:
+
+        print("Telegram TOKEN veya CHAT_ID eksik")
+
+        return
+
     try:
 
         signals = scan_market()
