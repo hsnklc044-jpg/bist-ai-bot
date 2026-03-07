@@ -3,17 +3,18 @@ from signal_filter import filter_signals
 from ranking_engine import rank_opportunities
 from signal_formatter import format_signal
 from telegram_engine import send_telegram
+from logger_engine import log_info
 
 
 def run_system():
 
-    print("🚀 AI Trading System Starting")
+    log_info("System scan started")
 
     signals = scan_market()
 
     if not signals:
 
-        print("No signals found")
+        log_info("No signals found")
         return
 
     filtered = filter_signals(signals)
@@ -26,9 +27,4 @@ def run_system():
 
         send_telegram(message)
 
-        print("Signal sent:", signal["ticker"])
-
-
-if __name__ == "__main__":
-
-    run_system()
+        log_info(f"Signal sent: {signal['ticker']}")
