@@ -3,6 +3,7 @@ from ta.momentum import RSIIndicator
 
 from indicators import volume_spike, trend_filter, breakout, support_resistance
 from quant_engine import ai_score
+from smart_money import smart_money_flow
 
 
 BIST_LIST = [
@@ -35,6 +36,8 @@ def scan_market():
 
             bo = breakout(data)
 
+            smart_money = smart_money_flow(data)
+
             support, resistance = support_resistance(data)
 
             entry = support * 1.01
@@ -44,7 +47,7 @@ def scan_market():
             risk = ((entry - stop) / entry) * 100
             reward = ((target - entry) / entry) * 100
 
-            score = ai_score(rsi, vol, trend, bo)
+            score = ai_score(rsi, vol, trend, bo, smart_money)
 
             signals.append({
                 "ticker": ticker.replace(".IS",""),
@@ -52,6 +55,7 @@ def scan_market():
                 "rsi": round(rsi,2),
                 "volume_spike": round(vol,2),
                 "breakout": bo,
+                "smart_money": smart_money,
                 "entry": round(entry,2),
                 "stop": round(stop,2),
                 "target": round(target,2),
