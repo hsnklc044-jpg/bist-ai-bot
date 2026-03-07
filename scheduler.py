@@ -35,6 +35,8 @@ def build_message(signals):
 
 AI Score: {s['score']}
 
+Breakout: {s['breakout']}
+
 Support: {s['support']}
 Entry: {s['entry']}
 Stop: {s['stop']}
