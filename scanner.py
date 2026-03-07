@@ -1,7 +1,6 @@
 import yfinance as yf
 import numpy as np
 
-# BIST hisse listesi
 BIST_SYMBOLS = [
     "THYAO.IS","ASELS.IS","EREGL.IS","KRDMD.IS","SISE.IS",
     "SASA.IS","TUPRS.IS","PGSUS.IS","BIMAS.IS","AKBNK.IS",
@@ -20,17 +19,11 @@ def scan_market():
 
         try:
 
-            data = yf.download(
-                ticker,
-                period="3mo",
-                interval="1d",
-                progress=False
-            )
+            data = yf.download(ticker, period="3mo", interval="1d", progress=False)
 
             if data.empty:
                 continue
 
-            # 1 boyutlu veri düzeltmesi
             close_prices = data["Close"].to_numpy().ravel()
 
             if len(close_prices) < 20:
@@ -39,7 +32,6 @@ def scan_market():
             last_price = close_prices[-1]
             avg20 = np.mean(close_prices[-20:])
 
-            # Basit momentum filtresi
             if last_price > avg20:
 
                 signals.append({
@@ -49,7 +41,6 @@ def scan_market():
                 })
 
         except Exception as e:
-
             print("Hata:", ticker, e)
 
     return signals
