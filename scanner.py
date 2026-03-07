@@ -9,6 +9,7 @@ from momentum_engine import momentum_score
 from pattern_engine import detect_pattern
 from timeframe_engine import timeframe_trend
 from signal_ranker import get_rank_score
+from learning_engine import learning_bonus, record_signal
 
 
 def scan_market():
@@ -53,10 +54,17 @@ def scan_market():
 
             score = ai_score(rsi, vol, trend, bo, smart_money, momentum)
 
+            bonus = learning_bonus(ticker.replace(".IS",""))
+
+            score = score + bonus
+
+            record_signal(ticker.replace(".IS",""), score)
+
             signals.append({
                 "ticker": ticker.replace(".IS",""),
                 "score": score,
                 "rank": rank,
+                "learning_bonus": bonus,
                 "momentum": momentum,
                 "pattern": pattern,
                 "timeframe": tf_trend,
