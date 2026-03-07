@@ -2,8 +2,7 @@ import yfinance as yf
 import pandas as pd
 from ta.momentum import RSIIndicator
 
-
-# BIST 100 hisseleri
+# BIST hisseleri
 BIST_SYMBOLS = [
     "AKBNK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS","EREGL.IS","FROTO.IS",
     "GARAN.IS","HEKTS.IS","ISCTR.IS","KCHOL.IS","PETKM.IS","SAHOL.IS",
@@ -16,24 +15,48 @@ BIST_SYMBOLS = [
 ]
 
 
+def get_close_series(data: pd.DataFrame) -> pd.Series | None:
+    """
+    yfinance farklı formatlar döndürebilir.
+    Bu fonksiyon Close fiyatlarını her durumda 1D pandas Series haline getirir.
+    """
+
+    if data is None or data.empty:
+        return None
+
+    if "Close" not in data.columns:
+        return None
+
+    close = data["Close"]
+
+    # Eğer DataFrame dönerse ilk kolonu al
+    if isinstance(close, pd.DataFrame):
+        close = close.iloc[:, 0]
+
+    # 1 boyuta indir
+    close = pd.Series(close).dropna().astype(float)
+
+    if len(close) < 20:
+        return None
+
+    return close
+
+
 def analyze_stock(symbol):
 
     try:
 
-        data = yf.download(symbol, period="3mo", interval="1d")
+        data = yf.download(symbol, period="3mo", interval="1d", progress=False)
 
-        if data.empty:
+        close = get_close_series(data)
+
+        if close is None:
             return None
 
-        close_prices = data["Close"].values.flatten()
+        rsi_series = RSIIndicator(close, window=14).rsi()
 
-        if len(close_prices) < 20:
-            return None
-
-        rsi = RSIIndicator(pd.Series(close_prices), window=14).rsi()
-
-        last_rsi = rsi.iloc[-1]
-        price = close_prices[-1]
+        last_rsi = float(rsi_series.iloc[-1])
+        price = float(close.iloc[-1])
 
         score = 0
 
@@ -43,18 +66,17 @@ def analyze_stock(symbol):
         if last_rsi < 25:
             score += 25
 
-        if price > close_prices[-5]:
+        if price > close.iloc[-5]:
             score += 25
 
         return {
-            "symbol": symbol.replace(".IS",""),
-            "price": round(price,2),
-            "rsi": round(last_rsi,2),
+            "symbol": symbol.replace(".IS", ""),
+            "price": round(price, 2),
+            "rsi": round(last_rsi, 2),
             "score": score
         }
 
     except Exception as e:
-
         print(f"Hata: {symbol} -> {e}")
         return None
 
