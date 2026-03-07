@@ -2,6 +2,7 @@ import os
 import requests
 from scanner import scan_market
 
+
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
@@ -18,13 +19,14 @@ def send_telegram(message):
     try:
         r = requests.post(url, data=payload)
         print("Telegram response:", r.text)
+
     except Exception as e:
         print("Telegram gönderim hatası:", e)
 
 
 def build_message(signals):
 
-    message = "🚀 BIST AI RADAR\n\n🔥 TOP SIGNALS\n"
+    message = "🚀 BIST AI RADAR\n\n🔥 TOP AI SIGNALS\n"
 
     for s in signals:
 
@@ -32,10 +34,16 @@ def build_message(signals):
 📈 {s['ticker']}
 
 AI Score: {s['score']}
-RSI: {s['rsi']}
-Volume Spike: {s['volume_spike']}
 
------------------
+Support: {s['support']}
+Entry: {s['entry']}
+Stop: {s['stop']}
+Target: {s['target']}
+
+Risk: {s['risk']}%
+Reward: {s['reward']}%
+
+-----------------------
 """
 
     return message
@@ -51,6 +59,7 @@ def run_bot():
         signals = scan_market()
 
         if not signals:
+
             print("Sinyal bulunamadı")
             return
 
@@ -64,4 +73,5 @@ def run_bot():
 
 
 if __name__ == "__main__":
+
     run_bot()
