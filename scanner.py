@@ -4,22 +4,14 @@ from ta.momentum import RSIIndicator
 from indicators import volume_spike, trend_filter, breakout, support_resistance
 from quant_engine import ai_score
 from smart_money import smart_money_flow
-
-
-BIST_LIST = [
-    "AKBNK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS","EREGL.IS",
-    "FROTO.IS","GARAN.IS","HEKTS.IS","ISCTR.IS","KCHOL.IS",
-    "KOZAA.IS","KOZAL.IS","PETKM.IS","SAHOL.IS","SISE.IS",
-    "TAVHL.IS","TCELL.IS","THYAO.IS","TOASO.IS","TUPRS.IS",
-    "YKBNK.IS"
-]
+from bist_symbols import BIST_SYMBOLS
 
 
 def scan_market():
 
     signals = []
 
-    for ticker in BIST_LIST:
+    for ticker in BIST_SYMBOLS:
 
         try:
 
