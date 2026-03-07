@@ -9,8 +9,10 @@ from engine.telegram_engine import send_telegram_message
 from engine.bist_universe import get_bist_universe
 from engine.smart_money_engine import smart_money_signal
 from engine.breakout_engine import breakout_signal
+from engine.trend_engine import trend_signal
+from engine.volatility_engine import volatility_signal
 from engine.risk_engine import calculate_position
-from engine.portfolio_engine import is_symbol_active, add_trade
+from engine.signal_filter_engine import can_send_signal, register_signal
 
 
 def run_ultimate_scanner():
@@ -40,7 +42,7 @@ def run_ultimate_scanner():
 
         try:
 
-            if is_symbol_active(symbol):
+            if not can_send_signal(symbol):
                 continue
 
             print("Hisse taranıyor:", symbol)
@@ -54,6 +56,12 @@ def run_ultimate_scanner():
                 continue
 
             if not breakout_signal(df):
+                continue
+
+            if not trend_signal(df):
+                continue
+
+            if not volatility_signal(df):
                 continue
 
             score = score_stock(df)
@@ -76,12 +84,7 @@ def run_ultimate_scanner():
 
             if score >= 70:
 
-                add_trade(
-                    symbol,
-                    entry_data["entry"],
-                    entry_data["stop"],
-                    entry_data["target"]
-                )
+                register_signal(symbol)
 
                 results.append({
                     "symbol": symbol,
