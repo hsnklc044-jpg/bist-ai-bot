@@ -1,0 +1,17 @@
+def get_bist_universe():
+
+    return [
+
+        "AEFES.IS","AGHOL.IS","AKBNK.IS","AKFGY.IS","AKSA.IS",
+        "ALARK.IS","ARCLK.IS","ASELS.IS","ASTOR.IS","BIMAS.IS",
+        "BRYAT.IS","CCOLA.IS","CIMSA.IS","DOHOL.IS","ECILC.IS",
+        "EKGYO.IS","ENJSA.IS","ENKAI.IS","EREGL.IS","FROTO.IS",
+        "GARAN.IS","GESAN.IS","GUBRF.IS","HALKB.IS","HEKTS.IS",
+        "ISCTR.IS","ISMEN.IS","KARSN.IS","KCHOL.IS","KONTR.IS",
+        "KOZAA.IS","KOZAL.IS","KRDMD.IS","LOGO.IS","MGROS.IS",
+        "ODAS.IS","OTKAR.IS","OYAKC.IS","PETKM.IS","PGSUS.IS",
+        "QUAGR.IS","SAHOL.IS","SASA.IS","SISE.IS","SMRTG.IS",
+        "SOKM.IS","TCELL.IS","THYAO.IS","TKFEN.IS","TOASO.IS",
+        "TUPRS.IS","ULKER.IS","VAKBN.IS","YKBNK.IS","ZOREN.IS"
+
+    ]

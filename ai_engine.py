@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import yfinance as yf
 
 
@@ -44,3 +45,19 @@ def get_ai_score(symbol):
         score += 20
 
     return score
+=======
+def ai_score(rsi, volume_spike, trend):
+
+    score = 0
+
+    if rsi < 35:
+        score += 40
+
+    if volume_spike > 1.5:
+        score += 30
+
+    if trend:
+        score += 30
+
+    return score
+>>>>>>> b473b179fde9679eff721a025c85876a830c31be

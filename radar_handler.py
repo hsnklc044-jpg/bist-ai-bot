@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import numpy as np
 
 from scanner import scan_market
@@ -29,10 +30,14 @@ def calculate_position_size(entry, stop, capital=100000, risk_percent=1):
     size = risk_amount / risk_per_share
 
     return int(size)
+=======
+from scanner import scan_market
+>>>>>>> b473b179fde9679eff721a025c85876a830c31be
 
 
 def run_radar_cycle():
 
+<<<<<<< HEAD
     print("🔎 Market taranıyor...\n")
 
     trend, risk, mode = analyze_market()
@@ -146,3 +151,17 @@ def run_radar_cycle():
             print(f"{b['ticker']} | +{b['momentum']}% | Vol x{b['volume']}")
 
         print()
+=======
+    print("📡 Market taranıyor...")
+
+    signals = scan_market()
+
+    if signals:
+        print("🚨 Sinyaller:")
+        for s in signals:
+            print(s["ticker"], s["signal"], s["entry"])
+    else:
+        print("Sinyal bulunamadı")
+
+    return signals
+>>>>>>> b473b179fde9679eff721a025c85876a830c31be

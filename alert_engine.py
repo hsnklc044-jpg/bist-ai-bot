@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 from radar_engine import run_radar
 from trade_engine import get_trade_setup
 
@@ -42,3 +43,13 @@ def check_alerts():
             continue
 
     return alerts
+=======
+from logger_engine import log_info
+
+
+def send_alert(message):
+
+    log_info(f"ALERT: {message}")
+
+    print(message)
+>>>>>>> b473b179fde9679eff721a025c85876a830c31be
