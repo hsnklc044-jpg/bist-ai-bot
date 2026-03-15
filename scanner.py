@@ -68,14 +68,22 @@ def scan_market():
 
         try:
 
-            df = yf.download(symbol, period="3mo", interval="1d")
+            ticker = symbol + ".IS"
+
+            df = yf.download(
+                ticker,
+                period="3mo",
+                interval="1d",
+                progress=False
+            )
 
             if df.empty or len(df) < 50:
                 continue
 
             score = calculate_ai_score(df)
 
-            results.append((symbol, score))
+            if score > 0:
+                results.append((symbol, score))
 
         except Exception:
             continue
