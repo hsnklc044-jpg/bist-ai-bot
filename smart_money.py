@@ -1,65 +1,48 @@
-<<<<<<< HEAD
 import yfinance as yf
-import pandas as pd
+from bist_symbols import get_bist_symbols
 
-STOCKS = [
-"TUPRS.IS","THYAO.IS","ASELS.IS","EREGL.IS","AKBNK.IS","KCHOL.IS",
-"SAHOL.IS","SISE.IS","FROTO.IS","TOASO.IS","BIMAS.IS","MGROS.IS",
-"PETKM.IS","ODAS.IS","SASA.IS","ISCTR.IS","GARAN.IS","YKBNK.IS",
-"TCELL.IS","VESTL.IS","HEKTS.IS","KOZAL.IS","KOZAA.IS","ALARK.IS",
-"CCOLA.IS","ENJSA.IS","ARCLK.IS","BRYAT.IS","DOHOL.IS","GUBRF.IS"
-]
 
-def scan_smart_money():
+def smart_money_scan():
 
-    results = []
+    tickers = get_bist_symbols()
 
-    for symbol in STOCKS:
+    signals = []
+
+    for ticker in tickers:
 
         try:
 
-            df = yf.download(symbol, period="3mo", interval="1d", progress=False)
+            stock = yf.Ticker(ticker)
+
+            df = stock.history(period="6mo")
 
             if df.empty:
                 continue
 
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+            close = df["Close"]
+            volume = df["Volume"]
 
-            last_volume = df["Volume"].iloc[-1]
+            ema20 = close.ewm(span=20).mean()
+            ema50 = close.ewm(span=50).mean()
 
-            avg_volume = df["Volume"].rolling(20).mean().iloc[-1]
+            vol_avg = volume.rolling(20).mean()
 
-            price_change = (df["Close"].iloc[-1] / df["Close"].iloc[-5] - 1) * 100
+            volume_spike = volume.iloc[-1] / vol_avg.iloc[-1]
 
-            # Para girişi koşulu
-            if last_volume > avg_volume * 1.5 and price_change > 3:
+            trend = ema20.iloc[-1] > ema50.iloc[-1]
 
-                results.append({
-                    "symbol": symbol,
-                    "volume_ratio": round(last_volume / avg_volume,2),
-                    "price_change": round(price_change,2)
-                })
+            momentum = close.iloc[-1] > close.iloc[-5]
+
+            if trend and momentum and volume_spike > 2:
+
+                signals.append(
+                    (
+                        ticker.replace(".IS",""),
+                        round(volume_spike,2)
+                    )
+                )
 
         except:
-            pass
+            continue
 
-    results.sort(key=lambda x: x["volume_ratio"], reverse=True)
-
-    return results[:5]
-=======
-def smart_money_flow(data):
-
-    vol_today = data["Volume"].iloc[-1]
-    vol_avg = data["Volume"].rolling(30).mean().iloc[-1]
-
-    if vol_avg == 0:
-        return False
-
-    spike = vol_today / vol_avg
-
-    if spike > 2:
-        return True
-
-    return False
->>>>>>> b473b179fde9679eff721a025c85876a830c31be
+    return signals

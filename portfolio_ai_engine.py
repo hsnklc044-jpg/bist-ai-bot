@@ -1,44 +1,43 @@
 import json
-from ai_engine import get_ai_score
+
+from logger_engine import log_info
 
 
-def analyze_portfolio():
+def generate_portfolio():
 
     try:
-
-        with open("portfolio.json") as f:
-            portfolio = json.load(f)
-
+        with open("radar.json","r") as f:
+            radar = json.load(f)
     except:
-        return None
+        radar = []
 
-    results = []
 
-    for symbol, qty in portfolio.items():
+    portfolio = []
 
-        try:
+    total_score = sum([r[1] for r in radar])
 
-            score = get_ai_score(symbol)
 
-            if score is None:
-                continue
+    for r in radar:
 
-            if score > 80:
-                action = "ADD"
+        symbol = r[0]
+        score = r[1]
+        price = r[2]
 
-            elif score > 60:
-                action = "HOLD"
+        weight = round((score / total_score) * 100,2)
 
-            else:
-                action = "REDUCE"
+        portfolio.append({
+            "symbol":symbol,
+            "weight":weight,
+            "price":price
+        })
 
-            results.append({
-                "symbol": symbol,
-                "score": score,
-                "action": action
-            })
 
-        except:
-            continue
+    with open("portfolio.json","w") as f:
+        json.dump(portfolio,f)
 
-    return results
+
+    log_info("AI Portfolio Updated")
+
+
+if __name__ == "__main__":
+    generate_portfolio()

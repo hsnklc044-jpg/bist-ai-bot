@@ -1,63 +1,74 @@
-<<<<<<< HEAD
-import yfinance as yf
+import random
 
+symbols = [
+"EREGL",
+"THYAO",
+"ASELS",
+"KRDMD",
+"SASA",
+"TUPRS",
+"SISE",
+"AKBNK",
+"GARAN"
+]
 
-def get_ai_score(symbol):
+def get_support_levels(symbol):
 
-    ticker = f"{symbol}.IS"
+```
+price = random.uniform(50, 150)
 
-    df = yf.download(
-        ticker,
-        period="3mo",
-        interval="1d",
-        progress=False
-    )
+return {
+    "symbol": symbol,
+    "s1": round(price * 0.97, 2),
+    "s2": round(price * 0.94, 2),
+    "s3": round(price * 0.90, 2),
+    "r1": round(price * 1.03, 2),
+    "r2": round(price * 1.06, 2),
+    "r3": round(price * 1.10, 2)
+}
+```
 
-    if df.empty:
-        return None
+def generate_signals():
 
-    # son fiyat
-    price = float(df["Close"].iloc[-1])
+```
+signals = []
 
-    # hareketli ortalamalar
-    ma20 = float(df["Close"].tail(20).mean())
-    ma50 = float(df["Close"].tail(50).mean())
+for s in symbols:
 
-    # hacim
-    volume = float(df["Volume"].iloc[-1])
-    avg_volume = float(df["Volume"].tail(20).mean())
+    score = random.randint(6, 10)
 
-    score = 0
+    if score >= 7:
 
-    # Trend
-    if price > ma20:
-        score += 30
+        support = round(random.uniform(50, 100), 2)
 
-    if ma20 > ma50:
-        score += 30
+        signals.append({
+            "symbol": s,
+            "score": score,
+            "support": support,
+            "target": round(support * 1.10, 2),
+            "stop": round(support * 0.97, 2)
+        })
 
-    # Volume
-    if volume > avg_volume:
-        score += 20
+return signals
+```
 
-    # Momentum
-    if price > float(df["Close"].iloc[-5]):
-        score += 20
+def get_hot_stocks():
 
-    return score
-=======
-def ai_score(rsi, volume_spike, trend):
+```
+results = []
 
-    score = 0
+for s in symbols:
 
-    if rsi < 35:
-        score += 40
+    volume = round(random.uniform(1.5, 4), 2)
+    score = random.randint(7, 10)
 
-    if volume_spike > 1.5:
-        score += 30
+    if volume > 2:
 
-    if trend:
-        score += 30
+        results.append({
+            "symbol": s,
+            "score": score,
+            "volume": volume
+        })
 
-    return score
->>>>>>> b473b179fde9679eff721a025c85876a830c31be
+return results
+```

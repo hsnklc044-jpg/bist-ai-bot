@@ -1,36 +1,20 @@
-import pandas as pd
+import yfinance as yf
 
+def get_stock_data(symbol):
 
-def volume_spike(data):
+    symbol = symbol.upper() + ".IS"
 
-    vol_today = data["Volume"].iloc[-1]
-    vol_avg = data["Volume"].rolling(20).mean().iloc[-1]
+    stock = yf.Ticker(symbol)
 
-    if vol_avg == 0:
-        return 0
+    hist = stock.history(period="3mo")
 
-    return vol_today / vol_avg
+    if hist.empty:
+        return None
 
+    current_price = hist["Close"].iloc[-1]
 
-def trend_filter(data):
+    support = hist["Low"].tail(20).min()
 
-    ma20 = data["Close"].rolling(20).mean().iloc[-1]
-    price = data["Close"].iloc[-1]
+    resistance = hist["High"].tail(20).max()
 
-    return price > ma20
-
-
-def breakout(data):
-
-    high20 = data["High"].rolling(20).max().iloc[-2]
-    price = data["Close"].iloc[-1]
-
-    return price > high20
-
-
-def support_resistance(data):
-
-    support = data["Low"].rolling(20).min().iloc[-1]
-    resistance = data["High"].rolling(20).max().iloc[-1]
-
-    return support, resistance
+    return current_price, support, resistance

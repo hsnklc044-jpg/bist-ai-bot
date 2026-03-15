@@ -1,51 +1,42 @@
-from ai_engine import get_ai_score
-import yfinance as yf
+import json
+from logger_engine import log_info
 
 
-def get_trade_decision(symbol):
+def run_decision_engine():
 
-    score = get_ai_score(symbol)
+    try:
+        with open("predictions.json","r") as f:
+            data = json.load(f)
+    except:
+        log_info("Prediction file missing")
+        return
 
-    if score is None:
-        return None
+    decisions = []
 
-    ticker = yf.Ticker(symbol + ".IS")
-    df = ticker.history(period="3mo")
+    for r in data:
 
-    if df.empty:
-        return None
+        score = r.get("score",0)
+        confidence = r.get("confidence",0)
 
-    price = float(df["Close"].iloc[-1])
-    ma20 = float(df["Close"].tail(20).mean())
-    ma50 = float(df["Close"].tail(50).mean())
+        if score >= 75 and confidence >= 0.6:
+            decision = "BUY"
 
-    volume = float(df["Volume"].iloc[-1])
-    avg_volume = float(df["Volume"].tail(20).mean())
+        elif score >= 60:
+            decision = "WATCH"
 
-    trend = "Bullish" if ma20 > ma50 else "Bearish"
+        else:
+            decision = "AVOID"
 
-    momentum = "Strong" if price > float(df["Close"].iloc[-5]) else "Weak"
+        r["decision"] = decision
 
-    volume_status = "High" if volume > avg_volume else "Normal"
+        decisions.append(r)
 
-    if score >= 85:
-        action = "BUY"
-        confidence = "HIGH"
+    with open("decisions.json","w") as f:
+        json.dump(decisions,f)
 
-    elif score >= 60:
-        action = "WATCH"
-        confidence = "MEDIUM"
+    log_info("Decision Engine Completed")
 
-    else:
-        action = "WAIT"
-        confidence = "LOW"
 
-    return {
-        "symbol": symbol,
-        "score": score,
-        "trend": trend,
-        "momentum": momentum,
-        "volume": volume_status,
-        "action": action,
-        "confidence": confidence
-    }
+if __name__ == "__main__":
+
+    run_decision_engine()

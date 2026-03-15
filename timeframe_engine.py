@@ -1,29 +1,26 @@
 import yfinance as yf
 
 
-def timeframe_trend(symbol):
+def get_trend(symbol):
 
     try:
 
-        daily = yf.download(symbol, period="3mo", interval="1d", progress=False)
-        weekly = yf.download(symbol, period="1y", interval="1wk", progress=False)
+        ticker = yf.Ticker(symbol + ".IS")
 
-        daily_ma = daily["Close"].rolling(20).mean().iloc[-1]
-        weekly_ma = weekly["Close"].rolling(20).mean().iloc[-1]
+        data = ticker.history(period="5d", interval="5m")
 
-        price = daily["Close"].iloc[-1]
+        close = data["Close"]
 
-        daily_trend = price > daily_ma
-        weekly_trend = price > weekly_ma
+        ema20 = close.ewm(span=20).mean().iloc[-1]
 
-        if daily_trend and weekly_trend:
-            return "STRONG_UP"
+        ema50 = close.ewm(span=50).mean().iloc[-1]
 
-        if daily_trend:
+        if ema20 > ema50:
             return "UP"
 
-        return "DOWN"
+        else:
+            return "DOWN"
 
     except:
 
-        return "UNKNOWN"
+        return None

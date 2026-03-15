@@ -6,7 +6,7 @@ from performance_tracker import add_signal
 
 BIST30 = [
     "AKBNK.IS", "ASELS.IS", "BIMAS.IS", "EREGL.IS",
-    "FROTO.IS", "GARAN.IS", "KCHOL.IS", "KOZAL.IS",
+    "FROTO.IS", "GARAN.IS", "KCHOL.IS", "",
     "PETKM.IS", "SAHOL.IS", "SASA.IS", "SISE.IS",
     "TCELL.IS", "THYAO.IS", "TUPRS.IS"
 ]

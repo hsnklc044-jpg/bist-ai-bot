@@ -1,0 +1,8 @@
+[
+ {"range":"60-70","profit":0.18},
+ {"range":"50-60","profit":0.11},
+ {"range":"40-50","profit":0.00},
+ {"range":"30-40","profit":-0.03},
+ {"range":"20-30","profit":-0.03},
+ {"range":"10-20","profit":-0.02}
+]

@@ -1,0 +1,20 @@
+[
+ {
+  "symbol":"TUPRS",
+  "score":82,
+  "price":256,
+  "rsi":28
+ },
+ {
+  "symbol":"KCHOL",
+  "score":78,
+  "price":191,
+  "rsi":26
+ },
+ {
+  "symbol":"EKGYO",
+  "score":75,
+  "price":21,
+  "rsi":18
+ }
+]

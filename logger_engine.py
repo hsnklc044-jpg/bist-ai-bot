@@ -1,21 +1,8 @@
-import logging
-import os
-
-if not os.path.exists("logs"):
-    os.makedirs("logs")
-
-logging.basicConfig(
-    filename="logs/bot.log",
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+from datetime import datetime
 
 
-def log_info(message):
+def log(message):
 
-    logging.info(message)
+    with open("bot_log.txt", "a") as f:
 
-
-def log_error(message):
-
-    logging.error(message)
+        f.write(f"{datetime.now()} - {message}\n")

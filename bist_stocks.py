@@ -1,0 +1,27 @@
+BIST_STOCKS = [
+
+"EREGL",
+"THYAO",
+"ASELS",
+"TUPRS",
+"KCHOL",
+"SISE",
+"AKBNK",
+"YKBNK",
+"GARAN",
+"ISCTR",
+"SAHOL",
+"PGSUS",
+"HEKTS",
+"TOASO",
+"FROTO",
+"TCELL",
+"ODAS",
+"ENJSA",
+"ALARK",
+"BIMAS",
+"PETKM",
+"VESTL",
+"ARCLK"
+
+]

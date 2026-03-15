@@ -1,0 +1,16 @@
+WATCHLIST = [
+"THYAO",
+"EREGL",
+"ASELS",
+"KCHOL",
+"TUPRS",
+"SISE",
+"BIMAS",
+"AKBNK",
+"GARAN",
+"ISCTR",
+"YKBNK",
+"SAHOL",
+"PETKM",
+"FROTO"
+]

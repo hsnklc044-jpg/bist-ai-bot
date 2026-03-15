@@ -1,30 +1,29 @@
-from scanner import scan_market
-from signal_filter import filter_signals
-from ranking_engine import rank_opportunities
-from signal_formatter import format_signal
-from telegram_engine import send_telegram
 from logger_engine import log_info
+from radar_engine import start_radar
+from report_engine import generate_daily_report
+from telegram_engine import send_telegram
+from backtest_engine import run_backtest
+from tracker_engine import track_trades
 
 
-def run_system():
+def main():
 
-    log_info("System scan started")
+    log_info("BIST AI SYSTEM STARTING")
 
-    signals = scan_market()
+    report = generate_daily_report()
 
-    if not signals:
+    send_telegram(report)
 
-        log_info("No signals found")
-        return
+    backtest = run_backtest()
 
-    filtered = filter_signals(signals)
+    send_telegram(backtest)
 
-    ranked = rank_opportunities(filtered)
+    tracker = track_trades()
 
-    for signal in ranked:
+    send_telegram(tracker)
 
-        message = format_signal(signal)
+    start_radar()
 
-        send_telegram(message)
 
-        log_info(f"Signal sent: {signal['ticker']}")
+if __name__ == "__main__":
+    main()

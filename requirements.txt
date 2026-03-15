@@ -1,7 +1,5 @@
+python-telegram-bot==20.7
 yfinance
 pandas
 numpy
 requests
-scikit-learn
-psutil
-ta

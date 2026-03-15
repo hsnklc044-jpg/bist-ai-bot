@@ -1,19 +1,40 @@
-from radar_engine import run_radar
+import time
+import telebot
+from bist100_engine import scan_bist100
+
+TOKEN = "8772282578:AAHayduiZtDuf659L0Fx9H8ehOcn81tii10"
+CHAT_ID = "1790584407"
+
+bot = telebot.TeleBot(TOKEN)
 
 
-def auto_scan():
+def run_radar():
 
-    results = run_radar()
+    while True:
 
-    alerts = []
+        try:
 
-    for symbol, score in results:
+            results = scan_bist100()
 
-        if score > 80:
+            strong = []
 
-            alerts.append({
-                "symbol": symbol,
-                "score": score
-            })
+            for r in results:
 
-    return alerts
+                if r[1] >= 70:
+                    strong.append(r)
+
+            if len(strong) > 0:
+
+                message = "🚨 BIST AI RADAR\n\n"
+
+                for s in strong:
+
+                    message += f"{s[0]} | Score: {s[1]}\n"
+
+                bot.send_message(CHAT_ID, message)
+
+        except Exception as e:
+
+            print("Radar hata:", e)
+
+        time.sleep(300)

@@ -1,76 +1,53 @@
-import warnings
-warnings.filterwarnings("ignore")
+import json
+import random
 
-import yfinance as yf
-from bist_symbols import bist_symbols
-
-
-def calculate_score(df):
-
-    score = 0
-
-    price = float(df["Close"].iloc[-1])
-    ma20 = float(df["Close"].tail(20).mean())
-    ma50 = float(df["Close"].tail(50).mean())
-
-    volume = float(df["Volume"].iloc[-1])
-    avg_volume = float(df["Volume"].tail(20).mean())
-
-    # trend
-    if price > ma20:
-        score += 30
-
-    if ma20 > ma50:
-        score += 30
-
-    # momentum
-    if price > float(df["Close"].iloc[-5]):
-        score += 20
-
-    # volume
-    if volume > avg_volume:
-        score += 20
-
-    return score
+from logger_engine import log_info
 
 
-def run_radar():
+# BIST örnek hisse listesi
+symbols = [
+    "TUPRS","KCHOL","EKGYO","ASELS","THYAO",
+    "BIMAS","EREGL","SISE","PETKM","TCELL",
+    "HALKB","DOAS","KRDMD","ALARK","ASTOR"
+]
 
-    results = []
 
-    try:
+def generate_radar():
 
-        data = yf.download(
-            bist_symbols,
-            period="3mo",
-            group_by="ticker",
-            threads=True
-        )
+    radar = []
 
-    except:
+    for symbol in symbols:
 
-        return []
+        price = round(random.uniform(10, 500), 2)
 
-    for symbol in bist_symbols:
+        rsi = random.randint(10, 80)
 
-        try:
+        momentum = random.randint(-5, 10)
 
-            if symbol not in data:
-                continue
+        score = 50
 
-            df = data[symbol]
+        score += momentum
 
-            if df.empty or len(df) < 60:
-                continue
+        if rsi < 30:
+            score += 20
 
-            score = calculate_score(df)
+        if rsi > 70:
+            score -= 10
 
-            results.append((symbol.replace(".IS", ""), score))
+        radar.append([symbol, score, price, rsi])
 
-        except:
 
-            continue
+    radar = sorted(radar, key=lambda x: x[1], reverse=True)
 
-    results.sort(key=lambda x: x[1], reverse=True)
+    radar = radar[:10]
 
-    return results[:10]
+
+    with open("radar.json", "w") as f:
+        json.dump(radar, f)
+
+
+    log_info("Ultra Radar Updated")
+
+
+if __name__ == "__main__":
+    generate_radar()

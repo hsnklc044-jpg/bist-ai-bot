@@ -14,7 +14,7 @@ st.title("📡 BIST AI Radar Dashboard")
 
 BIST_SYMBOLS = [
     "EREGL.IS","THYAO.IS","ASELS.IS","SISE.IS","TUPRS.IS",
-    "BIMAS.IS","AKBNK.IS","GARAN.IS","KCHOL.IS","KOZAL.IS"
+    "BIMAS.IS","AKBNK.IS","GARAN.IS","KCHOL.IS",""
 ]
 
 # ---------------------------------------------------

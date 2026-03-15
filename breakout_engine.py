@@ -1,39 +1,48 @@
 import yfinance as yf
-from bist_symbols import bist_symbols
+from bist_symbols import get_bist_symbols
 
 
-def detect_breakouts():
+BIST_TICKERS = get_bist_symbols()
 
-    results = []
 
-    for symbol in bist_symbols:
+def breakout_scan():
+
+    signals = []
+
+    for ticker in BIST_TICKERS:
 
         try:
 
-            ticker = yf.Ticker(symbol)
+            stock = yf.Ticker(ticker)
 
-            df = ticker.history(period="3mo")
+            df = stock.history(period="6mo")
 
-            if df.empty or len(df) < 20:
+            if df.empty:
                 continue
 
-            price = float(df["Close"].iloc[-1])
+            close = df["Close"]
+            volume = df["Volume"]
 
-            resistance = float(df["High"].tail(20).max())
+            resistance = df["High"].rolling(20).max().iloc[-2]
 
-            volume = float(df["Volume"].iloc[-1])
-            avg_volume = float(df["Volume"].tail(20).mean())
+            vol_avg = volume.rolling(20).mean().iloc[-1]
 
-            volume_ratio = volume / avg_volume
+            if vol_avg == 0:
+                continue
 
-            if price >= resistance and volume_ratio > 2:
+            volume_spike = volume.iloc[-1] / vol_avg
 
-                results.append({
-                    "symbol": symbol.replace(".IS",""),
-                    "volume_ratio": round(volume_ratio,2)
-                })
+            if close.iloc[-1] > resistance and volume_spike > 1.5:
+
+                signals.append(
+                    (
+                        ticker.replace(".IS",""),
+                        round(close.iloc[-1],2),
+                        round(volume_spike,2)
+                    )
+                )
 
         except:
             continue
 
-    return results[:10]
+    return signals

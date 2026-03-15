@@ -1,45 +1,29 @@
 import yfinance as yf
-from bist_symbols import bist_symbols
 
 
-def whale_scan():
+def detect_whale(symbol):
 
-    whales = []
+    try:
 
-    for symbol in bist_symbols:
+        data = yf.download(symbol, period="1mo")
 
-        try:
+        if data.empty:
+            return False
 
-            ticker = yf.Ticker(symbol)
+        volume = data["Volume"]
 
-            df = ticker.history(period="3mo")
+        avg_volume = volume.mean()
 
-            if df.empty or len(df) < 30:
-                continue
+        last_volume = volume.iloc[-1]
 
-            volume = float(df["Volume"].iloc[-1])
-            avg_volume = float(df["Volume"].tail(20).mean())
+        if last_volume > avg_volume * 2:
 
-            price = float(df["Close"].iloc[-1])
-            prev_price = float(df["Close"].iloc[-2])
+            return True
 
-            ma20 = float(df["Close"].tail(20).mean())
-            ma50 = float(df["Close"].tail(50).mean())
+        else:
 
-            volume_ratio = volume / avg_volume
+            return False
 
-            if volume_ratio > 3 and price > prev_price:
+    except:
 
-                trend = "Bullish" if ma20 > ma50 else "Bearish"
-
-                whales.append({
-                    "symbol": symbol.replace(".IS",""),
-                    "volume_ratio": round(volume_ratio,2),
-                    "trend": trend
-                })
-
-        except:
-
-            continue
-
-    return whales[:10]
+        return False

@@ -1,0 +1,9 @@
+{
+    "market_regime_bull": 5,
+    "market_regime_bear": -10,
+    "whale_boost": 10,
+    "sector_boost": 5,
+    "momentum_boost": 8,
+    "high_vol_penalty": -5,
+    "low_vol_boost": 3
+}

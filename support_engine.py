@@ -1,34 +1,35 @@
 import yfinance as yf
 
 
-def get_support_resistance(symbol: str):
+def get_support(symbol):
 
     try:
 
-        ticker = f"{symbol}.IS"
-
-        df = yf.download(
-            ticker,
-            period="3mo",
+        data = yf.download(
+            symbol + ".IS",
+            period="6mo",
             interval="1d",
             progress=False
         )
 
-        if df is None or df.empty:
-            return None, None
+        if data.empty:
+            return "Veri bulunamadı."
 
-        # Son 20 mum
-        recent_data = df.tail(20)
+        lows = data["Low"].dropna()
 
-        support = float(recent_data["Low"].min())
-        resistance = float(recent_data["High"].max())
+        support = lows.min().item()
 
-        support = round(support, 2)
-        resistance = round(resistance, 2)
+        current_price = data["Close"].iloc[-1].item()
 
-        return support, resistance
+        message = (
+            f"📉 Destek Analizi\n\n"
+            f"Hisse: {symbol}\n"
+            f"Güncel Fiyat: {round(current_price,2)}\n"
+            f"Güçlü Destek: {round(support,2)}"
+        )
 
-    except Exception as e:
+        return message
 
-        print(f"Support engine error: {e}")
-        return None, None
+    except Exception:
+
+        return "Analiz yapılamadı."

@@ -1,42 +1,54 @@
-from radar_engine import run_radar
-from ai_engine import get_ai_score
-from forecast_engine import forecast_trend
+import yfinance as yf
+import pandas as pd
 
 
-def generate_trade_signals():
+def calculate_rsi(data, period=14):
 
-    radar = run_radar()
+    delta = data["Close"].diff()
 
-    if not radar:
-        return []
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
 
-    signals = []
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
 
-    for symbol, score in radar[:10]:
+    rs = avg_gain / avg_loss
 
-        try:
+    rsi = 100 - (100 / (1 + rs))
 
-            ai_score = get_ai_score(symbol)
+    return rsi.iloc[-1]
 
-            forecast = forecast_trend(symbol)
 
-            if ai_score is None or forecast is None:
-                continue
+def generate_signal(symbol):
 
-            confidence = int((ai_score + forecast["confidence"]) / 2)
+    symbol = symbol.upper() + ".IS"
 
-            if confidence < 70:
-                continue
+    stock = yf.Ticker(symbol)
 
-            entry = forecast["move"]
+    hist = stock.history(period="3mo")
 
-            signals.append({
-                "symbol": symbol,
-                "confidence": confidence,
-                "move": forecast["move"]
-            })
+    if hist.empty:
+        return None
 
-        except:
-            continue
+    price = hist["Close"].iloc[-1]
 
-    return signals
+    support = hist["Low"].tail(20).min()
+    resistance = hist["High"].tail(20).max()
+
+    rsi = calculate_rsi(hist)
+
+    score = 0
+
+    if price <= support * 1.03:
+        score += 30
+
+    if rsi < 35:
+        score += 30
+
+    if price < resistance:
+        score += 20
+
+    if hist["Close"].iloc[-1] > hist["Close"].iloc[-5]:
+        score += 20
+
+    return price, support, resistance, rsi, score

@@ -1,61 +1,54 @@
 import json
-import os
-
-FILE = "learning_data.json"
+from logger_engine import log_info
 
 
-def load_data():
+def run_learning():
 
-    if not os.path.exists(FILE):
-        return {}
-
-    with open(FILE, "r") as f:
-        return json.load(f)
-
-
-def save_data(data):
-
-    with open(FILE, "w") as f:
-        json.dump(data, f)
+    try:
+        with open("trade_memory.json","r") as f:
+            trades = json.load(f)
+    except:
+        log_info("Trade memory missing")
+        return
 
 
-def record_signal(ticker, score):
-
-    data = load_data()
-
-    if ticker not in data:
-
-        data[ticker] = {
-            "count": 0,
-            "avg_score": 0
-        }
-
-    entry = data[ticker]
-
-    entry["count"] += 1
-
-    entry["avg_score"] = (
-        (entry["avg_score"] * (entry["count"] - 1)) + score
-    ) / entry["count"]
-
-    data[ticker] = entry
-
-    save_data(data)
+    if len(trades) == 0:
+        return
 
 
-def learning_bonus(ticker):
+    wins = 0
+    losses = 0
+    total_profit = 0
 
-    data = load_data()
 
-    if ticker not in data:
-        return 0
+    for t in trades:
 
-    avg = data[ticker]["avg_score"]
+        profit = t["profit"]
 
-    if avg > 80:
-        return 10
+        total_profit += profit
 
-    if avg > 70:
-        return 5
+        if profit > 0:
+            wins += 1
+        else:
+            losses += 1
 
-    return 0
+
+    win_rate = wins / len(trades)
+
+
+    learning = {
+        "total_trades": len(trades),
+        "win_rate": round(win_rate,2),
+        "total_profit": round(total_profit,2)
+    }
+
+
+    with open("learning.json","w") as f:
+        json.dump(learning,f)
+
+
+    log_info("Learning Engine Updated")
+
+
+if __name__ == "__main__":
+    run_learning()

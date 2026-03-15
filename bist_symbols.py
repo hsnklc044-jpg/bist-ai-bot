@@ -1,27 +1,25 @@
-<<<<<<< HEAD
-bist_symbols = [
+import requests
 
-"THYAO.IS","ASELS.IS","EREGL.IS","TUPRS.IS","FROTO.IS",
-"KCHOL.IS","SAHOL.IS","AKBNK.IS","ISCTR.IS","YKBNK.IS",
-"HALKB.IS","ENKAI.IS","PETKM.IS","SISE.IS","BIMAS.IS",
-"ARCLK.IS","TOASO.IS","DOHOL.IS","PGSUS.IS","KOZAL.IS",
-"TCELL.IS","ODAS.IS","SASA.IS","KRDMD.IS","ALARK.IS",
-"BRYAT.IS","KONTR.IS","GUBRF.IS","CIMSA.IS","OYAKC.IS",
-"HEKTS.IS","BRSAN.IS","ULKER.IS","MGROS.IS","TAVHL.IS",
-"TKFEN.IS","EGEEN.IS","AKSEN.IS","DOAS.IS","TTRAK.IS"
 
-]
-=======
-BIST_SYMBOLS = [
-"AKBNK.IS","ASELS.IS","BIMAS.IS","EKGYO.IS","EREGL.IS",
-"FROTO.IS","GARAN.IS","HEKTS.IS","ISCTR.IS","KCHOL.IS",
-"KOZAA.IS","KOZAL.IS","PETKM.IS","SAHOL.IS","SISE.IS",
-"TAVHL.IS","TCELL.IS","THYAO.IS","TOASO.IS","TUPRS.IS",
-"YKBNK.IS","ALARK.IS","ARCLK.IS","BRSAN.IS","CCOLA.IS",
-"CIMSA.IS","DOHOL.IS","ENJSA.IS","ENKAI.IS","GLYHO.IS",
-"GUBRF.IS","HALKB.IS","IPEKE.IS","KORDS.IS","MGROS.IS",
-"NTHOL.IS","ODAS.IS","OYAKC.IS","PGSUS.IS","SASA.IS",
-"SELEC.IS","SMRTG.IS","SOKM.IS","TATGD.IS","TKFEN.IS",
-"TRGYO.IS","TSKB.IS","ULKER.IS","VAKBN.IS","VESBE.IS"
-]
->>>>>>> b473b179fde9679eff721a025c85876a830c31be
+def get_bist_symbols():
+
+    url = "https://raw.githubusercontent.com/matfax/sp500/master/bist100.txt"
+
+    try:
+
+        r = requests.get(url)
+
+        symbols = r.text.splitlines()
+
+        return symbols
+
+    except:
+
+        return [
+            "AKBNK","ASELS","BIMAS","EKGYO","EREGL","FROTO","GARAN",
+            "HEKTS","ISCTR","KCHOL","KRDMD","ODAS","PETKM","SAHOL",
+            "SASA","SISE","TAVHL","TCELL","THYAO","TOASO","TUPRS","YKBNK"
+        ]
+
+
+BIST_SYMBOLS = get_bist_symbols()

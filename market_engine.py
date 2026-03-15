@@ -1,50 +1,39 @@
-import yfinance as yf
+# market_data.py
 
+import random
+import pandas as pd
 
-def get_market_status():
+def generate_price_series(length=50):
+"""
+Basit fiyat serisi üretir (simülasyon).
+Gerçek veri bağlanana kadar kullanılacak.
+"""
+price = random.uniform(50, 200)
+prices = []
 
-    ticker = yf.Ticker("XU100.IS")
+```
+for _ in range(length):
+    change = random.uniform(-2, 2)
+    price = max(price + change, 1)
+    prices.append(round(price, 2))
 
-    df = ticker.history(period="6mo")
+return pd.Series(prices)
+```
 
-    if df.empty:
-        return None
+def calculate_rsi(series, period=14):
+delta = series.diff()
 
-    price = float(df["Close"].iloc[-1])
+```
+gain = delta.clip(lower=0)
+loss = -delta.clip(upper=0)
 
-    ma20 = float(df["Close"].tail(20).mean())
-    ma50 = float(df["Close"].tail(50).mean())
+avg_gain = gain.rolling(period).mean()
+avg_loss = loss.rolling(period).mean()
 
-    momentum = float(df["Close"].iloc[-1]) - float(df["Close"].iloc[-5])
+rs = avg_gain / avg_loss
+rsi = 100 - (100 / (1 + rs))
 
-    # trend
-    if price > ma20 and ma20 > ma50:
-        trend = "Bullish"
+return round(rsi.iloc[-1], 2)
+```
 
-    elif price < ma20 and ma20 < ma50:
-        trend = "Bearish"
-
-    else:
-        trend = "Sideways"
-
-    # momentum
-    if momentum > 0:
-        momentum_status = "Strong"
-    else:
-        momentum_status = "Weak"
-
-    # risk
-    if trend == "Bullish" and momentum_status == "Strong":
-        risk = "Low"
-
-    elif trend == "Bearish":
-        risk = "High"
-
-    else:
-        risk = "Medium"
-
-    return {
-        "trend": trend,
-        "momentum": momentum_status,
-        "risk": risk
-    }
+def calculate_ema(series, period=20):

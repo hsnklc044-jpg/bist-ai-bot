@@ -1,48 +1,35 @@
-<<<<<<< HEAD
-def calculate_risk(symbol, entry, stop, capital=100000, risk_percent=2):
+import yfinance as yf
 
-    try:
 
-        entry = float(entry)
-        stop = float(stop)
+def calculate_risk(symbol):
 
-        risk_per_share = abs(entry - stop)
+    ticker = yf.Ticker(symbol + ".IS")
 
-        if risk_per_share == 0:
-            return None
+    df = ticker.history(period="6mo")
 
-        max_risk = capital * (risk_percent / 100)
+    close = df["Close"].iloc[-1]
 
-        position_size = max_risk / risk_per_share
+    support = df["Low"].rolling(20).min().iloc[-1]
 
-        return {
-            "symbol": symbol,
-            "entry": entry,
-            "stop": stop,
-            "risk_per_share": round(risk_per_share,2),
-            "position_size": int(position_size),
-            "max_risk": int(max_risk),
-            "risk_percent": risk_percent
-        }
+    resistance = df["High"].rolling(20).max().iloc[-1]
 
-    except:
+    entry = close
+    stop = support
+    target = resistance
 
-        return None
-=======
-def get_risk_metrics():
-    win_rate = 49.44
-    profit_factor = 0.98
-    avg_win = 100.0
-    avg_loss = -100.0
-    expectancy = -1.12
-    sharpe_ratio = -0.01
+    risk = entry - stop
+    reward = target - entry
 
-    return {
-        "win_rate": win_rate,
-        "profit_factor": profit_factor,
-        "avg_win": avg_win,
-        "avg_loss": avg_loss,
-        "expectancy": expectancy,
-        "sharpe_ratio": sharpe_ratio,
-    }
->>>>>>> b473b179fde9679eff721a025c85876a830c31be
+    rr = 0
+
+    if risk > 0:
+        rr = reward / risk
+
+    confidence = "LOW"
+
+    if rr > 2:
+        confidence = "HIGH"
+    elif rr > 1:
+        confidence = "MEDIUM"
+
+    return round(entry,2), round(stop,2), round(target,2), round(rr,2), confidence

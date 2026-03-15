@@ -1,38 +1,88 @@
-import json
 import yfinance as yf
+import pandas as pd
+from watchlist import WATCHLIST
 
 
-def get_portfolio():
+def calculate_rsi(data, period=14):
 
-    with open("portfolio.json") as f:
-        portfolio = json.load(f)
+    delta = data.diff()
+
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+
+    rs = avg_gain / avg_loss
+
+    rsi = 100 - (100 / (1 + rs))
+
+    return rsi
+
+
+def generate_portfolio():
 
     results = []
 
-    total_value = 0
+    for symbol in WATCHLIST:
 
-    for symbol, qty in portfolio.items():
+        try:
 
-        ticker = yf.Ticker(symbol + ".IS")
+            data = yf.download(
+                symbol + ".IS",
+                period="3mo",
+                interval="1d",
+                progress=False
+            )
 
-        df = ticker.history(period="5d")
+            if data.empty:
+                continue
 
-        if df.empty:
+            close = data["Close"].dropna()
+            volume = data["Volume"].dropna()
+
+            price = close.iloc[-1].item()
+            yesterday = close.iloc[-2].item()
+
+            change = ((price - yesterday) / yesterday) * 100
+
+            rsi = calculate_rsi(close)
+
+            rsi_val = rsi.iloc[-1].item()
+
+            avg_vol = volume[:-1].mean().item()
+            today_vol = volume.iloc[-1].item()
+
+            volume_ratio = today_vol / avg_vol
+
+            score = change + volume_ratio
+
+            if rsi_val < 70:
+                results.append({
+                    "symbol": symbol,
+                    "score": score
+                })
+
+        except Exception:
             continue
 
-        price = float(df["Close"].iloc[-1])
-        prev = float(df["Close"].iloc[-2])
+    if not results:
+        return "Portföy oluşturulamadı."
 
-        change = ((price - prev) / prev) * 100
+    df = pd.DataFrame(results)
 
-        value = price * qty
+    df = df.sort_values(by="score", ascending=False)
 
-        total_value += value
+    top = df.head(5)
 
-        results.append({
-            "symbol": symbol,
-            "change": round(change,2),
-            "value": round(value,2)
-        })
+    message = "🤖 AI Portföy\n\n"
 
-    return results, total_value
+    rank = 1
+
+    for _, row in top.iterrows():
+
+        message += f"{rank}️⃣ {row['symbol']}\n"
+
+        rank += 1
+
+    return message

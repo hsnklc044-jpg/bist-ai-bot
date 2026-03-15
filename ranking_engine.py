@@ -1,19 +1,13 @@
-from opportunity_score import opportunity_score
-from signal_sorter import sort_signals
+from logger_engine import log_info
 
 
-def rank_opportunities(signals):
+def rank_signals(signals):
 
-    ranked = []
+    if not signals:
+        return []
 
-    for s in signals:
+    ranked = sorted(signals, key=lambda x: x[0], reverse=True)
 
-        score = opportunity_score(s)
+    log_info("Signals ranked")
 
-        s["opportunity"] = score
-
-        ranked.append(s)
-
-    ranked = sort_signals(ranked)
-
-    return ranked[:5]
+    return ranked
