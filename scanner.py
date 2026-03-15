@@ -55,54 +55,31 @@ def calculate_ai_score(df):
     high_20 = df["High"].rolling(20).max()
 
     if close.iloc[-1] > high_20.iloc[-2]:
-        score += 20
-
-    # Relative strength
-    if close.iloc[-1] > close.iloc[-20]:
-        score += 10
+        score += 30
 
     return score
 
 
-def run_ai_scanner():
+def scan_market():
 
     results = []
 
-    for ticker in BIST_TICKERS:
+    for symbol in BIST_TICKERS:
 
         try:
 
-            stock = yf.Ticker(ticker)
+            df = yf.download(symbol, period="3mo", interval="1d")
 
-            df = stock.history(period="6mo")
-
-            if df.empty:
+            if df.empty or len(df) < 50:
                 continue
 
             score = calculate_ai_score(df)
 
-            vol_avg = df["Volume"].rolling(20).mean().iloc[-1]
+            results.append((symbol, score))
 
-            if vol_avg == 0:
-                continue
-
-            volume_spike = df["Volume"].iloc[-1] / vol_avg
-
-            results.append(
-                (
-                    ticker.replace(".IS",""),
-                    score,
-                    round(volume_spike,2)
-                )
-            )
-
-        except:
+        except Exception:
             continue
 
-
-    results = sorted(results, key=lambda x: x[1], reverse=True)
-
-    if len(results) == 0:
-        return [("NO DATA",0,0)]
+    results.sort(key=lambda x: x[1], reverse=True)
 
     return results[:10]
