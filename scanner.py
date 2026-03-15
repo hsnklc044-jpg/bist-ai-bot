@@ -48,7 +48,7 @@ def calculate_ai_score(df):
     # Volume spike
     vol_avg = volume.rolling(20).mean()
 
-    if volume.iloc[-1] > vol_avg.iloc[-1]:
+    if volume.iloc[-1] > vol_avg.iloc[-1] * 1.5:
         score += 15
 
     # Breakout
@@ -82,12 +82,12 @@ def scan_market():
 
             score = calculate_ai_score(df)
 
-            if score > 0:
+            if score >= 60:
                 results.append((symbol, score))
 
-        except Exception:
+        except:
             continue
 
     results.sort(key=lambda x: x[1], reverse=True)
 
-    return results[:10]
+    return results[:5]
