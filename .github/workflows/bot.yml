@@ -1,8 +1,8 @@
-name: BIST AI SYSTEM
+name: Run Trading Bot
 
 on:
   schedule:
-    - cron: "0 7 * * 1-5"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -16,12 +16,16 @@ jobs:
       - name: Python kur
         uses: actions/setup-python@v4
         with:
-          python-version: '3.10'
+          python-version: "3.10"
 
-      - name: Kütüphaneleri kur
+      - name: Paketleri yükle
         run: |
-          pip install -r requirements.txt
+          pip install python-binance numpy requests python-telegram-bot
 
       - name: Bot çalıştır
-        run: |
-          python system_launcher.py
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+          API_SECRET: ${{ secrets.API_SECRET }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python telegram_bot.py
