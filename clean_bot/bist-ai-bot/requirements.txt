@@ -1,0 +1,8 @@
+yfinance
+pandas
+numpy
+ta
+python-telegram-bot
+requests
+schedule
+colorama

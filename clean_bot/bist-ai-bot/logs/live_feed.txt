@@ -1,0 +1,722 @@
+[02:24:26] 
+🤖 AI FILTER SIGNAL
+
+Symbol: TUPRS.IS
+
+Signal: SHORT
+
+AI Score: 15
+
+Trend: BEARISH
+
+RSI: 37.44
+
+MACD: 1.2
+
+Volatility: 2.3
+
+Volume Ratio: 0.49
+
+
+[02:24:28] 
+🤖 AI FILTER SIGNAL
+
+Symbol: ASELS.IS
+
+Signal: SHORT
+
+AI Score: 15
+
+Trend: BEARISH
+
+RSI: 58.49
+
+MACD: 15.89
+
+Volatility: 3.02
+
+Volume Ratio: 0.48
+
+
+[02:24:29] 
+🤖 AI FILTER SIGNAL
+
+Symbol: KCHOL.IS
+
+Signal: SHORT
+
+AI Score: 15
+
+Trend: BEARISH
+
+RSI: 49.33
+
+MACD: 2.57
+
+Volatility: 1.82
+
+Volume Ratio: 0.69
+
+
+[02:24:33] 
+🤖 AI FILTER SIGNAL
+
+Symbol: TCELL.IS
+
+Signal: SHORT
+
+AI Score: 15
+
+Trend: BEARISH
+
+RSI: 49.81
+
+MACD: 1.22
+
+Volatility: 1.95
+
+Volume Ratio: 0.66
+
+
+[02:24:35] 
+🤖 AI FILTER SIGNAL
+
+Symbol: GARAN.IS
+
+Signal: SHORT
+
+AI Score: 15
+
+Trend: BEARISH
+
+RSI: 36.04
+
+MACD: -0.19
+
+Volatility: 2.34
+
+Volume Ratio: 0.8
+
+
+[02:27:11] 
+🤖 AI FILTER SIGNAL
+
+Symbol: TUPRS.IS
+
+Signal: SHORT
+
+AI Score: 15
+
+Trend: BEARISH
+
+RSI: 37.44
+
+MACD: 1.2
+
+Volatility: 2.3
+
+Volume Ratio: 0.49
+
+
+[02:27:12] 
+🤖 AI FILTER SIGNAL
+
+Symbol: ASELS.IS
+
+Signal: SHORT
+
+AI Score: 15
+
+Trend: BEARISH
+
+RSI: 58.49
+
+MACD: 15.89
+
+Volatility: 3.02
+
+Volume Ratio: 0.48
+
+
+[02:27:14] 
+🤖 AI FILTER SIGNAL
+
+Symbol: KCHOL.IS
+
+Signal: SHORT
+
+AI Score: 15
+
+Trend: BEARISH
+
+RSI: 49.33
+
+MACD: 2.57
+
+Volatility: 1.82
+
+Volume Ratio: 0.69
+
+
+[02:27:18] 
+🤖 AI FILTER SIGNAL
+
+Symbol: TCELL.IS
+
+Signal: SHORT
+
+AI Score: 15
+
+Trend: BEARISH
+
+RSI: 49.81
+
+MACD: 1.22
+
+Volatility: 1.95
+
+Volume Ratio: 0.66
+
+
+[02:27:19] 
+🤖 AI FILTER SIGNAL
+
+Symbol: GARAN.IS
+
+Signal: SHORT
+
+AI Score: 15
+
+Trend: BEARISH
+
+RSI: 36.04
+
+MACD: -0.19
+
+Volatility: 2.34
+
+Volume Ratio: 0.8
+
+
+[02:31:15] 
+🤖 AI FILTER SIGNAL
+
+Symbol: HEKTS.IS
+
+Signal: SHORT
+
+AI Score: 30
+
+Trend: BEARISH
+
+RSI: 79.91
+
+MACD: 0.37
+
+Volatility: 3.71
+
+Volume Ratio: 2.55
+
+
+[02:31:17] 
+🤖 AI FILTER SIGNAL
+
+Symbol: PETKM.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 74.04
+
+MACD: 1.3
+
+Volatility: 3.23
+
+Volume Ratio: 0.45
+
+
+[02:31:19] 
+🤖 AI FILTER SIGNAL
+
+Symbol: GARAN.IS
+
+Signal: SHORT
+
+AI Score: 20
+
+Trend: BEARISH
+
+RSI: 36.04
+
+MACD: -0.06
+
+Volatility: 2.74
+
+Volume Ratio: 0.8
+
+
+[02:31:21] 
+🤖 AI FILTER SIGNAL
+
+Symbol: EREGL.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 84.35
+
+MACD: 2.62
+
+Volatility: 2.72
+
+Volume Ratio: 0.68
+
+
+[02:34:11] 
+🤖 AI FILTER SIGNAL
+
+Symbol: HEKTS.IS
+
+Signal: SHORT
+
+AI Score: 30
+
+Trend: BEARISH
+
+RSI: 79.91
+
+MACD: 0.37
+
+Volatility: 3.71
+
+Volume Ratio: 2.55
+
+
+[02:34:12] 
+🤖 AI FILTER SIGNAL
+
+Symbol: PETKM.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 74.04
+
+MACD: 1.3
+
+Volatility: 3.23
+
+Volume Ratio: 0.45
+
+
+[02:34:14] 
+🤖 AI FILTER SIGNAL
+
+Symbol: GARAN.IS
+
+Signal: SHORT
+
+AI Score: 20
+
+Trend: BEARISH
+
+RSI: 36.04
+
+MACD: -0.06
+
+Volatility: 2.74
+
+Volume Ratio: 0.8
+
+
+[02:34:17] 
+🤖 AI FILTER SIGNAL
+
+Symbol: EREGL.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 84.35
+
+MACD: 2.62
+
+Volatility: 2.72
+
+Volume Ratio: 0.68
+
+
+[02:36:06] 
+🤖 AI FILTER SIGNAL
+
+Symbol: HEKTS.IS
+
+Signal: SHORT
+
+AI Score: 30
+
+Trend: BEARISH
+
+RSI: 79.91
+
+MACD: 0.37
+
+Volatility: 3.71
+
+Volume Ratio: 2.55
+
+
+[02:36:07] 
+🤖 AI FILTER SIGNAL
+
+Symbol: PETKM.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 74.04
+
+MACD: 1.3
+
+Volatility: 3.23
+
+Volume Ratio: 0.45
+
+
+[02:36:09] 
+🤖 AI FILTER SIGNAL
+
+Symbol: GARAN.IS
+
+Signal: SHORT
+
+AI Score: 20
+
+Trend: BEARISH
+
+RSI: 36.04
+
+MACD: -0.06
+
+Volatility: 2.74
+
+Volume Ratio: 0.8
+
+
+[02:36:12] 
+🤖 AI FILTER SIGNAL
+
+Symbol: EREGL.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 84.35
+
+MACD: 2.62
+
+Volatility: 2.72
+
+Volume Ratio: 0.68
+
+
+SASA.IS | Score:45 | Signal:None | Trend:BEARISH
+SISE.IS | Score:40 | Signal:None | Trend:BEARISH
+THYAO.IS | Score:35 | Signal:None | Trend:BEARISH
+TUPRS.IS | Score:40 | Signal:None | Trend:BEARISH
+ASELS.IS | Score:40 | Signal:None | Trend:BEARISH
+KCHOL.IS | Score:40 | Signal:None | Trend:BEARISH
+YKBNK.IS | Score:40 | Signal:None | Trend:BEARISH
+BIMAS.IS | Score:40 | Signal:None | Trend:BEARISH
+HEKTS.IS | Score:30 | Signal:SHORT | Trend:BEARISH
+[02:40:16] 
+🤖 AI FILTER SIGNAL
+
+Symbol: HEKTS.IS
+
+Signal: SHORT
+
+AI Score: 30
+
+Trend: BEARISH
+
+RSI: 79.91
+
+MACD: 0.37
+
+Volatility: 3.71
+
+Volume Ratio: 2.55
+
+
+PETKM.IS | Score:25 | Signal:SHORT | Trend:BEARISH
+[02:40:17] 
+🤖 AI FILTER SIGNAL
+
+Symbol: PETKM.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 74.04
+
+MACD: 1.3
+
+Volatility: 3.23
+
+Volume Ratio: 0.45
+
+
+TCELL.IS | Score:40 | Signal:None | Trend:BEARISH
+GARAN.IS | Score:20 | Signal:SHORT | Trend:BEARISH
+[02:40:19] 
+🤖 AI FILTER SIGNAL
+
+Symbol: GARAN.IS
+
+Signal: SHORT
+
+AI Score: 20
+
+Trend: BEARISH
+
+RSI: 36.04
+
+MACD: -0.06
+
+Volatility: 2.74
+
+Volume Ratio: 0.8
+
+
+AKBNK.IS | Score:35 | Signal:None | Trend:BEARISH
+EREGL.IS | Score:25 | Signal:SHORT | Trend:BEARISH
+[02:40:22] 
+🤖 AI FILTER SIGNAL
+
+Symbol: EREGL.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 84.35
+
+MACD: 2.62
+
+Volatility: 2.72
+
+Volume Ratio: 0.68
+
+
+SASA.IS | Score:45 | Signal:None | Trend:BEARISH
+SISE.IS | Score:40 | Signal:None | Trend:BEARISH
+THYAO.IS | Score:35 | Signal:None | Trend:BEARISH
+TUPRS.IS | Score:40 | Signal:None | Trend:BEARISH
+ASELS.IS | Score:40 | Signal:None | Trend:BEARISH
+KCHOL.IS | Score:40 | Signal:None | Trend:BEARISH
+YKBNK.IS | Score:40 | Signal:None | Trend:BEARISH
+BIMAS.IS | Score:40 | Signal:None | Trend:BEARISH
+HEKTS.IS | Score:30 | Signal:SHORT | Trend:BEARISH
+[02:42:23] 
+🤖 AI FILTER SIGNAL
+
+Symbol: HEKTS.IS
+
+Signal: SHORT
+
+AI Score: 30
+
+Trend: BEARISH
+
+RSI: 79.91
+
+MACD: 0.37
+
+Volatility: 3.71
+
+Volume Ratio: 2.55
+
+
+PETKM.IS | Score:25 | Signal:SHORT | Trend:BEARISH
+[02:42:25] 
+🤖 AI FILTER SIGNAL
+
+Symbol: PETKM.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 74.04
+
+MACD: 1.3
+
+Volatility: 3.23
+
+Volume Ratio: 0.45
+
+
+TCELL.IS | Score:40 | Signal:None | Trend:BEARISH
+GARAN.IS | Score:20 | Signal:SHORT | Trend:BEARISH
+[02:42:27] 
+🤖 AI FILTER SIGNAL
+
+Symbol: GARAN.IS
+
+Signal: SHORT
+
+AI Score: 20
+
+Trend: BEARISH
+
+RSI: 36.04
+
+MACD: -0.06
+
+Volatility: 2.74
+
+Volume Ratio: 0.8
+
+
+AKBNK.IS | Score:35 | Signal:None | Trend:BEARISH
+EREGL.IS | Score:25 | Signal:SHORT | Trend:BEARISH
+[02:42:29] 
+🤖 AI FILTER SIGNAL
+
+Symbol: EREGL.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 84.35
+
+MACD: 2.62
+
+Volatility: 2.72
+
+Volume Ratio: 0.68
+
+
+SASA.IS | Score:45 | Signal:None | Trend:BEARISH
+SISE.IS | Score:40 | Signal:None | Trend:BEARISH
+THYAO.IS | Score:35 | Signal:None | Trend:BEARISH
+TUPRS.IS | Score:40 | Signal:None | Trend:BEARISH
+ASELS.IS | Score:40 | Signal:None | Trend:BEARISH
+KCHOL.IS | Score:40 | Signal:None | Trend:BEARISH
+YKBNK.IS | Score:40 | Signal:None | Trend:BEARISH
+BIMAS.IS | Score:40 | Signal:None | Trend:BEARISH
+HEKTS.IS | Score:30 | Signal:SHORT | Trend:BEARISH
+[02:45:32] 
+🤖 AI FILTER SIGNAL
+
+Symbol: HEKTS.IS
+
+Signal: SHORT
+
+AI Score: 30
+
+Trend: BEARISH
+
+RSI: 79.91
+
+MACD: 0.37
+
+Volatility: 3.71
+
+Volume Ratio: 2.55
+
+
+PETKM.IS | Score:25 | Signal:SHORT | Trend:BEARISH
+[02:45:34] 
+🤖 AI FILTER SIGNAL
+
+Symbol: PETKM.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 74.04
+
+MACD: 1.3
+
+Volatility: 3.23
+
+Volume Ratio: 0.45
+
+
+TCELL.IS | Score:40 | Signal:None | Trend:BEARISH
+GARAN.IS | Score:20 | Signal:SHORT | Trend:BEARISH
+[02:45:37] 
+🤖 AI FILTER SIGNAL
+
+Symbol: GARAN.IS
+
+Signal: SHORT
+
+AI Score: 20
+
+Trend: BEARISH
+
+RSI: 36.04
+
+MACD: -0.06
+
+Volatility: 2.74
+
+Volume Ratio: 0.8
+
+
+AKBNK.IS | Score:35 | Signal:None | Trend:BEARISH
+EREGL.IS | Score:25 | Signal:SHORT | Trend:BEARISH
+[02:45:39] 
+🤖 AI FILTER SIGNAL
+
+Symbol: EREGL.IS
+
+Signal: SHORT
+
+AI Score: 25
+
+Trend: BEARISH
+
+RSI: 84.35
+
+MACD: 2.62
+
+Volatility: 2.72
+
+Volume Ratio: 0.68
+
+

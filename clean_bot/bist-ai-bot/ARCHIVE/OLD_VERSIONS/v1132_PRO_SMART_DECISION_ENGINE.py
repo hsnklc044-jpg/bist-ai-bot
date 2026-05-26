@@ -1,0 +1,179 @@
+# =========================================
+# FILE: v1132_PRO_SMART_DECISION_ENGINE.py
+# =========================================
+
+import yfinance as yf
+import numpy as np
+import time
+from datetime import datetime
+
+SYMBOLS = ["TUPRS.IS", "EREGL.IS", "SISE.IS"]
+
+ACCOUNT = 10000
+RISK_PER_TRADE = 0.01
+MAX_TOTAL_RISK = 0.03
+ATR_PERIOD = 14
+SCAN_INTERVAL = 5
+MAX_POSITIONS = 2
+
+positions = {}
+last_trade_time = {}
+
+# ================= SAFE =================
+def val(x):
+    try:
+        return float(np.ravel(x)[-1])
+    except:
+        return np.nan
+
+# ================= DATA =================
+def get_data(symbol):
+    try:
+        df = yf.download(symbol, period="1d", interval="1m", progress=False)
+        if df is not None and not df.empty:
+            return df
+    except:
+        pass
+    return None
+
+# ================= ATR =================
+def atr(df):
+    h = np.ravel(df["High"])
+    l = np.ravel(df["Low"])
+    c = np.ravel(df["Close"])
+
+    tr = np.maximum(h - l, np.maximum(abs(h - np.roll(c, 1)), abs(l - np.roll(c, 1))))
+    return float(np.mean(tr[-ATR_PERIOD:]))
+
+# ================= SCORE =================
+def score(df):
+    close = np.ravel(df["Close"])
+
+    ma20 = np.mean(close[-20:])
+    ma50 = np.mean(close[-50:])
+    momentum = close[-1] - close[-5]
+
+    trend = 1 if close[-1] > ma20 else 0
+    strength = 1 if ma20 > ma50 else 0
+    momentum_score = 1 if momentum > 0 else 0
+
+    return trend + strength + momentum_score  # 0-3
+
+# ================= POSITION SIZE =================
+def position_size(atr_val):
+    if atr_val == 0 or np.isnan(atr_val):
+        return 0
+    risk_amount = ACCOUNT * RISK_PER_TRADE
+    return round(risk_amount / atr_val, 2)
+
+# ================= TOTAL RISK =================
+def total_risk():
+    risk = 0
+    for p in positions.values():
+        risk += p["risk"]
+    return risk
+
+# ================= MARKET HOURS =================
+def market_open():
+    now = datetime.now()
+    return 10 <= now.hour < 18
+
+print("🚀 v1132 PRO DECISION ENGINE STARTED")
+
+while True:
+    now = datetime.now()
+    print(f"\n⏱ {now}")
+
+    if not market_open():
+        print("🛑 MARKET CLOSED")
+        time.sleep(60)
+        continue
+
+    candidates = []
+
+    # ================= SCAN =================
+    for s in SYMBOLS:
+        df = get_data(s)
+        if df is None or len(df) < 50:
+            continue
+
+        sc = score(df)
+        if sc < 2:
+            continue
+
+        price = val(df["Close"])
+        atr_val = atr(df)
+
+        candidates.append((s, sc, price, atr_val))
+
+    # ================= SORT =================
+    candidates = sorted(candidates, key=lambda x: x[1], reverse=True)
+
+    # ================= ENTRY =================
+    for s, sc, price, atr_val in candidates:
+
+        if s in positions:
+            continue
+
+        if len(positions) >= MAX_POSITIONS:
+            break
+
+        if total_risk() >= ACCOUNT * MAX_TOTAL_RISK:
+            print("⚠️ MAX RISK LIMIT")
+            break
+
+        # spam trade engelle
+        if s in last_trade_time:
+            diff = (now - last_trade_time[s]).seconds
+            if diff < 120:
+                continue
+
+        size = position_size(atr_val)
+        if size <= 0:
+            continue
+
+        risk = atr_val * size
+
+        positions[s] = {
+            "entry": price,
+            "size": size,
+            "sl": price - atr_val,
+            "tp": price + atr_val * 2,
+            "max_price": price,
+            "risk": risk
+        }
+
+        last_trade_time[s] = now
+
+        print(f"🚀 ENTRY {s} | price:{price:.2f} score:{sc}")
+
+    # ================= MONITOR =================
+    for s in list(positions.keys()):
+        df = get_data(s)
+        if df is None:
+            continue
+
+        price = val(df["Close"])
+        pos = positions[s]
+
+        pnl = (price - pos["entry"]) * pos["size"]
+        pos["max_price"] = max(pos["max_price"], price)
+
+        trailing = pos["max_price"] - (pos["sl"] - pos["entry"])
+
+        print(f"📊 {s} | {price:.2f} | PnL:{pnl:.2f}")
+
+        if price <= pos["sl"]:
+            reason = "SL"
+        elif price >= pos["tp"]:
+            reason = "TP"
+        elif price <= trailing:
+            reason = "TRAIL"
+        else:
+            continue
+
+        print(f"❌ EXIT {s} | {reason} | PnL:{pnl:.2f}")
+
+        del positions[s]
+
+    time.sleep(SCAN_INTERVAL)

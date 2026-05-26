@@ -1,0 +1,22 @@
+{
+    "TUPRS.IS": {
+        "signal": "SHORT",
+        "entry_price": 250.5,
+        "atr": 2.36
+    },
+    "SISE.IS": {
+        "signal": "SHORT",
+        "entry_price": 50.4,
+        "atr": 0.74
+    },
+    "ASELS.IS": {
+        "signal": "LONG",
+        "entry_price": 413.0,
+        "atr": 3.78
+    },
+    "THYAO.IS": {
+        "signal": "SHORT",
+        "entry_price": 305.0,
+        "atr": 1.66
+    }
+}

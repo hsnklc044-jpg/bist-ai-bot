@@ -1,0 +1,1 @@
+{"active_trades": [{"symbol": "EREGL", "entry": 31.31999969482422, "tp": 31.43999978474208, "sl": 31.255999646868023, "lot": 7812.49, "strategy": "scalp"}], "locked_symbols": ["THYAO", "EREGL", "BIMAS", "AKBNK"], "symbols": ["BIMAS", "EREGL", "AKBNK", "THYAO"], "weights": {"trend": 1.0, "scalp": 1.0}}
