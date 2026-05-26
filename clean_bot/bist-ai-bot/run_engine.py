@@ -1,20 +1,44 @@
 from core.live_scanner import scan_market
-import time
+from core.portfolio_checker import check_portfolio
 
-print("🚀 QUANT ENGINE STARTED")
+import time
+from datetime import datetime
+
+print("🚀 QUANT ENGINE V2.2 STARTED")
 
 while True:
 
     try:
 
+        print(
+            f"\n[{datetime.now()}]"
+        )
+
+        print(
+            "\n📂 Portfolio Check..."
+        )
+
+        check_portfolio()
+
+        print(
+            "\n📈 Market Scan..."
+        )
+
         opportunities = scan_market()
 
-        print(f"\nSCAN COMPLETE | SIGNAL COUNT: {len(opportunities)}")
+        print(
+            f"\n✅ SCAN COMPLETE | "
+            f"SIGNALS: {len(opportunities)}"
+        )
 
     except Exception as e:
 
-        print(f"\n[ENGINE ERROR] {e}")
+        print(
+            f"\n❌ ENGINE ERROR: {e}"
+        )
 
-    print("\nWaiting 300 seconds...\n")
+    print(
+        "\n⏳ Waiting 300 seconds...\n"
+    )
 
     time.sleep(300)

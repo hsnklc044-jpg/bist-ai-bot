@@ -42,10 +42,6 @@ from core.market_report import (
     generate_market_report
 )
 
-from core.watchlist_report import (
-    generate_watchlist
-)
-
 
 # ==================================
 # HELP
@@ -66,7 +62,6 @@ async def help_command(
         "/portfolio\n"
         "/top\n"
         "/market\n"
-        "/watchlist\n"
         "/help"
     )
 
@@ -294,30 +289,6 @@ async def market_command(
 
 
 # ==================================
-# WATCHLIST
-# ==================================
-
-async def watchlist_command(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE
-):
-
-    try:
-
-        report = generate_watchlist()
-
-        await update.message.reply_text(
-            report
-        )
-
-    except Exception as e:
-
-        await update.message.reply_text(
-            f"❌ Hata\n{e}"
-        )
-
-
-# ==================================
 # MAIN
 # ==================================
 
@@ -375,13 +346,6 @@ def main():
         CommandHandler(
             "market",
             market_command
-        )
-    )
-
-    app.add_handler(
-        CommandHandler(
-            "watchlist",
-            watchlist_command
         )
     )
 

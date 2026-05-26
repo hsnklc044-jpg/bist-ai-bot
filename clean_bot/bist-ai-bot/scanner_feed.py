@@ -1,230 +1,158 @@
-from core.ai_filter import ai_filter_stock
-from core.trade_journal import save_trade
-from core.portfolio_manager import add_position
-from tg.notifier import TelegramNotifier
-from config import (
-    TELEGRAM_TOKEN,
-    TELEGRAM_CHAT_ID
-)
+import pandas as pd
+import yfinance as yf
 
-bot = TelegramNotifier(
-    TELEGRAM_TOKEN,
-    TELEGRAM_CHAT_ID
-)
 
-symbols = [
-    "SASA.IS",
-    "SISE.IS",
-    "THYAO.IS",
-    "TUPRS.IS",
-    "ASELS.IS",
-    "KCHOL.IS",
-    "YKBNK.IS",
-    "BIMAS.IS",
-    "HEKTS.IS",
-    "PETKM.IS",
-    "TCELL.IS",
-    "GARAN.IS",
-    "AKBNK.IS",
-    "EREGL.IS"
-]
-
-longs = []
-neutrals = []
-shorts = []
-
-for symbol in symbols:
+def generate_portfolio_report():
 
     try:
 
-        result = ai_filter_stock(symbol)
+        df = pd.read_csv(
+            "data/portfolio.csv"
+        )
 
-        if not result:
-            continue
+        if df.empty:
 
-        # ATR filtresi
-        if result["atr"] < 0.5:
-            continue
+            return "💼 Portföy boş"
 
-        signal = result["signal"]
+        report = "💼 PORTFOLIO\n\n"
 
-        if signal in [
-            "BUY",
-            "STRONG BUY"
-        ]:
+        open_count = 0
 
-            longs.append(result)
+        winners = 0
+        losers = 0
 
-            if (
-                result["score"] >= 80
-                and result["confidence"] >= 75
-            ):
+        total_pnl = 0
 
-                save_trade(result)
-                add_position(result)
+        best_symbol = ""
+        best_pnl = -999
 
-        elif signal in [
-            "SELL",
-            "STRONG SELL"
-        ]:
+        worst_symbol = ""
+        worst_pnl = 999
 
-            shorts.append(result)
+        for _, row in df.iterrows():
 
-        else:
+            symbol = row["symbol"]
 
-            neutrals.append(result)
+            try:
+
+                data = yf.download(
+                    symbol,
+                    period="5d",
+                    interval="1d",
+                    progress=False,
+                    auto_adjust=True
+                )
+
+                if data.empty:
+                    continue
+
+                if isinstance(
+                    data.columns,
+                    pd.MultiIndex
+                ):
+
+                    current_price = float(
+                        data["Close"]
+                        .iloc[:, 0]
+                        .iloc[-1]
+                    )
+
+                else:
+
+                    current_price = float(
+                        data["Close"]
+                        .iloc[-1]
+                    )
+
+                entry_price = float(
+                    row["entry"]
+                )
+
+                pnl = round(
+                    (
+                        (
+                            current_price
+                            - entry_price
+                        )
+                        / entry_price
+                    ) * 100,
+                    2
+                )
+
+                total_pnl += pnl
+
+                if pnl >= 0:
+
+                    winners += 1
+
+                else:
+
+                    losers += 1
+
+                if pnl > best_pnl:
+
+                    best_pnl = pnl
+                    best_symbol = symbol
+
+                if pnl < worst_pnl:
+
+                    worst_pnl = pnl
+                    worst_symbol = symbol
+
+                report += (
+
+                    f"{symbol}\n"
+
+                    f"Entry : {entry_price}\n"
+
+                    f"Current : "
+                    f"{round(current_price,2)}\n\n"
+
+                    f"PnL : {pnl}%\n\n"
+
+                    f"Status : "
+                    f"{row['status']}\n\n"
+                )
+
+            except Exception:
+
+                continue
+
+            if row["status"] == "OPEN":
+
+                open_count += 1
+
+        average_pnl = round(
+            total_pnl / len(df),
+            2
+        )
+
+        report += (
+
+            "━━━━━━━━━━━━━━\n\n"
+
+            f"📈 Winners : {winners}\n"
+            f"📉 Losers : {losers}\n\n"
+
+            f"🏆 Best Position :\n"
+            f"{best_symbol} "
+            f"({best_pnl}%)\n\n"
+
+            f"⚠️ Worst Position :\n"
+            f"{worst_symbol} "
+            f"({worst_pnl}%)\n\n"
+
+            f"📊 Average PnL : "
+            f"{average_pnl}%\n\n"
+
+            f"📂 Open Positions : "
+            f"{open_count}"
+        )
+
+        return report
 
     except Exception as e:
 
-        print(
-            f"[ERROR] "
-            f"{symbol} -> {e}"
+        return (
+            f"❌ PORTFOLIO ERROR\n{e}"
         )
-
-# BUY SORT
-
-longs = sorted(
-    longs,
-    key=lambda x: (
-        x["score"],
-        x["confidence"],
-        x["bull_score"],
-        x["volume_ratio"]
-    ),
-    reverse=True
-)
-
-# WATCH SORT
-
-neutrals = sorted(
-    neutrals,
-    key=lambda x: (
-        x["score"],
-        x["confidence"]
-    ),
-    reverse=True
-)
-
-# SELL SORT
-
-shorts = sorted(
-    shorts,
-    key=lambda x: (
-        x["score"],
-        x["bear_score"]
-    )
-)
-
-report = "📈 BIST AI MARKET REPORT\n\n"
-
-# BUY SIGNALS
-
-report += "🟢 BUY SIGNALS\n"
-
-if longs:
-
-    for item in longs[:10]:
-
-        report += (
-            f"{item['symbol']} | "
-            f"Score {item['score']} | "
-            f"Conf {item['confidence']}% | "
-            f"ATR {item['atr']}\n"
-        )
-
-else:
-
-    report += "Yok\n"
-
-# WATCH SIGNALS
-
-report += "\n🟡 WATCH SIGNALS\n"
-
-if neutrals:
-
-    for item in neutrals[:10]:
-
-        report += (
-            f"{item['symbol']} | "
-            f"Score {item['score']}\n"
-        )
-
-else:
-
-    report += "Yok\n"
-
-# SELL SIGNALS
-
-report += "\n🔴 SELL SIGNALS\n"
-
-if shorts:
-
-    for item in shorts[:10]:
-
-        report += (
-            f"{item['symbol']} | "
-            f"Score {item['score']}\n"
-        )
-
-else:
-
-    report += "Yok\n"
-
-# MARKET PULSE
-
-report += "\n📊 MARKET PULSE\n"
-
-report += f"Bullish : {len(longs)}\n"
-report += f"Neutral : {len(neutrals)}\n"
-report += f"Bearish : {len(shorts)}\n"
-
-# MARKET MOOD
-
-if len(longs) >= 5:
-
-    mood = "BULLISH"
-
-elif len(shorts) >= 5:
-
-    mood = "BEARISH"
-
-else:
-
-    mood = "SIDEWAYS"
-
-report += f"\n📈 Market Mood : {mood}\n"
-
-# TOP SIGNAL
-
-if longs:
-
-    best_signal = max(
-        longs,
-        key=lambda x: (
-            x["score"] * 3
-            + x["confidence"]
-            + x["bull_score"]
-            + (x["volume_ratio"] * 10)
-        )
-    )
-
-    report += "\n🔥 TOP SIGNAL\n\n"
-
-    report += (
-        f"{best_signal['symbol']}\n"
-        f"AI Score : {best_signal['score']}\n"
-        f"Trend : {best_signal['trend']}\n"
-        f"Confidence : {best_signal['confidence']}%\n"
-        f"ATR : {best_signal['atr']}\n\n"
-        f"Entry : {best_signal['entry_price']}\n"
-        f"Stop : {best_signal['stop_loss']}\n"
-        f"Target 1 : {best_signal['target_1']}\n"
-        f"Target 2 : {best_signal['target_2']}\n"
-    )
-
-report += "\n⚡ Generated by BIST QUANT ENGINE"
-
-print("\n========== REPORT ==========\n")
-print(report)
-
-bot.send(report)
