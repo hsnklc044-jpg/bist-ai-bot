@@ -3,7 +3,13 @@ from portfolio_system.portfolio_manager import (
     remove_position
 )
 
-from portfolio_system.pnl_engine import calculate_pnl
+from portfolio_system.pnl_engine import (
+    calculate_pnl
+)
+
+from portfolio_system.trade_history import (
+    save_trade
+)
 
 
 def check_exit(symbol, current_price):
@@ -16,48 +22,50 @@ def check_exit(symbol, current_price):
 
     position = positions[symbol]
 
-    signal = position["signal"]
     entry_price = position["entry_price"]
-    atr = position["atr"]
+
+    stop_price = position["stop"]
+
+    target_price = position["target1"]
 
     pnl = calculate_pnl(
-        signal,
+        "LONG",
         entry_price,
         current_price
     )
 
-    take_profit = atr * 5
-    stop_loss = atr * 2
-
     exit_reason = None
 
-    if signal == "LONG":
+    if current_price >= target_price:
 
-        if current_price >= entry_price + take_profit:
+        exit_reason = "TAKE PROFIT"
 
-            exit_reason = "TAKE PROFIT"
+    elif current_price <= stop_price:
 
-        elif current_price <= entry_price - stop_loss:
-
-            exit_reason = "STOP LOSS"
-
-    elif signal == "SHORT":
-
-        if current_price <= entry_price - take_profit:
-
-            exit_reason = "TAKE PROFIT"
-
-        elif current_price >= entry_price + stop_loss:
-
-            exit_reason = "STOP LOSS"
+        exit_reason = "STOP LOSS"
 
     if exit_reason:
+
+        save_trade(
+            symbol,
+            entry_price,
+            current_price,
+            pnl,
+            exit_reason
+        )
 
         remove_position(symbol)
 
         return {
+
             "symbol": symbol,
+
+            "entry_price": entry_price,
+
+            "exit_price": current_price,
+
             "reason": exit_reason,
+
             "pnl": pnl
         }
 

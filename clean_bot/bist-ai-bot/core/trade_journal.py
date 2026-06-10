@@ -1,56 +1,56 @@
-import csv
 import os
-from datetime import datetime
-
-JOURNAL_FILE = "data/trade_journal.csv"
+import pandas as pd
 
 
-def save_trade(signal_data):
+def generate_trade_journal():
 
-    file_exists = os.path.exists(JOURNAL_FILE)
+    try:
 
-    if not file_exists:
+        if not os.path.exists(
+            "data/trade_history.csv"
+        ):
 
-        with open(
-            JOURNAL_FILE,
-            "w",
-            newline="",
-            encoding="utf-8"
-        ) as file:
+            return (
+                "📒 TRADE JOURNAL\n\n"
+                "No closed trades."
+            )
 
-            writer = csv.writer(file)
+        df = pd.read_csv(
+            "data/trade_history.csv"
+        )
 
-            writer.writerow([
-                "date",
-                "symbol",
-                "signal",
-                "entry",
-                "stop",
-                "target1",
-                "target2",
-                "score",
-                "confidence"
-            ])
+        if df.empty:
 
-    with open(
-        JOURNAL_FILE,
-        "a",
-        newline="",
-        encoding="utf-8"
-    ) as file:
+            return (
+                "📒 TRADE JOURNAL\n\n"
+                "No closed trades."
+            )
 
-        writer = csv.writer(file)
+        report = (
+            "📒 TRADE JOURNAL\n\n"
+        )
 
-        writer.writerow([
-            datetime.now().strftime(
-                "%Y-%m-%d %H:%M:%S"
-            ),
-            signal_data["symbol"],
-            signal_data["signal"],
-            signal_data["entry_price"],
-            signal_data["stop_loss"],
-            signal_data["target_1"],
-            signal_data["target_2"],
-            signal_data["score"],
-            signal_data["confidence"]
-        ])
+        for _, row in df.iterrows():
+
+            report += (
+
+                f"📊 {row['symbol']}\n\n"
+
+                f"Reason : {row['reason']}\n"
+
+                f"PnL : {row['pnl']}%\n\n"
+
+                "━━━━━━━━━━━━━━\n\n"
+            )
+
+        report += (
+            f"Closed Trades : {len(df)}"
+        )
+
+        return report
+
+    except Exception as e:
+
+        return (
+            f"❌ JOURNAL ERROR\n{e}"
+        )

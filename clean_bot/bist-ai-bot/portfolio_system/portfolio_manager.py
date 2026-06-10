@@ -1,31 +1,73 @@
+import pandas as pd
+
+PORTFOLIO_FILE = "data/portfolio.csv"
+
+
 def load_positions():
 
-    return [
-        {
-            "symbol": "TUPRS.IS",
-            "signal": "SHORT",
-            "entry": 250.5,
-            "current": 248.2
-        },
+    try:
 
-        {
-            "symbol": "SISE.IS",
-            "signal": "LONG",
-            "entry": 50.4,
-            "current": 52.1
-        },
+        df = pd.read_csv(
+            PORTFOLIO_FILE
+        )
 
-        {
-            "symbol": "ASELS.IS",
-            "signal": "LONG",
-            "entry": 413.0,
-            "current": 425.0
-        },
+        positions = {}
 
-        {
-            "symbol": "THYAO.IS",
-            "signal": "SHORT",
-            "entry": 305.0,
-            "current": 298.7
-        }
-    ]
+        for _, row in df.iterrows():
+
+            if row["status"] != "OPEN":
+                continue
+
+            positions[row["symbol"]] = {
+
+                "symbol": row["symbol"],
+
+                "entry_price": float(
+                    row["entry"]
+                ),
+
+                "stop": float(
+                    row["stop"]
+                ),
+
+                "target1": float(
+                    row["target1"]
+                ),
+
+                "target2": float(
+                    row["target2"]
+                ),
+
+                "signal": "LONG"
+            }
+
+        return positions
+
+    except Exception:
+
+        return {}
+
+
+def remove_position(symbol):
+
+    try:
+
+        df = pd.read_csv(
+            PORTFOLIO_FILE
+        )
+
+        df.loc[
+            df["symbol"] == symbol,
+            "status"
+        ] = "CLOSED"
+
+        df.to_csv(
+            PORTFOLIO_FILE,
+            index=False
+        )
+
+        return True
+
+    except Exception:
+
+        return False

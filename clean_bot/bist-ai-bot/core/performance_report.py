@@ -1,61 +1,106 @@
+import os
 import pandas as pd
 
 
-def generate_report():
+def generate_performance_report():
 
     try:
 
-        df = pd.read_csv(
-            "data/portfolio.csv"
+        if not os.path.exists(
+            "data/trade_history.csv"
+        ):
+
+            return (
+                "📈 PERFORMANCE\n\n"
+                "No closed trades yet."
+            )
+
+        try:
+
+            df = pd.read_csv(
+                "data/trade_history.csv"
+            )
+
+        except Exception:
+
+            return (
+                "📈 PERFORMANCE\n\n"
+                "No closed trades yet."
+            )
+
+        if df.empty:
+
+            return (
+                "📈 PERFORMANCE\n\n"
+                "No closed trades yet."
+            )
+
+        total_trades = len(df)
+
+        winners_df = df[
+            df["pnl"] > 0
+        ]
+
+        losers_df = df[
+            df["pnl"] <= 0
+        ]
+
+        winners = len(
+            winners_df
         )
 
-        total = len(df)
-
-        wins = len(
-            df[
-                df["status"].isin(
-                    [
-                        "TARGET1 HIT",
-                        "TARGET2 HIT"
-                    ]
-                )
-            ]
+        losers = len(
+            losers_df
         )
 
-        losses = len(
-            df[
-                df["status"] == "STOP HIT"
-            ]
+        win_rate = round(
+            (winners / total_trades) * 100,
+            2
         )
 
-        open_positions = len(
-            df[
-                df["status"] == "OPEN"
-            ]
-        )
+        avg_win = 0
+        avg_loss = 0
 
-        if wins + losses > 0:
+        if winners > 0:
 
-            win_rate = round(
-                wins /
-                (wins + losses)
-                * 100,
+            avg_win = round(
+                winners_df["pnl"].mean(),
                 2
             )
 
-        else:
+        if losers > 0:
 
-            win_rate = 0
+            avg_loss = round(
+                losers_df["pnl"].mean(),
+                2
+            )
+
+        best_trade = (
+            df.loc[
+                df["pnl"].idxmax()
+            ]
+        )
+
+        worst_trade = (
+            df.loc[
+                df["pnl"].idxmin()
+            ]
+        )
 
         report = (
-
-            "📊 PERFORMANCE REPORT\n\n"
-
-            f"Total Trades : {total}\n"
-            f"Wins : {wins}\n"
-            f"Losses : {losses}\n"
-            f"Open : {open_positions}\n"
-            f"Win Rate : %{win_rate}"
+            "📈 PERFORMANCE\n\n"
+            f"Trades : {total_trades}\n\n"
+            f"Winners : {winners}\n"
+            f"Losers : {losers}\n\n"
+            f"Win Rate : {win_rate}%\n\n"
+            f"Average Win : {avg_win}%\n"
+            f"Average Loss : {avg_loss}%\n\n"
+            f"🏆 Best Trade\n"
+            f"{best_trade['symbol']} "
+            f"({best_trade['pnl']}%)\n\n"
+            f"⚠️ Worst Trade\n"
+            f"{worst_trade['symbol']} "
+            f"({worst_trade['pnl']}%)"
         )
 
         return report
@@ -63,5 +108,6 @@ def generate_report():
     except Exception as e:
 
         return (
-            f"❌ REPORT ERROR\n{e}"
+            f"📈 PERFORMANCE ERROR\n"
+            f"{e}"
         )

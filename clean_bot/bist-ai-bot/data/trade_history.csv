@@ -1,0 +1,3 @@
+symbol,entry_price,exit_price,pnl,reason,entry,exit
+ASELS.IS,410.0,362.25,-11.65,STOP LOSS,,
+ASELS.IS,,,-8.84,STOP HIT,410.0,373.75

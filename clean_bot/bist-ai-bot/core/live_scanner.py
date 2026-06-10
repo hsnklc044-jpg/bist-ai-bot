@@ -1,8 +1,51 @@
+import json
+import os
+
 from core.indicator_engine import analyze_stock
 from core.telegram_notifier import send_ai_signal
+from core.logger import write_log
 
-# GLOBAL MEMORY
-signal_memory = {}
+MEMORY_FILE = "data/signal_memory.json"
+
+
+def load_memory():
+
+    if not os.path.exists(
+        MEMORY_FILE
+    ):
+        return {}
+
+    try:
+
+        with open(
+            MEMORY_FILE,
+            "r",
+            encoding="utf-8"
+        ) as f:
+
+            return json.load(f)
+
+    except Exception:
+
+        return {}
+
+
+def save_memory(memory):
+
+    with open(
+        MEMORY_FILE,
+        "w",
+        encoding="utf-8"
+    ) as f:
+
+        json.dump(
+            memory,
+            f,
+            indent=4
+        )
+
+
+signal_memory = load_memory()
 
 symbols = [
     "SASA.IS",
@@ -24,15 +67,21 @@ symbols = [
 
 def scan_market():
 
+    global signal_memory
+
     opportunities = []
 
-    print("\n========== NEW MARKET SCAN ==========\n")
+    print(
+        "\n========== NEW MARKET SCAN ==========\n"
+    )
 
     for symbol in symbols:
 
         try:
 
-            result = analyze_stock(symbol)
+            result = analyze_stock(
+                symbol
+            )
 
             if not result:
                 continue
@@ -42,37 +91,74 @@ def scan_market():
             trend = result["trend"]
 
             print(
-                f"{symbol} | Score:{score} | Signal:{signal} | Trend:{trend}"
+                f"{symbol} | "
+                f"Score:{score} | "
+                f"Signal:{signal} | "
+                f"Trend:{trend}"
             )
 
-            # SIGNAL FILTER
-            if signal is not None and score >= 20:
+            if signal not in [
+                "BUY",
+                "STRONG BUY",
+                "SELL",
+                "STRONG SELL"
+            ]:
+                continue
 
-                signal_key = f"{symbol}_{signal}_{score}"
+            if score < 60:
+                continue
 
-                # DUPLICATE BLOCKER
-                if signal_key in signal_memory:
+            signal_key = (
+                f"{symbol}_{signal}_{int(score)}"
+            )
 
-                    print(f"[FILTERED] Cooldown Active -> {signal_key}")
-                    continue
+            if signal_key in signal_memory:
 
-                # SAVE MEMORY
-                signal_memory[signal_key] = True
+                print(
+                    f"[FILTERED] "
+                    f"{signal_key}"
+                )
 
-                opportunities.append(result)
+                continue
 
-                send_ai_signal(result)
+            signal_memory[
+                signal_key
+            ] = True
+
+            save_memory(
+                signal_memory
+            )
+
+            opportunities.append(
+                result
+            )
+
+            send_ai_signal(
+                result
+            )
+
+            write_log(
+                f"SIGNAL SENT | "
+                f"{symbol} | "
+                f"{signal}"
+            )
 
         except Exception as e:
 
-            print(f"[ERROR] {symbol} -> {e}")
-
-    print("\n========== TOP OPPORTUNITIES ==========\n")
+            write_log(
+                f"SCAN ERROR | "
+                f"{symbol} | "
+                f"{e}"
+            )
 
     sorted_opps = sorted(
         opportunities,
         key=lambda x: x["score"],
         reverse=True
+    )
+
+    print(
+        "\n========== TOP OPPORTUNITIES ==========\n"
     )
 
     for opp in sorted_opps:
@@ -83,5 +169,10 @@ def scan_market():
             f"Signal:{opp['signal']} | "
             f"Trend:{opp['trend']}"
         )
+
+    write_log(
+        f"MARKET SCAN COMPLETE | "
+        f"SIGNALS={len(sorted_opps)}"
+    )
 
     return sorted_opps

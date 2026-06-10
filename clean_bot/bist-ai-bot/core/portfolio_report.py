@@ -1,3 +1,4 @@
+import math
 import pandas as pd
 import yfinance as yf
 
@@ -11,11 +12,13 @@ def generate_portfolio_report():
         )
 
         if df.empty:
-            return "💼 Portföy boş"
 
-        report = "💼 PORTFOLIO\n\n"
+            return "💼 Portfolio Empty"
+
+        report = "💼 OPEN PORTFOLIO\n\n"
 
         open_count = 0
+
         winners = 0
         losers = 0
 
@@ -30,6 +33,12 @@ def generate_portfolio_report():
         processed = 0
 
         for _, row in df.iterrows():
+
+            if str(
+                row["status"]
+            ).upper() != "OPEN":
+
+                continue
 
             symbol = row["symbol"]
 
@@ -51,22 +60,39 @@ def generate_portfolio_report():
                     pd.MultiIndex
                 ):
 
-                    current_price = float(
+                    close_series = (
                         data["Close"]
                         .iloc[:, 0]
-                        .iloc[-1]
+                        .dropna()
                     )
 
                 else:
 
-                    current_price = float(
+                    close_series = (
                         data["Close"]
-                        .iloc[-1]
+                        .dropna()
                     )
+
+                if close_series.empty:
+                    continue
+
+                current_price = float(
+                    close_series.iloc[-1]
+                )
 
                 entry_price = float(
                     row["entry"]
                 )
+
+                if math.isnan(
+                    current_price
+                ):
+                    continue
+
+                if math.isnan(
+                    entry_price
+                ):
+                    continue
 
                 pnl = round(
                     (
@@ -79,56 +105,86 @@ def generate_portfolio_report():
                 )
 
                 processed += 1
+
                 total_pnl += pnl
 
+                open_count += 1
+
                 if pnl >= 0:
+
                     winners += 1
+
                 else:
+
                     losers += 1
 
                 if pnl > best_pnl:
+
                     best_pnl = pnl
                     best_symbol = symbol
 
                 if pnl < worst_pnl:
+
                     worst_pnl = pnl
                     worst_symbol = symbol
 
                 report += (
-                    f"{symbol}\n"
+
+                    f"📊 {symbol}\n\n"
+
                     f"Entry : {entry_price}\n"
-                    f"Current : {round(current_price,2)}\n\n"
+
+                    f"Current : "
+                    f"{round(current_price, 2)}\n\n"
+
                     f"PnL : {pnl}%\n\n"
-                    f"Status : {row['status']}\n\n"
+
+                    "━━━━━━━━━━━━━━\n\n"
                 )
 
-                if row["status"] == "OPEN":
-                    open_count += 1
-
             except Exception:
+
                 continue
 
-        if processed > 0:
+        if processed == 0:
 
-            average_pnl = round(
-                total_pnl / processed,
-                2
+            return (
+                "💼 OPEN PORTFOLIO\n\n"
+                "No active positions."
             )
 
-            report += (
-                "━━━━━━━━━━━━━━\n\n"
-                f"📈 Winners : {winners}\n"
-                f"📉 Losers : {losers}\n\n"
-                f"🏆 Best Position :\n"
-                f"{best_symbol} ({best_pnl}%)\n\n"
-                f"⚠️ Worst Position :\n"
-                f"{worst_symbol} ({worst_pnl}%)\n\n"
-                f"📊 Average PnL : {average_pnl}%\n\n"
-                f"📂 Open Positions : {open_count}"
-            )
+        average_pnl = round(
+            total_pnl / processed,
+            2
+        )
+
+        report += (
+
+            f"📈 Winners : "
+            f"{winners}\n"
+
+            f"📉 Losers : "
+            f"{losers}\n\n"
+
+            f"🏆 Best Position :\n"
+            f"{best_symbol} "
+            f"({best_pnl}%)\n\n"
+
+            f"⚠️ Worst Position :\n"
+            f"{worst_symbol} "
+            f"({worst_pnl}%)\n\n"
+
+            f"📊 Average PnL : "
+            f"{average_pnl}%\n\n"
+
+            f"📂 Open Positions : "
+            f"{open_count}"
+        )
 
         return report
 
     except Exception as e:
 
-        return f"❌ PORTFOLIO ERROR\n{e}"
+        return (
+            f"❌ PORTFOLIO ERROR\n{e}"
+        )

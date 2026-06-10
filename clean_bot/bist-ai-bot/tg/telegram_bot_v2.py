@@ -46,6 +46,10 @@ from core.watchlist_report import (
     generate_watchlist
 )
 
+from core.daily_summary import (
+    generate_daily_summary
+)
+
 
 # ==================================
 # HELP
@@ -67,6 +71,7 @@ async def help_command(
         "/top\n"
         "/market\n"
         "/watchlist\n"
+        "/daily\n"
         "/help"
     )
 
@@ -315,7 +320,28 @@ async def watchlist_command(
         await update.message.reply_text(
             f"❌ Hata\n{e}"
         )
+# ==================================
+# DAILY SUMMARY
+# ==================================
 
+async def daily_command(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    try:
+
+        report = generate_daily_summary()
+
+        await update.message.reply_text(
+            report
+        )
+
+    except Exception as e:
+
+        await update.message.reply_text(
+            f"❌ Hata\n{e}"
+        )
 
 # ==================================
 # MAIN
@@ -382,6 +408,13 @@ def main():
         CommandHandler(
             "watchlist",
             watchlist_command
+        )
+    )
+
+    app.add_handler(
+        CommandHandler(
+            "daily",
+            daily_command
         )
     )
 

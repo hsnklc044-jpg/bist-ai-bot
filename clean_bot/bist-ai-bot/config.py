@@ -1,3 +1,7 @@
-TELEGRAM_TOKEN = "8434925197:AAHeciNObLAkLJ_SE_jsaNPvhiwR9_HRoTE"
+from dotenv import load_dotenv
+import os
 
-TELEGRAM_CHAT_ID = "1790584407"
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+CHAT_ID = int(os.getenv("CHAT_ID", "0"))
