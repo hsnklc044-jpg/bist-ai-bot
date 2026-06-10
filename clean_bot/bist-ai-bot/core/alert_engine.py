@@ -23,8 +23,6 @@ def generate_alerts():
                 f"Score : {s['score']}\n\n"
             )
 
-    report += "📊 PORTFOLIO HEALTH\n\n"
-
     report += generate_portfolio_health()
 
     return report
